@@ -1,5 +1,8 @@
 # Orchestrator Post-Cutover Audit Report
 
+Status: Validated — findings independently checked under
+`tsk-20260727T154918Z-fdf80cd0`
+
 Date: 2026-07-27 UTC  
 Audited revision: `3001f69` (`Add unified Kanban task metadata`)  
 Authority state: `ash`  

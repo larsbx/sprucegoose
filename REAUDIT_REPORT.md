@@ -1,5 +1,6 @@
 # Orchestrator Codebase Re-Audit Report
 
+**Status:** Historical — superseded by `HANDOFF.md` and the completed authority cutover
 **Audit date:** 2026-07-27  
 **Scope:** Current staged Orchestrator application, operator CLI, Tuxedo ledger migration, lifecycle enforcement, PostgreSQL invariants, migrations, configuration, and tests  
 **Primary concern:** Readiness for Ash CLI authority cutover and retirement of Tuxedo/taskctl

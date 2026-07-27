@@ -1,5 +1,8 @@
 # Orchestrator Authority-Cutover Handoff
 
+Status: Historical — cutover completed; current findings are in
+`POST_CUTOVER_AUDIT_REPORT.md`
+
 Date: 2026-07-27 UTC
 
 ## Executive status

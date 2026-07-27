@@ -1,5 +1,6 @@
 # Codebase Audit Report
 
+**Status:** Historical — superseded by `REAUDIT_REPORT.md`
 **Project:** Orchestrator
 **Audit date:** 2026-07-27
 **Scope:** Application source, project configuration, database migrations, resource snapshots, tests, Git tracking behavior, and packaged CLI
