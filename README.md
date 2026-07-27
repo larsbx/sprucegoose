@@ -30,6 +30,9 @@ mix escript.build
   --dod "Focused checks pass" \
   "Implement the next slice"
 ./orchestrator task list --state waiting
+./orchestrator task propose tsk-...
+./orchestrator task queue tsk-...
+./orchestrator task ready tsk-...
 ./orchestrator task start tsk-...
 ./orchestrator task wait tsk-... "operator review"
 ./orchestrator task link tsk-... evidence /path/to/proof
@@ -46,13 +49,15 @@ Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still
 required before creating a task.
 
-Tuxedo remains a temporary migration input until ledger import, parity,
-rollback, and cutover checks pass. It is then retired rather than retained as
-a second writable task system.
+Tuxedo remains the authority during migration. Ledger import is accepted only
+while the durable database authority flag is `tuxedo`; it fails closed once
+that flag is changed to `ash`.
 
 The repository pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 in
-`.tool-versions`. Import is transactional and idempotent. It does not change
-task authority or write to the source ledger:
+`.tool-versions`. Import is transactional and idempotent. Refreshes preserve
+Ash-native metadata, advance optimistic-lock versions, and reconcile only
+dependency edges carrying Tuxedo provenance. Import never changes authority or
+writes to the source ledger:
 
 ```sh
 ./orchestrator ledger import /home/admin-papa/tasks/todo.txt
@@ -64,6 +69,12 @@ types, states, recorded DoDs, raw source records, and dependency edges.
 Historical tasks created before mandatory DoDs retain their missing source
 value explicitly and receive a visible grandfathered placeholder in the
 non-null Ash field.
+
+Lifecycle commands expose each governed state transition explicitly. `start`
+accepts only a ready task, and wait/cancel reasons are committed atomically
+with their state change. Diagnosis completion requires finding, regression,
+and SOP references plus completion of every subordinate TODO. Task JSON
+includes those references, reasons, and ledger-import provenance.
 
 Run the focused contract:
 

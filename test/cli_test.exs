@@ -88,6 +88,12 @@ defmodule Orchestrator.CLITest do
 
     assert {:ok, {:list_tasks, "waiting"}} = Command.parse(["task", "list", "--state", "waiting"])
 
+    assert {:ok, {:transition_task, ^id, :proposed, nil}} =
+             Command.parse(["task", "propose", id])
+
+    assert {:ok, {:transition_task, ^id, :queued, nil}} = Command.parse(["task", "queue", id])
+    assert {:ok, {:transition_task, ^id, :ready, nil}} = Command.parse(["task", "ready", id])
+
     assert {:ok, {:transition_task, ^id, :in_progress, nil}} =
              Command.parse(["task", "start", id])
 

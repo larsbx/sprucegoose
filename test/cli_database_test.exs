@@ -77,14 +77,20 @@ defmodule Orchestrator.CLIDatabaseTest do
     {:ok, _edge} =
       Ash.create(Dependency, %{predecessor_id: task.id, successor_id: successor.id})
 
-    assert {:error, "task must be in progress"} =
-             Executor.run({:transition_task, task.task_id, :completed, nil})
+    assert {:error, _} = Executor.run({:transition_task, task.task_id, :completed, nil})
+
+    for target <- [:proposed, :queued, :ready] do
+      assert {:ok, %{state: ^target}} =
+               Executor.run({:transition_task, successor.task_id, target, nil})
+    end
 
     assert {:error, "task has incomplete predecessors"} =
              Executor.run({:transition_task, successor.task_id, :in_progress, nil})
 
-    assert {:ok, %{state: :in_progress}} =
-             Executor.run({:transition_task, task.task_id, :in_progress, nil})
+    for target <- [:proposed, :queued, :ready, :in_progress] do
+      assert {:ok, %{state: ^target}} =
+               Executor.run({:transition_task, task.task_id, target, nil})
+    end
 
     assert {:ok, %{state: :waiting}} =
              Executor.run({:transition_task, task.task_id, :waiting, "operator review"})
@@ -96,8 +102,10 @@ defmodule Orchestrator.CLIDatabaseTest do
     assert {:ok, %{tasks: [%{id: id, state: :waiting}]}} = Executor.run({:list_tasks, "waiting"})
     assert id == task.task_id
 
-    assert {:ok, %{state: :completed}} =
-             Executor.run({:transition_task, task.task_id, :completed, nil})
+    for target <- [:ready, :in_progress, :completed] do
+      assert {:ok, %{state: ^target}} =
+               Executor.run({:transition_task, task.task_id, target, nil})
+    end
 
     assert {:ok, %{state: :in_progress}} =
              Executor.run({:transition_task, successor.task_id, :in_progress, nil})

@@ -1,7 +1,7 @@
 defmodule Orchestrator.Ledger do
   @moduledoc false
 
-  alias Orchestrator.Repo
+  alias Orchestrator.{Authority, Repo}
 
   @task_id ~r/^tsk-\d{8}T\d{6}Z-[0-9a-f]{8}$/
   @states %{
@@ -40,27 +40,30 @@ defmodule Orchestrator.Ledger do
          {:ok, roadmap} <- required(tokens, "ref:roadmap"),
          {:ok, workflow} <- required(tokens, "ref:workflow"),
          {:ok, title} <- title(tokens) do
-      encoded_dod = value(tokens, "dod") || value(tokens, "ref:dod")
-      status = value(tokens, "status") || if(hd(tokens) == "x", do: "done", else: "queued")
+      with {:ok, task_type} <- task_type(tokens),
+           {:ok, state} <- task_state(tokens),
+           :ok <- schema(tokens) do
+        encoded_dod = value(tokens, "dod") || value(tokens, "ref:dod")
 
-      {:ok,
-       %{
-         id: id,
-         project: project,
-         roadmap: roadmap,
-         workflow: workflow,
-         title: title,
-         definition_of_done:
-           if(encoded_dod,
-             do: decode(encoded_dod),
-             else: "Grandfathered legacy task: no Definition of Done was recorded"
-           ),
-         encoded_definition_of_done: encoded_dod,
-         task_type: if(value(tokens, "type") == "diagnosis", do: "diagnosis", else: "task"),
-         state: Map.get(@states, status, "queued"),
-         dependencies: values(tokens, "ref:depends-on"),
-         raw: line
-       }}
+        {:ok,
+         %{
+           id: id,
+           project: project,
+           roadmap: roadmap,
+           workflow: workflow,
+           title: title,
+           definition_of_done:
+             if(encoded_dod,
+               do: decode(encoded_dod),
+               else: "Grandfathered legacy task: no Definition of Done was recorded"
+             ),
+           encoded_definition_of_done: encoded_dod,
+           task_type: task_type,
+           state: state,
+           dependencies: values(tokens, "ref:depends-on"),
+           raw: line
+         }}
+      end
     else
       false -> {:error, "invalid task ID"}
       {:error, reason} -> {:error, reason}
@@ -68,7 +71,8 @@ defmodule Orchestrator.Ledger do
   end
 
   def import(path) do
-    with {:ok, tasks} <- read(path) do
+    with :ok <- Authority.require_tuxedo(),
+         {:ok, tasks} <- read(path) do
       Repo.transaction(fn ->
         with :ok <- import_hierarchy(tasks),
              :ok <- import_tasks(tasks),
@@ -210,12 +214,14 @@ defmodule Orchestrator.Ledger do
   end
 
   defp import_dependencies(tasks) do
+    sql!("DELETE FROM task_dependencies WHERE source = 'tuxedo'")
+
     Enum.each(tasks, fn task ->
       Enum.each(task.dependencies, fn dependency ->
         sql!(
           """
-          INSERT INTO task_dependencies (predecessor_id, successor_id)
-          SELECT predecessor.id, successor.id
+          INSERT INTO task_dependencies (predecessor_id, successor_id, source)
+          SELECT predecessor.id, successor.id, 'tuxedo'
           FROM workflow_tasks predecessor, workflow_tasks successor
           WHERE predecessor.task_id = $1 AND successor.task_id = $2
           ON CONFLICT (predecessor_id, successor_id) DO NOTHING
@@ -262,6 +268,7 @@ defmodule Orchestrator.Ledger do
       FROM task_dependencies d
       JOIN workflow_tasks predecessor ON predecessor.id = d.predecessor_id
       JOIN workflow_tasks successor ON successor.id = d.successor_id
+      WHERE d.source = 'tuxedo'
       """).rows
 
     expected_dependencies =
@@ -328,6 +335,31 @@ defmodule Orchestrator.Ledger do
   defp date?(value), do: Regex.match?(~r/^\d{4}-\d{2}-\d{2}$/, value)
   defp decode(value), do: String.replace(value, "_", " ")
 
+  defp task_type(tokens) do
+    case value(tokens, "type") do
+      nil -> {:ok, "task"}
+      type when type in ["task", "diagnosis"] -> {:ok, type}
+      type -> {:error, "unknown task type #{inspect(type)}"}
+    end
+  end
+
+  defp task_state(tokens) do
+    status = value(tokens, "status") || if(hd(tokens) == "x", do: "done", else: "queued")
+
+    case Map.fetch(@states, status) do
+      {:ok, state} -> {:ok, state}
+      :error -> {:error, "unknown task status #{inspect(status)}"}
+    end
+  end
+
+  defp schema(tokens) do
+    case value(tokens, "schema") do
+      nil -> :ok
+      "task-v2" -> :ok
+      schema -> {:error, "unknown task schema #{inspect(schema)}"}
+    end
+  end
+
   defp refresh_imported_task(task) do
     result =
       sql!(
@@ -336,10 +368,11 @@ defmodule Orchestrator.Ledger do
           workflow_id = workflow.id,
           task_type = $5,
           title = $6,
-          definition_of_done = $7,
-          state = $8,
-          input = $9,
-          updated_at = (now() AT TIME ZONE 'utc')
+        definition_of_done = $7,
+        state = $8,
+        input = task.input || $9,
+        lock_version = task.lock_version + 1,
+        updated_at = (now() AT TIME ZONE 'utc')
         FROM workflows AS workflow
         JOIN roadmaps AS roadmap ON roadmap.id = workflow.roadmap_id
         JOIN projects AS project ON project.id = roadmap.project_id

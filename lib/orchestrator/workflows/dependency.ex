@@ -18,6 +18,7 @@ defmodule Orchestrator.Workflows.Dependency do
   attributes do
     uuid_primary_key(:id)
     attribute(:workflow_id, :uuid, public?: true, writable?: false)
+    attribute(:source, :string, allow_nil?: false, default: "native", public?: true)
     timestamps()
   end
 
@@ -44,7 +45,7 @@ defmodule Orchestrator.Workflows.Dependency do
 
     create :create do
       primary?(true)
-      accept([:predecessor_id, :successor_id])
+      accept([:predecessor_id, :successor_id, :source])
     end
   end
 end

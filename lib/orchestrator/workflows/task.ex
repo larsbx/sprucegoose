@@ -86,6 +86,7 @@ defmodule Orchestrator.Workflows.Task do
       accept([])
       require_atomic?(false)
       argument(:to_state, Orchestrator.Workflows.TaskState, allow_nil?: false)
+      argument(:reason, :string)
 
       validate(fn changeset, _context ->
         from = changeset.data.state
@@ -98,12 +99,30 @@ defmodule Orchestrator.Workflows.Task do
         end
       end)
 
+      validate(fn changeset, _context ->
+        task = changeset.data
+        to = Ash.Changeset.get_argument(changeset, :to_state)
+        reason = Ash.Changeset.get_argument(changeset, :reason)
+
+        cond do
+          to == :waiting and (not is_binary(reason) or String.trim(reason) == "") ->
+            {:error, field: :reason, message: "is required when waiting"}
+
+          to == :completed ->
+            completion_requirements(task)
+
+          true ->
+            :ok
+        end
+      end)
+
       change(fn changeset, _context ->
-        Ash.Changeset.change_attribute(
-          changeset,
-          :state,
-          Ash.Changeset.get_argument(changeset, :to_state)
-        )
+        to = Ash.Changeset.get_argument(changeset, :to_state)
+        reason = Ash.Changeset.get_argument(changeset, :reason)
+
+        changeset
+        |> Ash.Changeset.change_attribute(:state, to)
+        |> maybe_store_reason(to, reason)
       end)
 
       change(optimistic_lock(:lock_version))
@@ -114,4 +133,43 @@ defmodule Orchestrator.Workflows.Task do
     validate(string_length(:task_id, min: 1, max: 128))
     validate(string_length(:definition_of_done, min: 1, max: 2_000))
   end
+
+  defp completion_requirements(task) do
+    with :ok <- diagnosis_evidence(task),
+         {:ok, todos} <-
+           Ash.read(Ash.Query.filter_input(Orchestrator.Workflows.Todo, task_id: task.id)) do
+      if Enum.all?(todos, & &1.completed) do
+        :ok
+      else
+        {:error, field: :state, message: "all TODOs must be completed"}
+      end
+    end
+  end
+
+  defp diagnosis_evidence(%{task_type: :diagnosis, input: input}) do
+    kinds =
+      input
+      |> Map.get("references", [])
+      |> Enum.map(&Map.get(&1, "kind"))
+      |> MapSet.new()
+
+    missing = MapSet.difference(MapSet.new(["finding", "regression", "sop"]), kinds)
+
+    if MapSet.size(missing) == 0 do
+      :ok
+    else
+      {:error,
+       field: :state, message: "diagnosis requires finding, regression, and sop references"}
+    end
+  end
+
+  defp diagnosis_evidence(_task), do: :ok
+
+  defp maybe_store_reason(changeset, target, reason)
+       when target in [:waiting, :cancelled] and is_binary(reason) do
+    key = if(target == :waiting, do: "wait_reason", else: "cancel_reason")
+    Ash.Changeset.change_attribute(changeset, :input, Map.put(changeset.data.input, key, reason))
+  end
+
+  defp maybe_store_reason(changeset, _target, _reason), do: changeset
 end

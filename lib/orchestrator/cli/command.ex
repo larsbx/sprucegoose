@@ -6,6 +6,9 @@ defmodule Orchestrator.CLI.Command do
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
   def parse(["task", "list"]), do: {:ok, {:list_tasks, nil}}
   def parse(["task", "list", "--state", state]), do: {:ok, {:list_tasks, state}}
+  def parse(["task", "propose", id]), do: {:ok, {:transition_task, id, :proposed, nil}}
+  def parse(["task", "queue", id]), do: {:ok, {:transition_task, id, :queued, nil}}
+  def parse(["task", "ready", id]), do: {:ok, {:transition_task, id, :ready, nil}}
   def parse(["task", "start", id]), do: {:ok, {:transition_task, id, :in_progress, nil}}
   def parse(["task", "done", id]), do: {:ok, {:transition_task, id, :completed, nil}}
   def parse(["task", "cancel", id]), do: {:ok, {:transition_task, id, :cancelled, nil}}

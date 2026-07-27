@@ -5,7 +5,6 @@ defmodule Orchestrator.CLI.Executor do
 
   alias Orchestrator.Workflows.{
     InboxItem,
-    Lifecycle,
     Project,
     Roadmap,
     Task,
@@ -42,8 +41,7 @@ defmodule Orchestrator.CLI.Executor do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          :ok <- require_transition_preconditions(task, target),
-         {:ok, task} <- transition(task, target),
-         {:ok, task} <- record_reason(task, target, reason) do
+         {:ok, task} <- transition(task, target, reason) do
       {:ok, task_json(task)}
     end
   end
@@ -138,15 +136,7 @@ defmodule Orchestrator.CLI.Executor do
     end
   end
 
-  defp require_transition_preconditions(%{state: :in_progress}, target)
-       when target in [:waiting, :completed], do: :ok
-
-  defp require_transition_preconditions(%{state: :waiting}, :completed), do: :ok
-
-  defp require_transition_preconditions(_task, target) when target in [:waiting, :completed],
-    do: {:error, "task must be in progress"}
-
-  defp require_transition_preconditions(task, :in_progress) do
+  defp require_transition_preconditions(%{state: :ready} = task, :in_progress) do
     with {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]) do
       if Enum.all?(task.predecessor_edges, &(&1.predecessor.state == :completed)) do
         :ok
@@ -156,50 +146,15 @@ defmodule Orchestrator.CLI.Executor do
     end
   end
 
+  defp require_transition_preconditions(_task, :in_progress),
+    do: {:error, "task must be ready"}
+
   defp require_transition_preconditions(_task, _target), do: :ok
 
-  defp transition(task, target) when task.state == target, do: {:ok, task}
-
-  defp transition(task, target) do
-    with {:ok, path} <- transition_path(task.state, target),
-         {:ok, task} <-
-           Enum.reduce_while(path, {:ok, task}, fn state, {:ok, current} ->
-             case current
-                  |> Ash.Changeset.for_update(:transition, %{to_state: state})
-                  |> Ash.update() do
-               {:ok, updated} -> {:cont, {:ok, updated}}
-               error -> {:halt, error}
-             end
-           end) do
-      {:ok, task}
-    end
-  end
-
-  defp transition_path(from, target), do: walk_transitions([{from, []}], MapSet.new(), target)
-
-  defp walk_transitions([], _seen, target),
-    do: {:error, "cannot transition to #{target}"}
-
-  defp walk_transitions([{state, path} | rest], seen, target) do
-    cond do
-      state == target ->
-        {:ok, path}
-
-      MapSet.member?(seen, state) ->
-        walk_transitions(rest, seen, target)
-
-      true ->
-        next = Enum.map(Lifecycle.allowed_from(state), &{&1, path ++ [&1]})
-        walk_transitions(rest ++ next, MapSet.put(seen, state), target)
-    end
-  end
-
-  defp record_reason(task, _target, nil), do: {:ok, task}
-
-  defp record_reason(task, target, reason) do
-    key = if(target == :waiting, do: "wait_reason", else: "cancel_reason")
-    input = Map.put(task.input, key, reason)
-    task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Ash.update()
+  defp transition(task, target, reason) do
+    task
+    |> Ash.Changeset.for_update(:transition, %{to_state: target, reason: reason})
+    |> Ash.update()
   end
 
   defp create_or_read_todo(task, todo_id, body) do
@@ -227,7 +182,18 @@ defmodule Orchestrator.CLI.Executor do
       definition_of_done: task.definition_of_done,
       state: task.state,
       workflow_id: task.workflow_id,
-      lock_version: task.lock_version
+      lock_version: task.lock_version,
+      references: Map.get(task.input, "references", []),
+      wait_reason: Map.get(task.input, "wait_reason"),
+      cancel_reason: Map.get(task.input, "cancel_reason"),
+      import_provenance:
+        if(Map.get(task.input, "legacy_source"),
+          do: %{
+            source: Map.get(task.input, "legacy_source"),
+            raw: Map.get(task.input, "legacy_raw"),
+            encoded_definition_of_done: Map.get(task.input, "legacy_encoded_dod")
+          }
+        )
     }
   end
 

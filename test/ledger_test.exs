@@ -36,4 +36,19 @@ defmodule Orchestrator.LedgerTest do
     assert task.encoded_definition_of_done == nil
     assert task.definition_of_done =~ "Grandfathered legacy task"
   end
+
+  test "rejects unknown ledger schema, type, and status values" do
+    base =
+      "2026-07-27 Example id:#{@id} schema:task-v2 type:task dod:Done status:queued " <>
+        "ref:project:pi ref:roadmap:buzz ref:workflow:import"
+
+    for {from, to, message} <- [
+          {"schema:task-v2", "schema:task-v3", "unknown task schema"},
+          {"type:task", "type:future", "unknown task type"},
+          {"status:queued", "status:future", "unknown task status"}
+        ] do
+      assert {:error, error} = Ledger.parse(String.replace(base, from, to))
+      assert error =~ message
+    end
+  end
 end
