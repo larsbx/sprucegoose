@@ -7,8 +7,7 @@ config :spruce_goose, SpruceGoose.Repo,
   username: "postgres",
   hostname: "localhost",
   port: 5432,
-  # Compatibility: preserve the authoritative cutover database in place.
-  database: "orchestrator_dev",
+  database: "spruce_goose_dev",
   pool_size: 5
 
 config :ash, disable_async?: true

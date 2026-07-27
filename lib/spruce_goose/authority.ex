@@ -4,7 +4,7 @@ defmodule SpruceGoose.Authority do
   alias SpruceGoose.Repo
 
   def mode do
-    case Ecto.Adapters.SQL.query!(Repo, "SELECT mode FROM orchestrator_authority WHERE id = TRUE").rows do
+    case Ecto.Adapters.SQL.query!(Repo, "SELECT mode FROM spruce_goose_authority WHERE id = TRUE").rows do
       [[mode]] -> {:ok, mode}
       _ -> {:error, "authority state is missing"}
     end

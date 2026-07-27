@@ -7,14 +7,14 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
 
   test "PC-01: completed authority cutover is immutable and import stays disabled" do
     Repo.query!(
-      "UPDATE orchestrator_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE"
+      "UPDATE spruce_goose_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE"
     )
 
     assert {:error, %Postgrex.Error{}} =
-             Repo.query("UPDATE orchestrator_authority SET mode = 'tuxedo' WHERE id = TRUE")
+             Repo.query("UPDATE spruce_goose_authority SET mode = 'tuxedo' WHERE id = TRUE")
 
     assert {:error, %Postgrex.Error{}} =
-             Repo.query("UPDATE orchestrator_authority SET cutover_at = NULL WHERE id = TRUE")
+             Repo.query("UPDATE spruce_goose_authority SET cutover_at = NULL WHERE id = TRUE")
 
     assert {:error, "ledger import is disabled while ash is authoritative"} =
              Ledger.import("/home/admin-papa/tasks/todo.txt")

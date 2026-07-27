@@ -1,7 +1,7 @@
 import Config
 
 config :spruce_goose, SpruceGoose.Repo,
-  database: System.get_env("SPRUCE_GOOSE_TEST_DATABASE", "orchestrator_test"),
+  database: System.get_env("SPRUCE_GOOSE_TEST_DATABASE", "spruce_goose_test"),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 5
 

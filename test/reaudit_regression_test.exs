@@ -31,7 +31,7 @@ defmodule SpruceGoose.ReauditRegressionTest do
              |> Ash.Changeset.for_update(:revise, %{title: "stale write"})
              |> Ash.update()
 
-    sql!("UPDATE orchestrator_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE")
+    sql!("UPDATE spruce_goose_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE")
     assert {:error, "ledger import is disabled while ash is authoritative"} = Ledger.import(path)
     assert {:ok, %{title: "Refreshed"}} = Executor.run({:show_task, @a})
   end
