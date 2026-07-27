@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.EnforceDependencyGraphIntegrity do
+defmodule SpruceGoose.Repo.Migrations.EnforceDependencyGraphIntegrity do
   use Ecto.Migration
 
   def up do

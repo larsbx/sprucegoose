@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.AddWorkflowDefinitions do
+defmodule SpruceGoose.Repo.Migrations.AddWorkflowDefinitions do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

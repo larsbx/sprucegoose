@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.SpikeInitExtensions1 do
+defmodule SpruceGoose.Repo.Migrations.SpikeInitExtensions1 do
   @moduledoc """
   Installs any extensions that are mentioned in the repo's `installed_extensions/0` callback
 

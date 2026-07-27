@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.AddInboxItems do
+defmodule SpruceGoose.Repo.Migrations.AddInboxItems do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

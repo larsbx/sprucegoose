@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.SpikeInit do
+defmodule SpruceGoose.Repo.Migrations.SpikeInit do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

@@ -1,9 +1,9 @@
-defmodule Orchestrator.ReauditRegressionTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.ReauditRegressionTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.CLI.Executor
-  alias Orchestrator.Ledger
-  alias Orchestrator.Workflows.{Dependency, Task}
+  alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.Ledger
+  alias SpruceGoose.Workflows.{Dependency, Task}
 
   @a "tsk-20260727T104500Z-11111111"
   @b "tsk-20260727T104501Z-22222222"
@@ -124,5 +124,5 @@ defmodule Orchestrator.ReauditRegressionTest do
     |> Ash.read_one()
   end
 
-  defp sql!(statement), do: Ecto.Adapters.SQL.query!(Orchestrator.Repo, statement, [])
+  defp sql!(statement), do: Ecto.Adapters.SQL.query!(SpruceGoose.Repo, statement, [])
 end

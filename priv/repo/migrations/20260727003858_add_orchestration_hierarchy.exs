@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.AddOrchestrationHierarchy do
+defmodule SpruceGoose.Repo.Migrations.AddOrchestrationHierarchy do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

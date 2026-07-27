@@ -1,4 +1,4 @@
-# Orchestrator
+# SpruceGoose
 
 This app is the proving ground for the authoritative Postgres/Ash orchestration
 DSL. Ash resources and actions model:
@@ -21,35 +21,35 @@ schema and admits work through Ash:
 
 ```sh
 mix escript.build
-./orchestrator id
-./orchestrator validate-id tsk-20260727T012351Z-ea5ba1b1
-./orchestrator task add \
+./sprucegoose id
+./sprucegoose validate-id tsk-20260727T012351Z-ea5ba1b1
+./sprucegoose task add \
   --project pi \
   --roadmap buzz-agent-collaboration-plane \
   --workflow buzz-integration \
   --dod "Focused checks pass" \
   "Implement the next slice"
-./orchestrator task list --state waiting
-./orchestrator task propose tsk-...
-./orchestrator task queue tsk-...
-./orchestrator task ready tsk-...
-./orchestrator task start tsk-...
-./orchestrator task wait tsk-... "operator review"
-./orchestrator task link tsk-... evidence /path/to/proof
-./orchestrator task done tsk-...
-./orchestrator task cancel tsk-... "superseded"
-./orchestrator todo add tsk-... "Attach evidence"
-./orchestrator todo list tsk-...
-./orchestrator todo done tsk-... todo-...
-./orchestrator inbox add "Unclassified operator note"
-./orchestrator inbox list
+./sprucegoose task list --state waiting
+./sprucegoose task propose tsk-...
+./sprucegoose task queue tsk-...
+./sprucegoose task ready tsk-...
+./sprucegoose task start tsk-...
+./sprucegoose task wait tsk-... "operator review"
+./sprucegoose task link tsk-... evidence /path/to/proof
+./sprucegoose task done tsk-...
+./sprucegoose task cancel tsk-... "superseded"
+./sprucegoose todo add tsk-... "Attach evidence"
+./sprucegoose todo list tsk-...
+./sprucegoose todo done tsk-... todo-...
+./sprucegoose inbox add "Unclassified operator note"
+./sprucegoose inbox list
 ```
 
 Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still
 required before creating a task.
 
-Orchestrator/Ash has been authoritative since
+SpruceGoose/Ash has been authoritative since
 `2026-07-27 12:00:27.831082 UTC`. The database cutover is irreversible:
 PostgreSQL rejects authority reversal and cutover-timestamp mutation. Tuxedo,
 `taskctl`, and the legacy ledger are retired, read-only recovery evidence.
@@ -63,7 +63,7 @@ dependency edges carrying Tuxedo provenance. Import never changes authority or
 writes to the source ledger:
 
 Historical parity evidence may be inspected against the protected ledger with
-`./orchestrator ledger parity /home/admin-papa/tasks/todo.txt`; never edit or
+`./sprucegoose ledger parity /home/admin-papa/tasks/todo.txt`; never edit or
 re-import that ledger after cutover.
 
 Parity covers stable IDs, project/roadmap/workflow membership, titles, task
@@ -81,15 +81,15 @@ includes those references, reasons, and ledger-import provenance.
 Kanban administration uses the same canonical CLI:
 
 ```sh
-./orchestrator board add PROJECT ROADMAP WORKFLOW KEY "Board name"
-./orchestrator board list PROJECT ROADMAP WORKFLOW
-./orchestrator column add BOARD_ID KEY POSITION STATE "Column name"
-./orchestrator column list BOARD_ID
-./orchestrator task move TASK_ID BOARD_ID COLUMN_ID RANK
-./orchestrator task metadata TASK_ID '{"priority":2,"labels":["audit"]}'
-./orchestrator filter add BOARD_ID NAME '{"assignee":"jimbo"}'
-./orchestrator filter list BOARD_ID
-./orchestrator filter apply FILTER_ID
+./sprucegoose board add PROJECT ROADMAP WORKFLOW KEY "Board name"
+./sprucegoose board list PROJECT ROADMAP WORKFLOW
+./sprucegoose column add BOARD_ID KEY POSITION STATE "Column name"
+./sprucegoose column list BOARD_ID
+./sprucegoose task move TASK_ID BOARD_ID COLUMN_ID RANK
+./sprucegoose task metadata TASK_ID '{"priority":2,"labels":["audit"]}'
+./sprucegoose filter add BOARD_ID NAME '{"assignee":"jimbo"}'
+./sprucegoose filter list BOARD_ID
+./sprucegoose filter apply FILTER_ID
 ```
 
 Moves are one governed Ash transaction: board, column, workflow, lifecycle

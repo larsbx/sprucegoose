@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.AddKanbanBoardMetadata do
+defmodule SpruceGoose.Repo.Migrations.AddKanbanBoardMetadata do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

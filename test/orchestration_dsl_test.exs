@@ -1,7 +1,7 @@
-defmodule Orchestrator.OrchestrationDslTest do
+defmodule SpruceGoose.OrchestrationDslTest do
   use ExUnit.Case, async: true
 
-  alias Orchestrator.Workflows
+  alias SpruceGoose.Workflows
 
   test "the Ash domain exposes the complete orchestration hierarchy" do
     assert MapSet.new(Ash.Domain.Info.resources(Workflows)) ==

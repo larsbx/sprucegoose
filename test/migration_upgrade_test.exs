@@ -1,21 +1,21 @@
-defmodule Orchestrator.MigrationUpgradeRepo do
+defmodule SpruceGoose.MigrationUpgradeRepo do
   use Ecto.Repo,
-    otp_app: :orchestrator,
+    otp_app: :spruce_goose,
     adapter: Ecto.Adapters.Postgres
 end
 
-defmodule Orchestrator.MigrationUpgradeTest do
+defmodule SpruceGoose.MigrationUpgradeTest do
   use ExUnit.Case, async: false
 
-  alias Orchestrator.MigrationUpgradeRepo, as: UpgradeRepo
+  alias SpruceGoose.MigrationUpgradeRepo, as: UpgradeRepo
 
   @migrations Path.expand("../priv/repo/migrations", __DIR__)
 
   test "hierarchy migration backfills a workflow created under the prior schema" do
-    database = "orchestrator_upgrade_#{System.unique_integer([:positive])}"
+    database = "sprucegoose_upgrade_#{System.unique_integer([:positive])}"
 
     config =
-      Orchestrator.Repo.config()
+      SpruceGoose.Repo.config()
       |> Keyword.drop([:name, :pool, :pool_size])
       |> Keyword.put(:database, database)
       |> Keyword.put(:pool_size, 2)

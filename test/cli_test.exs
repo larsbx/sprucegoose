@@ -1,8 +1,8 @@
-defmodule Orchestrator.CLITest do
+defmodule SpruceGoose.CLITest do
   use ExUnit.Case, async: true
 
-  alias Orchestrator.CLI.Command
-  alias Orchestrator.TaskId
+  alias SpruceGoose.CLI.Command
+  alias SpruceGoose.TaskId
 
   test "generates and validates the spec task ID schema" do
     now = ~U[2026-07-27 01:23:51Z]

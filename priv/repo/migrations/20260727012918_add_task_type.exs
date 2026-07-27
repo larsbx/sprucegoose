@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.AddTaskType do
+defmodule SpruceGoose.Repo.Migrations.AddTaskType do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

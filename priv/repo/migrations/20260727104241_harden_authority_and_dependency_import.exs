@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.HardenAuthorityAndDependencyImport do
+defmodule SpruceGoose.Repo.Migrations.HardenAuthorityAndDependencyImport do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

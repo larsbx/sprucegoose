@@ -1,7 +1,7 @@
 _build/
 deps/
 *.ez
-/orchestrator
+/sprucegoose
 .elixir_ls/
 graphify-out/
 backups/

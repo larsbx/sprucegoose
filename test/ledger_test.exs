@@ -1,13 +1,13 @@
-defmodule Orchestrator.LedgerTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.LedgerTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.Ledger
+  alias SpruceGoose.Ledger
 
   @id "tsk-20260727T041500Z-1234abcd"
 
   test "imports a typed Tuxedo ledger idempotently and proves exact parity" do
     path =
-      Path.join(System.tmp_dir!(), "orchestrator-ledger-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "sprucegoose-ledger-#{System.unique_integer([:positive])}")
 
     line =
       "(A) 2026-07-27 Import the ledger id:#{@id} schema:task-v2 type:task " <>

@@ -1,9 +1,9 @@
-defmodule Orchestrator.PostCutoverHardeningTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.PostCutoverHardeningTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.CLI.Executor
-  alias Orchestrator.Ledger
-  alias Orchestrator.Workflows.{Board, BoardColumn, Definition, Project, Roadmap, Task, Workflow}
+  alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.Ledger
+  alias SpruceGoose.Workflows.{Board, BoardColumn, Definition, Project, Roadmap, Task, Workflow}
 
   test "PC-01: completed authority cutover is immutable and import stays disabled" do
     Repo.query!(

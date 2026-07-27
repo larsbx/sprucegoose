@@ -1,8 +1,8 @@
-defmodule Orchestrator.CLIDatabaseTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.CLIDatabaseTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.CLI.Executor
-  alias Orchestrator.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
+  alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
   test "CLI task admission writes to PostgreSQL and show reads it back" do
     {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
@@ -11,8 +11,8 @@ defmodule Orchestrator.CLIDatabaseTest do
     {:ok, roadmap} =
       Ash.create(Roadmap, %{
         project_id: project.id,
-        key: "orchestrator",
-        name: "Orchestrator"
+        key: "sprucegoose",
+        name: "SpruceGoose"
       })
 
     {:ok, _workflow} =
@@ -28,7 +28,7 @@ defmodule Orchestrator.CLIDatabaseTest do
                :add_task,
                %{
                  project: "pi",
-                 roadmap: "orchestrator",
+                 roadmap: "sprucegoose",
                  workflow: "audit-fixes",
                  task_type: :task,
                  title: "Persist through CLI",

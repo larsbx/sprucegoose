@@ -1,8 +1,8 @@
-defmodule Orchestrator.WorkflowDefinitionTest do
+defmodule SpruceGoose.WorkflowDefinitionTest do
   use ExUnit.Case, async: true
 
-  alias Orchestrator.Workflows.Dag
-  alias Orchestrator.Workflows.Definition
+  alias SpruceGoose.Workflows.Dag
+  alias SpruceGoose.Workflows.Definition
 
   test "parses a versioned definition and produces a stable native execution order" do
     assert {:ok, definition} =

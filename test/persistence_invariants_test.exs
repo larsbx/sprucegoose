@@ -1,7 +1,7 @@
-defmodule Orchestrator.PersistenceInvariantsTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.PersistenceInvariantsTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
+  alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
   test "task revisions and transitions reject stale records" do
     {_workflow, task} = hierarchy()

@@ -1,12 +1,13 @@
 import Config
 
-config :orchestrator, ash_domains: [Orchestrator.Notes, Orchestrator.Workflows]
-config :orchestrator, ecto_repos: [Orchestrator.Repo]
+config :spruce_goose, ash_domains: [SpruceGoose.Notes, SpruceGoose.Workflows]
+config :spruce_goose, ecto_repos: [SpruceGoose.Repo]
 
-config :orchestrator, Orchestrator.Repo,
+config :spruce_goose, SpruceGoose.Repo,
   username: "postgres",
   hostname: "localhost",
   port: 5432,
+  # Compatibility: preserve the authoritative cutover database in place.
   database: "orchestrator_dev",
   pool_size: 5
 

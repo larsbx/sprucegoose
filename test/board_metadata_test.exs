@@ -1,7 +1,7 @@
-defmodule Orchestrator.BoardMetadataTest do
-  use Orchestrator.DataCase, async: false
+defmodule SpruceGoose.BoardMetadataTest do
+  use SpruceGoose.DataCase, async: false
 
-  alias Orchestrator.Workflows.{
+  alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
     Definition,
@@ -118,7 +118,7 @@ defmodule Orchestrator.BoardMetadataTest do
   end
 
   test "the unified task model has no parallel issue resource or table" do
-    refute Code.ensure_loaded?(Orchestrator.Workflows.Issue)
+    refute Code.ensure_loaded?(SpruceGoose.Workflows.Issue)
 
     assert %{rows: [[nil]]} =
              Repo.query!("SELECT to_regclass('public.issues')")

@@ -1,4 +1,4 @@
-defmodule Orchestrator.Repo.Migrations.HardenPostCutoverInvariants do
+defmodule SpruceGoose.Repo.Migrations.HardenPostCutoverInvariants do
   @moduledoc """
   Updates resources based on their most recent snapshots.
 

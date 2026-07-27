@@ -1,13 +1,13 @@
-defmodule Orchestrator.MixProject do
+defmodule SpruceGoose.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :orchestrator,
+      app: :spruce_goose,
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
-      escript: [main_module: Orchestrator.CLI],
+      escript: [main_module: SpruceGoose.CLI, name: "sprucegoose"],
       deps: deps()
     ]
   end
@@ -15,7 +15,7 @@ defmodule Orchestrator.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Orchestrator.Application, []}
+      mod: {SpruceGoose.Application, []}
     ]
   end
 
