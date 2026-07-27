@@ -42,6 +42,21 @@ defmodule Orchestrator.CLITest do
     assert task.task_type == :diagnosis
     assert task.title == "Diagnose the boundary"
 
+    assert {:ok, {:add_task, %{task_type: :task}}} =
+             Command.parse([
+               "task",
+               "add",
+               "--project",
+               "pi",
+               "--roadmap",
+               "buzz-agent-collaboration-plane",
+               "--workflow",
+               "buzz-integration",
+               "--dod",
+               "focused checks pass",
+               "Default task"
+             ])
+
     for missing <- ["project", "roadmap", "workflow", "dod"] do
       args =
         [

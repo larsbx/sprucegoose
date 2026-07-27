@@ -66,7 +66,7 @@ defmodule Orchestrator.CLI.Command do
           roadmap: roadmap,
           workflow: workflow,
           definition_of_done: dod,
-          task_type: String.to_existing_atom(task_type),
+          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
           title: title
         }}}
     else
