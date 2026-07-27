@@ -31,12 +31,30 @@ defmodule Orchestrator.Workflows.Task do
     attribute(:input, :map, allow_nil?: false, default: %{}, public?: true)
     attribute(:origin_event_id, :string, public?: true)
     attribute(:lock_version, :integer, allow_nil?: false, default: 1, public?: true)
+    attribute(:description, :string, public?: true)
+    attribute(:rank, :string, public?: true)
+    attribute(:priority, :integer, public?: true)
+    attribute(:due_at, :utc_datetime_usec, public?: true)
+    attribute(:assignees, {:array, :string}, allow_nil?: false, default: [], public?: true)
+    attribute(:labels, {:array, :string}, allow_nil?: false, default: [], public?: true)
+    attribute(:custom_fields, :map, allow_nil?: false, default: %{}, public?: true)
+    attribute(:board_revision, :integer, allow_nil?: false, default: 1, public?: true)
     timestamps()
   end
 
   relationships do
     belongs_to :workflow, Orchestrator.Workflows.Workflow do
       allow_nil?(false)
+      attribute_writable?(true)
+      public?(true)
+    end
+
+    belongs_to :board, Orchestrator.Workflows.Board do
+      attribute_writable?(true)
+      public?(true)
+    end
+
+    belongs_to :column, Orchestrator.Workflows.BoardColumn do
       attribute_writable?(true)
       public?(true)
     end
@@ -73,13 +91,40 @@ defmodule Orchestrator.Workflows.Task do
         :definition_of_done,
         :runner,
         :input,
-        :origin_event_id
+        :origin_event_id,
+        :description,
+        :board_id,
+        :column_id,
+        :rank,
+        :priority,
+        :due_at,
+        :assignees,
+        :labels,
+        :custom_fields
       ])
     end
 
     update :revise do
-      accept([:title, :definition_of_done, :runner, :input])
+      require_atomic?(false)
+      accept([:title, :description, :definition_of_done, :runner, :input])
       change(optimistic_lock(:lock_version))
+    end
+
+    update :update_board_metadata do
+      require_atomic?(false)
+
+      accept([
+        :board_id,
+        :column_id,
+        :rank,
+        :priority,
+        :due_at,
+        :assignees,
+        :labels,
+        :custom_fields
+      ])
+
+      change(optimistic_lock(:board_revision))
     end
 
     update :transition do
@@ -132,7 +177,30 @@ defmodule Orchestrator.Workflows.Task do
   validations do
     validate(string_length(:task_id, min: 1, max: 128))
     validate(string_length(:definition_of_done, min: 1, max: 2_000))
+
+    validate(fn changeset, _context ->
+      changeset
+      |> Ash.Changeset.get_attribute(:custom_fields)
+      |> valid_custom_fields()
+    end)
   end
+
+  defp valid_custom_fields(fields) when fields in [nil, %{}], do: :ok
+
+  defp valid_custom_fields(fields) when is_map(fields) do
+    if Enum.all?(fields, fn
+         {_name, %{"type" => "string", "value" => value}} -> is_binary(value)
+         {_name, %{"type" => "number", "value" => value}} -> is_number(value)
+         {_name, %{"type" => "boolean", "value" => value}} -> is_boolean(value)
+         {_name, %{"type" => "date", "value" => value}} -> is_binary(value)
+         _ -> false
+       end),
+       do: :ok,
+       else: {:error, field: :custom_fields, message: "contains an invalid typed value"}
+  end
+
+  defp valid_custom_fields(_fields),
+    do: {:error, field: :custom_fields, message: "must be a map"}
 
   defp completion_requirements(task) do
     with :ok <- diagnosis_evidence(task),
