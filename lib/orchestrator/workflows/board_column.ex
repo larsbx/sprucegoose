@@ -32,6 +32,7 @@ defmodule Orchestrator.Workflows.BoardColumn do
   identities do
     identity(:unique_column_key_per_board, [:board_id, :key])
     identity(:unique_column_position_per_board, [:board_id, :position])
+    identity(:unique_column_state_per_board, [:board_id, :task_state])
   end
 
   actions do

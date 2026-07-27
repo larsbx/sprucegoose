@@ -49,9 +49,12 @@ Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still
 required before creating a task.
 
-Tuxedo remains the authority during migration. Ledger import is accepted only
-while the durable database authority flag is `tuxedo`; it fails closed once
-that flag is changed to `ash`.
+Orchestrator/Ash has been authoritative since
+`2026-07-27 12:00:27.831082 UTC`. The database cutover is irreversible:
+PostgreSQL rejects authority reversal and cutover-timestamp mutation. Tuxedo,
+`taskctl`, and the legacy ledger are retired, read-only recovery evidence.
+Ledger import remains compiled only for pre-cutover recovery rehearsal and is
+rejected while Ash is authoritative; it is not an operator workflow.
 
 The repository pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 in
 `.tool-versions`. Import is transactional and idempotent. Refreshes preserve
@@ -59,10 +62,9 @@ Ash-native metadata, advance optimistic-lock versions, and reconcile only
 dependency edges carrying Tuxedo provenance. Import never changes authority or
 writes to the source ledger:
 
-```sh
-./orchestrator ledger import /home/admin-papa/tasks/todo.txt
-./orchestrator ledger parity /home/admin-papa/tasks/todo.txt
-```
+Historical parity evidence may be inspected against the protected ledger with
+`./orchestrator ledger parity /home/admin-papa/tasks/todo.txt`; never edit or
+re-import that ledger after cutover.
 
 Parity covers stable IDs, project/roadmap/workflow membership, titles, task
 types, states, recorded DoDs, raw source records, and dependency edges.
@@ -75,6 +77,24 @@ accepts only a ready task, and wait/cancel reasons are committed atomically
 with their state change. Diagnosis completion requires finding, regression,
 and SOP references plus completion of every subordinate TODO. Task JSON
 includes those references, reasons, and ledger-import provenance.
+
+Kanban administration uses the same canonical CLI:
+
+```sh
+./orchestrator board add PROJECT ROADMAP WORKFLOW KEY "Board name"
+./orchestrator board list PROJECT ROADMAP WORKFLOW
+./orchestrator column add BOARD_ID KEY POSITION STATE "Column name"
+./orchestrator column list BOARD_ID
+./orchestrator task move TASK_ID BOARD_ID COLUMN_ID RANK
+./orchestrator task metadata TASK_ID '{"priority":2,"labels":["audit"]}'
+./orchestrator filter add BOARD_ID NAME '{"assignee":"jimbo"}'
+./orchestrator filter list BOARD_ID
+./orchestrator filter apply FILTER_ID
+```
+
+Moves are one governed Ash transaction: board, column, workflow, lifecycle
+state, rank, and optimistic revisions must agree. TODO admission is serialized
+with completion and is rejected after completion or cancellation.
 
 Run the focused contract:
 

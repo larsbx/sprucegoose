@@ -127,6 +127,32 @@ defmodule Orchestrator.Workflows.Task do
       change(optimistic_lock(:board_revision))
     end
 
+    update :move do
+      require_atomic?(false)
+      accept([:board_id, :column_id, :rank])
+      argument(:to_state, Orchestrator.Workflows.TaskState, allow_nil?: false)
+
+      validate(fn changeset, _context ->
+        from = changeset.data.state
+        to = Ash.Changeset.get_argument(changeset, :to_state)
+
+        if from == to or Orchestrator.Workflows.Lifecycle.allowed?(from, to),
+          do: :ok,
+          else: {:error, field: :state, message: "cannot transition from #{from} to #{to}"}
+      end)
+
+      change(fn changeset, _context ->
+        Ash.Changeset.change_attribute(
+          changeset,
+          :state,
+          Ash.Changeset.get_argument(changeset, :to_state)
+        )
+      end)
+
+      change(optimistic_lock(:lock_version))
+      change(optimistic_lock(:board_revision))
+    end
+
     update :transition do
       accept([])
       require_atomic?(false)
@@ -150,8 +176,9 @@ defmodule Orchestrator.Workflows.Task do
         reason = Ash.Changeset.get_argument(changeset, :reason)
 
         cond do
-          to == :waiting and (not is_binary(reason) or String.trim(reason) == "") ->
-            {:error, field: :reason, message: "is required when waiting"}
+          to in [:waiting, :cancelled] and
+              (not is_binary(reason) or String.trim(reason) == "") ->
+            {:error, field: :reason, message: "is required when waiting or cancelling"}
 
           to == :completed ->
             completion_requirements(task)
@@ -167,6 +194,7 @@ defmodule Orchestrator.Workflows.Task do
 
         changeset
         |> Ash.Changeset.change_attribute(:state, to)
+        |> align_board_column(to)
         |> maybe_store_reason(to, reason)
       end)
 
@@ -183,6 +211,8 @@ defmodule Orchestrator.Workflows.Task do
       |> Ash.Changeset.get_attribute(:custom_fields)
       |> valid_custom_fields()
     end)
+
+    validate(fn changeset, _context -> valid_board_metadata(changeset) end)
   end
 
   defp valid_custom_fields(fields) when fields in [nil, %{}], do: :ok
@@ -192,7 +222,7 @@ defmodule Orchestrator.Workflows.Task do
          {_name, %{"type" => "string", "value" => value}} -> is_binary(value)
          {_name, %{"type" => "number", "value" => value}} -> is_number(value)
          {_name, %{"type" => "boolean", "value" => value}} -> is_boolean(value)
-         {_name, %{"type" => "date", "value" => value}} -> is_binary(value)
+         {_name, %{"type" => "date", "value" => value}} -> valid_date?(value)
          _ -> false
        end),
        do: :ok,
@@ -201,6 +231,95 @@ defmodule Orchestrator.Workflows.Task do
 
   defp valid_custom_fields(_fields),
     do: {:error, field: :custom_fields, message: "must be a map"}
+
+  defp valid_date?(value) when is_binary(value), do: match?({:ok, _}, Date.from_iso8601(value))
+  defp valid_date?(_value), do: false
+
+  defp valid_board_metadata(changeset) do
+    board_id = Ash.Changeset.get_attribute(changeset, :board_id)
+    column_id = Ash.Changeset.get_attribute(changeset, :column_id)
+
+    workflow_id =
+      Ash.Changeset.get_attribute(changeset, :workflow_id) || changeset.data.workflow_id
+
+    state = Ash.Changeset.get_attribute(changeset, :state) || changeset.data.state
+    rank = Ash.Changeset.get_attribute(changeset, :rank)
+    priority = Ash.Changeset.get_attribute(changeset, :priority)
+    assignees = Ash.Changeset.get_attribute(changeset, :assignees) || []
+    labels = Ash.Changeset.get_attribute(changeset, :labels) || []
+    fields = Ash.Changeset.get_attribute(changeset, :custom_fields) || %{}
+
+    cond do
+      priority != nil and priority not in 0..5 ->
+        {:error, field: :priority, message: "must be between 0 and 5"}
+
+      rank != nil and (String.trim(rank) == "" or byte_size(rank) > 128) ->
+        {:error, field: :rank, message: "must be nonblank and at most 128 bytes"}
+
+      length(assignees) > 50 or not Enum.all?(assignees, &bounded_name?/1) ->
+        {:error, field: :assignees, message: "must contain at most 50 bounded names"}
+
+      length(labels) > 50 or not Enum.all?(labels, &bounded_name?/1) ->
+        {:error, field: :labels, message: "must contain at most 50 bounded names"}
+
+      map_size(fields) > 50 or not Enum.all?(Map.keys(fields), &bounded_name?/1) ->
+        {:error, field: :custom_fields, message: "must contain at most 50 bounded names"}
+
+      is_nil(board_id) and is_nil(column_id) ->
+        :ok
+
+      is_nil(board_id) or is_nil(column_id) ->
+        {:error, field: :column_id, message: "board and column must be set together"}
+
+      true ->
+        validate_board_scope(board_id, column_id, workflow_id, state)
+    end
+  end
+
+  defp validate_board_scope(board_id, column_id, workflow_id, state) do
+    sql = """
+    SELECT 1
+    FROM board_columns AS bc
+    JOIN boards AS board ON board.id = bc.board_id
+    WHERE bc.id = $1::text::uuid
+      AND board.id = $2::text::uuid
+      AND board.workflow_id = $3::text::uuid
+      AND bc.task_state = $4
+    """
+
+    case Ecto.Adapters.SQL.query!(Orchestrator.Repo, sql, [
+           column_id,
+           board_id,
+           workflow_id,
+           to_string(state)
+         ]).rows do
+      [[1]] -> :ok
+      _ -> {:error, field: :column_id, message: "does not match task workflow and state"}
+    end
+  end
+
+  defp bounded_name?(value),
+    do: is_binary(value) and String.trim(value) != "" and byte_size(value) <= 128
+
+  defp align_board_column(changeset, _state) when is_nil(changeset.data.board_id), do: changeset
+
+  defp align_board_column(changeset, state) do
+    sql = "SELECT id FROM board_columns WHERE board_id = $1::text::uuid AND task_state = $2"
+
+    case Ecto.Adapters.SQL.query!(Orchestrator.Repo, sql, [
+           changeset.data.board_id,
+           to_string(state)
+         ]).rows do
+      [[column_id]] ->
+        Ash.Changeset.change_attribute(changeset, :column_id, Ecto.UUID.load!(column_id))
+
+      _ ->
+        Ash.Changeset.add_error(changeset,
+          field: :column_id,
+          message: "has no column for target state"
+        )
+    end
+  end
 
   defp completion_requirements(task) do
     with :ok <- diagnosis_evidence(task),

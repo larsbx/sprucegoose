@@ -20,7 +20,7 @@ defmodule Orchestrator.CLI do
 
   defp inspect_error(:usage),
     do:
-      "usage: orchestrator id|validate-id ID|task add OPTIONS TITLE|task show ID|task list [--state STATE]|task propose|queue|ready|start|wait|link|done|cancel ID [ARGS]|todo add|list|done TASK_ID [ARGS]|inbox add TEXT|inbox list|ledger import|parity PATH"
+      "usage: orchestrator id|validate-id ID|task add OPTIONS TITLE|task show ID|task list [--state STATE]|task propose|queue|ready|start|wait|link|done ID|task cancel ID REASON|task move ID BOARD COLUMN RANK|task metadata ID JSON|todo add|list|done TASK_ID [ARGS]|board add|list [ARGS]|column add|list [ARGS]|filter add|list|apply [ARGS]|inbox add TEXT|inbox list|ledger import|parity PATH"
 
   defp inspect_error(error) when is_binary(error), do: error
   defp inspect_error(error), do: Exception.message(error)

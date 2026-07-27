@@ -4,6 +4,7 @@ defmodule Orchestrator.Workflows.SavedFilter do
     data_layer: AshPostgres.DataLayer
 
   @allowed_keys MapSet.new(["assignee", "column", "label", "priority", "state", "text"])
+  @states ~w(inbox proposed queued ready in_progress waiting blocked completed failed cancelled)
 
   postgres do
     table("saved_filters")
@@ -44,8 +45,41 @@ defmodule Orchestrator.Workflows.SavedFilter do
       unknown = Map.keys(criteria) |> MapSet.new() |> MapSet.difference(@allowed_keys)
 
       if MapSet.size(unknown) == 0,
-        do: :ok,
+        do: valid_criteria(criteria),
         else: {:error, field: :criteria, message: "contains unsupported filter keys"}
     end)
   end
+
+  defp valid_criteria(criteria) do
+    valid =
+      Enum.all?(criteria, fn
+        {"assignee", value} ->
+          bounded_text?(value)
+
+        {"column", value} ->
+          bounded_text?(value)
+
+        {"label", value} ->
+          bounded_text?(value)
+
+        {"text", value} ->
+          bounded_text?(value)
+
+        {"priority", value} ->
+          is_integer(value) and value in 0..5
+
+        {"state", value} when is_binary(value) ->
+          value in @states
+
+        {"state", values} when is_list(values) ->
+          values != [] and Enum.all?(values, &(&1 in @states))
+      end)
+
+    if valid,
+      do: :ok,
+      else: {:error, field: :criteria, message: "contains invalid filter values"}
+  end
+
+  defp bounded_text?(value),
+    do: is_binary(value) and String.trim(value) != "" and byte_size(value) <= 256
 end

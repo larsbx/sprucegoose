@@ -11,9 +11,8 @@ defmodule Orchestrator.CLI.Command do
   def parse(["task", "ready", id]), do: {:ok, {:transition_task, id, :ready, nil}}
   def parse(["task", "start", id]), do: {:ok, {:transition_task, id, :in_progress, nil}}
   def parse(["task", "done", id]), do: {:ok, {:transition_task, id, :completed, nil}}
-  def parse(["task", "cancel", id]), do: {:ok, {:transition_task, id, :cancelled, nil}}
 
-  def parse(["task", "cancel", id | reason]),
+  def parse(["task", "cancel", id | reason]) when reason != [],
     do: {:ok, {:transition_task, id, :cancelled, Enum.join(reason, " ")}}
 
   def parse(["task", "wait", id | reason]) when reason != [],
@@ -34,6 +33,29 @@ defmodule Orchestrator.CLI.Command do
 
   def parse(["todo", "done", task_id, todo_id]),
     do: {:ok, {:complete_todo, task_id, todo_id}}
+
+  def parse(["board", "add", project, roadmap, workflow, key | name]) when name != [],
+    do: {:ok, {:add_board, project, roadmap, workflow, key, Enum.join(name, " ")}}
+
+  def parse(["board", "list", project, roadmap, workflow]),
+    do: {:ok, {:list_boards, project, roadmap, workflow}}
+
+  def parse(["column", "add", board_id, key, position, state | name]) when name != [],
+    do: {:ok, {:add_column, board_id, key, position, state, Enum.join(name, " ")}}
+
+  def parse(["column", "list", board_id]), do: {:ok, {:list_columns, board_id}}
+
+  def parse(["task", "move", task_id, board_id, column_id, rank]),
+    do: {:ok, {:move_task, task_id, board_id, column_id, rank}}
+
+  def parse(["task", "metadata", task_id, json]),
+    do: {:ok, {:update_task_metadata, task_id, json}}
+
+  def parse(["filter", "add", board_id, name, json]),
+    do: {:ok, {:add_filter, board_id, name, json}}
+
+  def parse(["filter", "list", board_id]), do: {:ok, {:list_filters, board_id}}
+  def parse(["filter", "apply", filter_id]), do: {:ok, {:apply_filter, filter_id}}
 
   def parse(["ledger", "import", path]), do: {:ok, {:import_ledger, path}}
   def parse(["ledger", "parity", path]), do: {:ok, {:parity_ledger, path}}

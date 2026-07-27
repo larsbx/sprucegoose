@@ -152,10 +152,10 @@ defmodule Orchestrator.BoardMetadataTest do
     {:ok, column} =
       Ash.create(BoardColumn, %{
         board_id: board.id,
-        key: "ready",
-        name: "Ready",
+        key: "inbox",
+        name: "Inbox",
         position: 1,
-        task_state: :ready
+        task_state: :inbox
       })
 
     {:ok, task} =

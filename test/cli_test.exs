@@ -122,6 +122,31 @@ defmodule Orchestrator.CLITest do
 
     assert {:ok, {:transition_task, ^id, :cancelled, "superseded"}} =
              Command.parse(["task", "cancel", id, "superseded"])
+
+    assert {:error, :usage} = Command.parse(["task", "cancel", id])
+  end
+
+  test "parses governed Kanban commands" do
+    assert {:ok, {:add_board, "pi", "buzz", "integration", "main", "Main board"}} =
+             Command.parse(["board", "add", "pi", "buzz", "integration", "main", "Main", "board"])
+
+    assert {:ok, {:list_boards, "pi", "buzz", "integration"}} =
+             Command.parse(["board", "list", "pi", "buzz", "integration"])
+
+    assert {:ok, {:add_column, "board-id", "ready", "1", "ready", "Ready work"}} =
+             Command.parse(["column", "add", "board-id", "ready", "1", "ready", "Ready", "work"])
+
+    assert {:ok, {:move_task, "task-id", "board-id", "column-id", "a0"}} =
+             Command.parse(["task", "move", "task-id", "board-id", "column-id", "a0"])
+
+    assert {:ok, {:update_task_metadata, "task-id", ~s({"priority":2})}} =
+             Command.parse(["task", "metadata", "task-id", ~s({"priority":2})])
+
+    assert {:ok, {:add_filter, "board-id", "mine", ~s({"assignee":"jimbo"})}} =
+             Command.parse(["filter", "add", "board-id", "mine", ~s({"assignee":"jimbo"})])
+
+    assert {:ok, {:apply_filter, "filter-id"}} =
+             Command.parse(["filter", "apply", "filter-id"])
   end
 
   test "parses fail-closed inbox capture" do
