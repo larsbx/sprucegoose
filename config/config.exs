@@ -12,4 +12,10 @@ config :spruce_goose, SpruceGoose.Repo,
 
 config :ash, disable_async?: true
 
+config :spruce_goose, Oban,
+  repo: SpruceGoose.Repo,
+  queues: [outbox: 1]
+
+config :spruce_goose, :start_outbox_dispatcher, true
+
 import_config "#{config_env()}.exs"

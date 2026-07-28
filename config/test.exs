@@ -6,3 +6,6 @@ config :spruce_goose, SpruceGoose.Repo,
   pool_size: 5
 
 config :logger, level: :warning
+
+config :spruce_goose, Oban, testing: :manual
+config :spruce_goose, :start_outbox_dispatcher, false
