@@ -46,6 +46,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["task", "link", id, kind, value]),
     do: {:ok, {:link_task, id, kind, value}}
 
+  def parse(["task", "acknowledge-sop", id, sop_path]),
+    do: {:ok, {:acknowledge_sop, id, sop_path}}
+
   def parse(["inbox", "list"]), do: {:ok, :list_inbox}
 
   def parse(["inbox", "add" | body]) when body != [],
@@ -93,6 +96,7 @@ defmodule SpruceGoose.CLI.Command do
           roadmap: :string,
           workflow: :string,
           dod: :string,
+          sop: :string,
           type: :string
         ]
       )
@@ -104,6 +108,7 @@ defmodule SpruceGoose.CLI.Command do
          {:ok, roadmap} <- required(opts, :roadmap),
          {:ok, workflow} <- required(opts, :workflow),
          {:ok, dod} <- required(opts, :dod),
+         {:ok, sop_path} <- required(opts, :sop),
          true <- task_type in ["task", "diagnosis"],
          title when title != "" <- Enum.join(title, " ") do
       {:ok,
@@ -113,6 +118,7 @@ defmodule SpruceGoose.CLI.Command do
           roadmap: roadmap,
           workflow: workflow,
           definition_of_done: dod,
+          sop_path: sop_path,
           task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
           title: title
         }}}

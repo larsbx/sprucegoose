@@ -2,6 +2,7 @@ defmodule SpruceGoose.CLITest do
   use ExUnit.Case, async: true
 
   alias SpruceGoose.CLI.Command
+  alias SpruceGoose.SopGate
   alias SpruceGoose.TaskId
 
   test "generates and validates the spec task ID schema" do
@@ -28,6 +29,8 @@ defmodule SpruceGoose.CLITest do
                "buzz-integration",
                "--dod",
                "focused checks pass",
+               "--sop",
+               SopGate.path(),
                "--type",
                "diagnosis",
                "Diagnose",
@@ -39,6 +42,7 @@ defmodule SpruceGoose.CLITest do
     assert task.roadmap == "buzz-agent-collaboration-plane"
     assert task.workflow == "buzz-integration"
     assert task.definition_of_done == "focused checks pass"
+    assert task.sop_path == SopGate.path()
     assert task.task_type == :diagnosis
     assert task.title == "Diagnose the boundary"
 
@@ -54,10 +58,12 @@ defmodule SpruceGoose.CLITest do
                "buzz-integration",
                "--dod",
                "focused checks pass",
+               "--sop",
+               SopGate.path(),
                "Default task"
              ])
 
-    for missing <- ["project", "roadmap", "workflow", "dod"] do
+    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
       args =
         [
           "task",
@@ -70,6 +76,8 @@ defmodule SpruceGoose.CLITest do
           "workflow",
           "--dod",
           "done",
+          "--sop",
+          SopGate.path(),
           "title"
         ]
         |> drop_option("--#{missing}")
@@ -126,7 +134,9 @@ defmodule SpruceGoose.CLITest do
       "--workflow",
       "workflow",
       "--dod",
-      "done"
+      "done",
+      "--sop",
+      SopGate.path()
     ]
 
     assert {:error, "task title is required"} = Command.parse(base)
@@ -154,6 +164,11 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, {:link_task, ^id, "evidence", "/tmp/proof"}} =
              Command.parse(["task", "link", id, "evidence", "/tmp/proof"])
+
+    assert {:ok, {:acknowledge_sop, ^id, sop_path}} =
+             Command.parse(["task", "acknowledge-sop", id, SopGate.path()])
+
+    assert sop_path == SopGate.path()
 
     assert {:ok, {:transition_task, ^id, :completed, nil}} = Command.parse(["task", "done", id])
 

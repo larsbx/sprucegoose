@@ -2,6 +2,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.SopGate
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
   test "CLI admits a complete project roadmap workflow DAG task TODO hierarchy" do
@@ -46,7 +47,8 @@ defmodule SpruceGoose.CLIDatabaseTest do
                  workflow: "proof",
                  task_type: :task,
                  title: "Exercise the hierarchy",
-                 definition_of_done: "TODO is complete"
+                 definition_of_done: "TODO is complete",
+                 sop_path: SopGate.path()
                }
              })
 
@@ -82,13 +84,68 @@ defmodule SpruceGoose.CLIDatabaseTest do
                  workflow: "audit-fixes",
                  task_type: :task,
                  title: "Persist through CLI",
-                 definition_of_done: "The record is readable"
+                 definition_of_done: "The record is readable",
+                 sop_path: SopGate.path()
                }
              })
 
     assert created.title == "Persist through CLI"
+    assert created.sop_gate_required
+    assert created.sop_path == SopGate.path()
+    assert created.sop_digest =~ ~r/^[0-9a-f]{64}$/
+    assert created.sop_acknowledged_at
     assert {:ok, shown} = Executor.run({:show_task, created.id})
     assert shown == created
+  end
+
+  test "start rejects stale SOP acknowledgment and accepts a refreshed acknowledgment" do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "gate", kind: :openclaw}]})
+    {:ok, project} = Ash.create(Project, %{key: "sop-gate", name: "SOP gate"})
+
+    {:ok, roadmap} =
+      Ash.create(Roadmap, %{project_id: project.id, key: "admission", name: "Admission"})
+
+    {:ok, _workflow} =
+      Ash.create(Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "verify",
+        name: "Verify",
+        definition: definition
+      })
+
+    {:ok, task} =
+      Executor.run({
+        :add_task,
+        %{
+          project: "sop-gate",
+          roadmap: "admission",
+          workflow: "verify",
+          task_type: :task,
+          title: "Require current SOP",
+          definition_of_done: "Start is gated",
+          sop_path: SopGate.path()
+        }
+      })
+
+    for target <- [:proposed, :queued, :ready] do
+      assert {:ok, %{state: ^target}} =
+               Executor.run({:transition_task, task.id, target, nil})
+    end
+
+    Ecto.Adapters.SQL.query!(
+      SpruceGoose.Repo,
+      "UPDATE workflow_tasks SET sop_digest = repeat('0', 64) WHERE task_id = $1",
+      [task.id]
+    )
+
+    assert {:error, "Systemwide SOP acknowledgment is stale; run task acknowledge-sop"} =
+             Executor.run({:transition_task, task.id, :in_progress, nil})
+
+    assert {:ok, refreshed} = Executor.run({:acknowledge_sop, task.id, SopGate.path()})
+    refute refreshed.sop_digest == String.duplicate("0", 64)
+
+    assert {:ok, %{state: :in_progress}} =
+             Executor.run({:transition_task, task.id, :in_progress, nil})
   end
 
   test "CLI list, lifecycle, and link commands replace taskctl operational paths" do
@@ -112,7 +169,8 @@ defmodule SpruceGoose.CLIDatabaseTest do
         task_id: "tsk-20260727T044500Z-1234abcd",
         title: "Operate through Ash",
         definition_of_done: "Lifecycle passes",
-        runner: :openclaw
+        runner: :openclaw,
+        sop_gate_required: false
       })
 
     {:ok, successor} =
@@ -121,7 +179,8 @@ defmodule SpruceGoose.CLIDatabaseTest do
         task_id: "tsk-20260727T044501Z-1234abcd",
         title: "Run after predecessor",
         definition_of_done: "Predecessor is complete",
-        runner: :openclaw
+        runner: :openclaw,
+        sop_gate_required: false
       })
 
     {:ok, _edge} =

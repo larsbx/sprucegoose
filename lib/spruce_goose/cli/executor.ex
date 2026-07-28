@@ -1,7 +1,7 @@
 defmodule SpruceGoose.CLI.Executor do
   @moduledoc false
 
-  alias SpruceGoose.{Ledger, Repo, TaskId}
+  alias SpruceGoose.{Ledger, Repo, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
     Board,
@@ -86,6 +86,19 @@ defmodule SpruceGoose.CLI.Executor do
          input =
            Map.put(task.input, "references", references ++ [%{"kind" => kind, "value" => value}]),
          {:ok, task} <- task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Ash.update() do
+      {:ok, task_json(task)}
+    end
+  end
+
+  def run({:acknowledge_sop, id, sop_path}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         :ok <- sop_acknowledgment_allowed(task),
+         {:ok, acknowledgment} <- SopGate.acknowledge(sop_path),
+         {:ok, task} <-
+           task
+           |> Ash.Changeset.for_update(:acknowledge_sop, acknowledgment)
+           |> Ash.update() do
       {:ok, task_json(task)}
     end
   end
@@ -228,16 +241,20 @@ defmodule SpruceGoose.CLI.Executor do
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: input.roadmap),
          {:ok, workflow} <-
            read_one(Workflow, roadmap_id: roadmap.id, workflow_id: input.workflow),
+         {:ok, acknowledgment} <- SopGate.acknowledge(input.sop_path),
          id = TaskId.generate(),
          {:ok, task} <-
-           Ash.create(Task, %{
-             workflow_id: workflow.id,
-             task_id: id,
-             task_type: input.task_type,
-             title: input.title,
-             definition_of_done: input.definition_of_done,
-             runner: :oban
-           }) do
+           Ash.create(
+             Task,
+             Map.merge(acknowledgment, %{
+               workflow_id: workflow.id,
+               task_id: id,
+               task_type: input.task_type,
+               title: input.title,
+               definition_of_done: input.definition_of_done,
+               runner: :oban
+             })
+           ) do
       {:ok, task_json(task)}
     end
   end
@@ -263,7 +280,8 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   defp require_transition_preconditions(%{state: :ready} = task, :in_progress) do
-    with {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]) do
+    with :ok <- SopGate.verify(task),
+         {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]) do
       if Enum.all?(task.predecessor_edges, &(&1.predecessor.state == :completed)) do
         :ok
       else
@@ -276,6 +294,11 @@ defmodule SpruceGoose.CLI.Executor do
     do: {:error, "task must be ready"}
 
   defp require_transition_preconditions(_task, _target), do: :ok
+
+  defp sop_acknowledgment_allowed(%{state: state}) when state in [:completed, :cancelled],
+    do: {:error, "cannot acknowledge SOP on terminal task"}
+
+  defp sop_acknowledgment_allowed(_task), do: :ok
 
   defp transition(task, target, reason) do
     task
@@ -335,6 +358,10 @@ defmodule SpruceGoose.CLI.Executor do
       title: task.title,
       description: task.description,
       definition_of_done: task.definition_of_done,
+      sop_gate_required: task.sop_gate_required,
+      sop_path: task.sop_path,
+      sop_digest: task.sop_digest,
+      sop_acknowledged_at: task.sop_acknowledged_at,
       state: task.state,
       workflow_id: task.workflow_id,
       lock_version: task.lock_version,

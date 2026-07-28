@@ -35,6 +35,7 @@ mix escript.build
   --roadmap buzz-agent-collaboration-plane \
   --workflow buzz-integration \
   --dod "Focused checks pass" \
+  --sop "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" \
   "Implement the next slice"
 ./sprucegoose task list --state waiting
 ./sprucegoose task propose tsk-...
@@ -43,6 +44,8 @@ mix escript.build
 ./sprucegoose task start tsk-...
 ./sprucegoose task wait tsk-... "operator review"
 ./sprucegoose task link tsk-... evidence /path/to/proof
+./sprucegoose task acknowledge-sop tsk-... \
+  "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
 ./sprucegoose task done tsk-...
 ./sprucegoose task cancel tsk-... "superseded"
 ./sprucegoose todo add tsk-... "Attach evidence"
@@ -80,10 +83,15 @@ value explicitly and receive a visible grandfathered placeholder in the
 non-null Ash field.
 
 Lifecycle commands expose each governed state transition explicitly. `start`
-accepts only a ready task, and wait/cancel reasons are committed atomically
-with their state change. Diagnosis completion requires finding, regression,
-and SOP references plus completion of every subordinate TODO. Task JSON
-includes those references, reasons, and ledger-import provenance.
+accepts only a ready task with a current canonical Systemwide SOP
+acknowledgment. Admission reads the SOP and stores its path, SHA-256 digest,
+and acknowledgment time; `start` re-reads it and rejects a stale digest.
+`task acknowledge-sop` refreshes a nonterminal task after an SOP change.
+Historical/imported records are explicitly grandfathered. Wait/cancel reasons
+are committed atomically with their state change. Diagnosis completion
+requires finding, regression, and SOP references plus completion of every
+subordinate TODO. Task JSON includes those references, reasons,
+SOP acknowledgment, and ledger-import provenance.
 
 Kanban administration uses the same canonical CLI:
 

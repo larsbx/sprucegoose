@@ -178,8 +178,9 @@ defmodule SpruceGoose.Ledger do
         sql!(
           """
           INSERT INTO workflow_tasks
-            (workflow_id, task_id, task_type, title, definition_of_done, state, runner, input)
-          SELECT w.id, $4, $5, $6, $7, $8, 'openclaw', $9
+            (workflow_id, task_id, task_type, title, definition_of_done, state, runner, input,
+             sop_gate_required)
+          SELECT w.id, $4, $5, $6, $7, $8, 'openclaw', $9, false
           FROM workflows w
           JOIN roadmaps r ON r.id = w.roadmap_id
           JOIN projects p ON p.id = r.project_id

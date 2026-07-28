@@ -144,6 +144,7 @@ defmodule SpruceGoose.PersistenceInvariantsTest do
   defp task_for(workflow, suffix) do
     {:ok, task} =
       Ash.create(Task, %{
+        sop_gate_required: false,
         workflow_id: workflow.id,
         task_id: "tsk-20260727T034000Z-#{String.pad_leading(suffix, 8, "0")}",
         title: "Task #{suffix}",

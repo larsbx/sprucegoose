@@ -20,6 +20,10 @@ defmodule SpruceGoose.Workflows.Task do
 
     attribute(:title, :string, allow_nil?: false, public?: true)
     attribute(:definition_of_done, :string, allow_nil?: false, public?: true)
+    attribute(:sop_gate_required, :boolean, allow_nil?: false, default: true, public?: true)
+    attribute(:sop_path, :string, public?: true)
+    attribute(:sop_digest, :string, public?: true)
+    attribute(:sop_acknowledged_at, :utc_datetime_usec, public?: true)
 
     attribute(:state, SpruceGoose.Workflows.TaskState,
       allow_nil?: false,
@@ -89,6 +93,10 @@ defmodule SpruceGoose.Workflows.Task do
         :task_type,
         :title,
         :definition_of_done,
+        :sop_gate_required,
+        :sop_path,
+        :sop_digest,
+        :sop_acknowledged_at,
         :runner,
         :input,
         :origin_event_id,
@@ -107,6 +115,12 @@ defmodule SpruceGoose.Workflows.Task do
     update :revise do
       require_atomic?(false)
       accept([:title, :description, :definition_of_done, :runner, :input])
+      change(optimistic_lock(:lock_version))
+    end
+
+    update :acknowledge_sop do
+      require_atomic?(false)
+      accept([:sop_gate_required, :sop_path, :sop_digest, :sop_acknowledged_at])
       change(optimistic_lock(:lock_version))
     end
 
@@ -205,6 +219,7 @@ defmodule SpruceGoose.Workflows.Task do
   validations do
     validate(string_length(:task_id, min: 1, max: 128))
     validate(string_length(:definition_of_done, min: 1, max: 2_000))
+    validate(fn changeset, _context -> valid_sop_gate(changeset) end)
 
     validate(fn changeset, _context ->
       changeset
@@ -231,6 +246,30 @@ defmodule SpruceGoose.Workflows.Task do
 
   defp valid_custom_fields(_fields),
     do: {:error, field: :custom_fields, message: "must be a map"}
+
+  defp valid_sop_gate(changeset) do
+    required = Ash.Changeset.get_attribute(changeset, :sop_gate_required)
+    path = Ash.Changeset.get_attribute(changeset, :sop_path)
+    digest = Ash.Changeset.get_attribute(changeset, :sop_digest)
+    acknowledged_at = Ash.Changeset.get_attribute(changeset, :sop_acknowledged_at)
+
+    cond do
+      required == false ->
+        :ok
+
+      path != SpruceGoose.SopGate.path() ->
+        {:error, field: :sop_path, message: "must be the canonical Systemwide SOP"}
+
+      not (is_binary(digest) and Regex.match?(~r/^[0-9a-f]{64}$/, digest)) ->
+        {:error, field: :sop_digest, message: "must be a lowercase SHA-256 digest"}
+
+      is_nil(acknowledged_at) ->
+        {:error, field: :sop_acknowledged_at, message: "is required"}
+
+      true ->
+        :ok
+    end
+  end
 
   defp valid_date?(value) when is_binary(value), do: match?({:ok, _}, Date.from_iso8601(value))
   defp valid_date?(_value), do: false
