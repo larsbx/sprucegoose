@@ -70,6 +70,22 @@ defmodule SpruceGoose.TransactionalOutboxTest do
     assert second.conflict?
   end
 
+  test "event identity and payload are immutable while delivery state may advance" do
+    fixture()
+    event = Repo.one!(Event)
+
+    assert {:error, %Postgrex.Error{postgres: %{message: message}}} =
+             Repo.query(
+               "UPDATE outbox_events SET event_type = 'tampered' WHERE id = $1",
+               [Ecto.UUID.dump!(event.id)],
+               mode: :savepoint
+             )
+
+    assert message == "outbox event content is immutable"
+    assert {:ok, [{:ok, _}]} = Dispatcher.dispatch_batch()
+    assert Repo.get!(Event, event.id).status == :dispatched
+  end
+
   defp fixture do
     suffix = System.unique_integer([:positive])
 
