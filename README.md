@@ -23,6 +23,13 @@ schema and admits work through Ash:
 mix escript.build
 ./sprucegoose id
 ./sprucegoose validate-id tsk-20260727T012351Z-ea5ba1b1
+./sprucegoose project add my-project "My project"
+./sprucegoose roadmap add my-project delivery "Delivery roadmap"
+./sprucegoose workflow add \
+  --project my-project \
+  --roadmap delivery \
+  --definition '{"schema_version":1,"tasks":[{"id":"verify","kind":"oban","depends_on":["build"]},{"id":"build","kind":"oban"}]}' \
+  release "Release workflow"
 ./sprucegoose task add \
   --project pi \
   --roadmap buzz-agent-collaboration-plane \

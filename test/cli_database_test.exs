@@ -4,6 +4,56 @@ defmodule SpruceGoose.CLIDatabaseTest do
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
+  test "CLI admits a complete project roadmap workflow DAG task TODO hierarchy" do
+    assert {:ok, %{key: "dogfood"} = project} =
+             Executor.run({:add_project, "dogfood", "Dogfood"})
+
+    assert {:ok, %{id: roadmap_id, key: "dev", project_id: project_id}} =
+             Executor.run({:add_roadmap, "dogfood", "dev", "Development"})
+
+    assert project_id == project.id
+
+    definition =
+      ~s({"schema_version":1,"tasks":[{"id":"verify","kind":"oban","depends_on":["build"]},{"id":"build","kind":"oban"}]})
+
+    assert {:ok,
+            %{
+              id: workflow_id,
+              workflow_id: "proof",
+              roadmap_id: workflow_roadmap_id,
+              definition: %{schema_version: 1, tasks: output_tasks}
+            }} =
+             Executor.run({
+               :add_workflow,
+               "dogfood",
+               "dev",
+               "proof",
+               "Proof workflow",
+               definition
+             })
+
+    assert workflow_roadmap_id == roadmap_id
+    assert Jason.encode!(output_tasks)
+    assert {:ok, workflow} = Ash.get(Workflow, workflow_id)
+    assert Enum.map(workflow.definition.tasks, & &1.id) == ["verify", "build"]
+
+    assert {:ok, task} =
+             Executor.run({
+               :add_task,
+               %{
+                 project: "dogfood",
+                 roadmap: "dev",
+                 workflow: "proof",
+                 task_type: :task,
+                 title: "Exercise the hierarchy",
+                 definition_of_done: "TODO is complete"
+               }
+             })
+
+    assert {:ok, todo} = Executor.run({:add_todo, task.id, "Capture proof"})
+    assert {:ok, %{completed: true}} = Executor.run({:complete_todo, task.id, todo.id})
+  end
+
   test "CLI task admission writes to PostgreSQL and show reads it back" do
     {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
     {:ok, project} = Ash.create(Project, %{key: "pi", name: "Pi"})

@@ -78,6 +78,43 @@ defmodule SpruceGoose.CLITest do
     end
   end
 
+  test "parses full hierarchy admission commands" do
+    assert {:ok, {:add_project, "dogfood", "Dogfood project"}} =
+             Command.parse(["project", "add", "dogfood", "Dogfood", "project"])
+
+    assert {:ok, {:add_roadmap, "dogfood", "dev", "Development roadmap"}} =
+             Command.parse(["roadmap", "add", "dogfood", "dev", "Development", "roadmap"])
+
+    definition = ~s({"tasks":[{"id":"build","kind":"oban"}]})
+
+    assert {:ok, {:add_workflow, "dogfood", "dev", "proof", "Proof workflow", ^definition}} =
+             Command.parse([
+               "workflow",
+               "add",
+               "--project",
+               "dogfood",
+               "--roadmap",
+               "dev",
+               "--definition",
+               definition,
+               "proof",
+               "Proof",
+               "workflow"
+             ])
+
+    assert {:error, "--definition is required"} =
+             Command.parse([
+               "workflow",
+               "add",
+               "--project",
+               "dogfood",
+               "--roadmap",
+               "dev",
+               "proof",
+               "Proof"
+             ])
+  end
+
   test "rejects unknown task types and missing titles" do
     base = [
       "task",

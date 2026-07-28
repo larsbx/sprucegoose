@@ -22,6 +22,36 @@ defmodule SpruceGoose.CLI.Executor do
     if TaskId.valid?(id), do: {:ok, %{id: id, valid: true}}, else: {:error, "invalid task ID"}
   end
 
+  def run({:add_project, key, name}) do
+    with {:ok, project} <- Ash.create(Project, %{key: key, name: name}) do
+      {:ok, project_json(project)}
+    end
+  end
+
+  def run({:add_roadmap, project_key, key, name}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <-
+           Ash.create(Roadmap, %{project_id: project.id, key: key, name: name}) do
+      {:ok, roadmap_json(roadmap)}
+    end
+  end
+
+  def run({:add_workflow, project_key, roadmap_key, workflow_id, name, definition_json}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
+         {:ok, definition_input} <- decode_json_object(definition_json),
+         {:ok, definition} <- SpruceGoose.Workflows.Definition.parse(definition_input),
+         {:ok, workflow} <-
+           Ash.create(Workflow, %{
+             roadmap_id: roadmap.id,
+             workflow_id: workflow_id,
+             name: name,
+             definition: definition
+           }) do
+      {:ok, workflow_json(workflow)}
+    end
+  end
+
   def run({:import_ledger, path}), do: Ledger.import(path)
   def run({:parity_ledger, path}), do: Ledger.parity(path)
 
@@ -332,6 +362,32 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   defp inbox_json(item), do: %{id: item.capture_id, body: item.body, state: item.state}
+
+  defp project_json(project), do: %{id: project.id, key: project.key, name: project.name}
+
+  defp roadmap_json(roadmap),
+    do: %{id: roadmap.id, project_id: roadmap.project_id, key: roadmap.key, name: roadmap.name}
+
+  defp workflow_json(workflow) do
+    %{
+      id: workflow.id,
+      roadmap_id: workflow.roadmap_id,
+      workflow_id: workflow.workflow_id,
+      name: workflow.name,
+      definition: %{
+        schema_version: workflow.definition.schema_version,
+        tasks:
+          Enum.map(workflow.definition.tasks, fn task ->
+            %{
+              id: task.id,
+              kind: task.kind,
+              depends_on: task.depends_on,
+              input: task.input
+            }
+          end)
+      }
+    }
+  end
 
   defp board_json(board),
     do: %{id: board.id, workflow_id: board.workflow_id, key: board.key, name: board.name}

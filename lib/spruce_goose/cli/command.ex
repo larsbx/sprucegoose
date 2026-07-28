@@ -3,6 +3,31 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}
+
+  def parse(["project", "add", key | name]) when name != [],
+    do: {:ok, {:add_project, key, Enum.join(name, " ")}}
+
+  def parse(["roadmap", "add", project, key | name]) when name != [],
+    do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
+
+  def parse(["workflow", "add" | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [project: :string, roadmap: :string, definition: :string]
+      )
+
+    with [] <- invalid,
+         {:ok, project} <- required(opts, :project),
+         {:ok, roadmap} <- required(opts, :roadmap),
+         {:ok, definition} <- required(opts, :definition),
+         [workflow_id | name] when name != [] <- rest do
+      {:ok, {:add_workflow, project, roadmap, workflow_id, Enum.join(name, " "), definition}}
+    else
+      {:error, option} -> {:error, "--#{option} is required"}
+      _ -> {:error, "invalid workflow add arguments"}
+    end
+  end
+
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
   def parse(["task", "list"]), do: {:ok, {:list_tasks, nil}}
   def parse(["task", "list", "--state", state]), do: {:ok, {:list_tasks, state}}
