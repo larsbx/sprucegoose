@@ -5,6 +5,7 @@
 **Prior report:** `CURRENT_SYSTEM_AUDIT_REPORT.md`
 **Audited implementation:** `cd2875aa5cc0345e51ad0053d94ae2dd71a496a1`
 **Remediation:** `5e2ddc5`
+**Escript runtime fix:** `38b65f9`
 **Branch:** `main`
 **Authority:** SpruceGoose/Ash, authority mode `ash`
 **Task:** `tsk-20260728T142801Z-e1e1b46f`
@@ -81,11 +82,14 @@ asdf exec mix test
 asdf exec mix compile --warnings-as-errors
 asdf exec mix format --check-formatted
 asdf exec mix ash_postgres.generate_migrations --check
+asdf exec mix escript.build
+./sprucegoose validate-id tsk-20260728T142801Z-e1e1b46f
 git diff --check
 ```
 
 The compile, formatting, migration-drift, and whitespace gates exited
-successfully.
+successfully. The rebuilt escript returned `{"ok":true,"valid":true}` for the
+governing task ID.
 
 ## Database and recovery state
 
