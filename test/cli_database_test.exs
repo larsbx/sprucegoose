@@ -148,6 +148,72 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:transition_task, task.id, :in_progress, nil})
   end
 
+  test "direct Ash start enforces the current SOP acknowledgment" do
+    task = gated_task("direct-start")
+
+    task =
+      Enum.reduce([:proposed, :queued, :ready], task, fn state, current ->
+        assert {:ok, current} = Ash.update(current, %{to_state: state}, action: :transition)
+        current
+      end)
+
+    Ecto.Adapters.SQL.query!(
+      SpruceGoose.Repo,
+      "UPDATE workflow_tasks SET sop_digest = repeat('0', 64) WHERE id = $1::text::uuid",
+      [task.id]
+    )
+
+    task = Ash.get!(Task, task.id)
+    assert {:error, error} = Ash.update(task, %{to_state: :in_progress}, action: :transition)
+    assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
+
+    assert {:error, error} = Ash.update(task, %{to_state: :in_progress}, action: :move)
+    assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
+  end
+
+  test "ordinary Task callers cannot choose exemptions or manufacture SOP evidence" do
+    workflow = workflow("caller-evidence")
+
+    assert {:error, error} =
+             Ash.create(Task, %{
+               workflow_id: workflow.id,
+               task_id: "tsk-20260728T142900Z-acde1234",
+               title: "Manufacture evidence",
+               definition_of_done: "Rejected",
+               runner: :oban,
+               sop_gate_required: false,
+               sop_digest: String.duplicate("0", 64),
+               sop_acknowledged_at: DateTime.utc_now()
+             })
+
+    message = Exception.message(error)
+    assert message =~ "sop_gate_required"
+    assert message =~ "sop_digest"
+
+    task = gated_task("caller-acknowledgment")
+
+    assert {:error, error} =
+             Ash.update(task, %{sop_digest: String.duplicate("0", 64)}, action: :acknowledge_sop)
+
+    assert Exception.message(error) =~ "sop_digest"
+  end
+
+  test "SOP path is runtime-configurable while evidence retains a stable identifier" do
+    original = Application.fetch_env!(:spruce_goose, :systemwide_sop_path)
+    alternate = Path.join(System.tmp_dir!(), "sprucegoose-systemwide-sop.md")
+    File.write!(alternate, "# Alternate Systemwide SOP\n")
+    Application.put_env(:spruce_goose, :systemwide_sop_path, alternate)
+
+    on_exit(fn ->
+      Application.put_env(:spruce_goose, :systemwide_sop_path, original)
+      File.rm(alternate)
+    end)
+
+    task = gated_task("alternate-path")
+    assert task.sop_id == "systemwide-sop"
+    assert task.sop_path == alternate
+  end
+
   test "CLI list, lifecycle, and link commands replace taskctl operational paths" do
     {:ok, definition} = Definition.parse(%{tasks: [%{id: "operate", kind: :openclaw}]})
     {:ok, project} = Ash.create(Project, %{key: "operations", name: "Operations"})
@@ -169,8 +235,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
         task_id: "tsk-20260727T044500Z-1234abcd",
         title: "Operate through Ash",
         definition_of_done: "Lifecycle passes",
-        runner: :openclaw,
-        sop_gate_required: false
+        runner: :openclaw
       })
 
     {:ok, successor} =
@@ -179,8 +244,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
         task_id: "tsk-20260727T044501Z-1234abcd",
         title: "Run after predecessor",
         definition_of_done: "Predecessor is complete",
-        runner: :openclaw,
-        sop_gate_required: false
+        runner: :openclaw
       })
 
     {:ok, _edge} =
@@ -225,6 +289,44 @@ defmodule SpruceGoose.CLIDatabaseTest do
 
     assert {:ok, %{completed: true}} =
              Executor.run({:complete_todo, successor.task_id, todo.id})
+  end
+
+  defp gated_task(suffix) do
+    workflow = workflow(suffix)
+
+    {:ok, task} =
+      Ash.create(Task, %{
+        workflow_id: workflow.id,
+        task_id:
+          "tsk-20260728T143000Z-#{String.slice(:crypto.hash(:sha256, suffix) |> Base.encode16(case: :lower), 0, 8)}",
+        title: "Task #{suffix}",
+        definition_of_done: "SOP gate is enforced",
+        runner: :oban
+      })
+
+    task
+  end
+
+  defp workflow(suffix) do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "task-#{suffix}", kind: :oban}]})
+    {:ok, project} = Ash.create(Project, %{key: "project-#{suffix}", name: "Project #{suffix}"})
+
+    {:ok, roadmap} =
+      Ash.create(Roadmap, %{
+        project_id: project.id,
+        key: "roadmap-#{suffix}",
+        name: "Roadmap #{suffix}"
+      })
+
+    {:ok, workflow} =
+      Ash.create(Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "workflow-#{suffix}",
+        name: "Workflow #{suffix}",
+        definition: definition
+      })
+
+    workflow
   end
 
   test "CLI inbox capture is idempotent and remains non-executable" do

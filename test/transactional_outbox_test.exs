@@ -119,11 +119,6 @@ defmodule SpruceGoose.TransactionalOutboxTest do
       runner: :oban
     }
 
-    task_input =
-      if Ash.Resource.Info.attribute(SpruceGoose.Workflows.Task, :sop_gate_required),
-        do: Map.put(task_input, :sop_gate_required, false),
-        else: task_input
-
     task =
       Ash.create!(SpruceGoose.Workflows.Task, task_input)
 

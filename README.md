@@ -82,12 +82,17 @@ Historical tasks created before mandatory DoDs retain their missing source
 value explicitly and receive a visible grandfathered placeholder in the
 non-null Ash field.
 
-Lifecycle commands expose each governed state transition explicitly. `start`
-accepts only a ready task with a current canonical Systemwide SOP
-acknowledgment. Admission reads the SOP and stores its path, SHA-256 digest,
-and acknowledgment time; `start` re-reads it and rejects a stale digest.
+Lifecycle commands expose each governed state transition explicitly. Every
+public Ash transition into `in_progress`, including `start`, accepts only a
+ready task with a current Systemwide SOP acknowledgment. Admission reads the
+configured SOP and stores its stable identifier, path, SHA-256 digest, and
+acknowledgment time; transition re-reads it and rejects a stale digest.
+`SYSTEMWIDE_SOP_PATH` selects the deployment path without changing the stable
+`systemwide-sop` evidence identifier.
 `task acknowledge-sop` refreshes a nonterminal task after an SOP change.
-Historical/imported records are explicitly grandfathered. Wait/cancel reasons
+Ordinary Ash callers cannot set acknowledgment fields or choose the exemption;
+only the retired SQL import path can create explicitly grandfathered records.
+Wait/cancel reasons
 are committed atomically with their state change. Diagnosis completion
 requires finding, regression, and SOP references plus completion of every
 subordinate TODO. Task JSON includes those references, reasons,

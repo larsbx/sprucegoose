@@ -18,4 +18,8 @@ config :spruce_goose, Oban,
 
 config :spruce_goose, :start_outbox_dispatcher, true
 
+config :spruce_goose,
+       :systemwide_sop_path,
+       "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
+
 import_config "#{config_env()}.exs"

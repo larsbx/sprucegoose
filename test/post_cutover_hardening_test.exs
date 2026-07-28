@@ -264,7 +264,6 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
 
     {:ok, task} =
       Ash.create(Task, %{
-        sop_gate_required: false,
         workflow_id: workflow.id,
         task_id:
           "tsk-20260727T191000Z-#{String.slice(:crypto.hash(:sha256, suffix) |> Base.encode16(case: :lower), 0, 8)}",

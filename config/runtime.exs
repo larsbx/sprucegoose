@@ -1,5 +1,12 @@
 import Config
 
+config :spruce_goose,
+       :systemwide_sop_path,
+       System.get_env(
+         "SYSTEMWIDE_SOP_PATH",
+         Application.fetch_env!(:spruce_goose, :systemwide_sop_path)
+       )
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

@@ -94,12 +94,15 @@ defmodule SpruceGoose.CLI.Executor do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          :ok <- sop_acknowledgment_allowed(task),
-         {:ok, acknowledgment} <- SopGate.acknowledge(sop_path),
+         true <- sop_path == SopGate.path(),
          {:ok, task} <-
            task
-           |> Ash.Changeset.for_update(:acknowledge_sop, acknowledgment)
+           |> Ash.Changeset.for_update(:acknowledge_sop, %{})
            |> Ash.update() do
       {:ok, task_json(task)}
+    else
+      false -> {:error, "SOP path must be #{SopGate.path()}"}
+      result -> result
     end
   end
 
@@ -241,21 +244,24 @@ defmodule SpruceGoose.CLI.Executor do
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: input.roadmap),
          {:ok, workflow} <-
            read_one(Workflow, roadmap_id: roadmap.id, workflow_id: input.workflow),
-         {:ok, acknowledgment} <- SopGate.acknowledge(input.sop_path),
+         true <- input.sop_path == SopGate.path(),
          id = TaskId.generate(),
          {:ok, task} <-
            Ash.create(
              Task,
-             Map.merge(acknowledgment, %{
+             %{
                workflow_id: workflow.id,
                task_id: id,
                task_type: input.task_type,
                title: input.title,
                definition_of_done: input.definition_of_done,
                runner: :oban
-             })
+             }
            ) do
       {:ok, task_json(task)}
+    else
+      false -> {:error, "SOP path must be #{SopGate.path()}"}
+      result -> result
     end
   end
 
@@ -359,6 +365,7 @@ defmodule SpruceGoose.CLI.Executor do
       description: task.description,
       definition_of_done: task.definition_of_done,
       sop_gate_required: task.sop_gate_required,
+      sop_id: task.sop_id,
       sop_path: task.sop_path,
       sop_digest: task.sop_digest,
       sop_acknowledged_at: task.sop_acknowledged_at,

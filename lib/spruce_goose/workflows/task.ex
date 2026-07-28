@@ -21,6 +21,7 @@ defmodule SpruceGoose.Workflows.Task do
     attribute(:title, :string, allow_nil?: false, public?: true)
     attribute(:definition_of_done, :string, allow_nil?: false, public?: true)
     attribute(:sop_gate_required, :boolean, allow_nil?: false, default: true, public?: true)
+    attribute(:sop_id, :string, public?: true)
     attribute(:sop_path, :string, public?: true)
     attribute(:sop_digest, :string, public?: true)
     attribute(:sop_acknowledged_at, :utc_datetime_usec, public?: true)
@@ -93,10 +94,6 @@ defmodule SpruceGoose.Workflows.Task do
         :task_type,
         :title,
         :definition_of_done,
-        :sop_gate_required,
-        :sop_path,
-        :sop_digest,
-        :sop_acknowledged_at,
         :runner,
         :input,
         :origin_event_id,
@@ -110,6 +107,8 @@ defmodule SpruceGoose.Workflows.Task do
         :labels,
         :custom_fields
       ])
+
+      change(fn changeset, _context -> acknowledge_sop(changeset) end)
     end
 
     update :revise do
@@ -120,7 +119,8 @@ defmodule SpruceGoose.Workflows.Task do
 
     update :acknowledge_sop do
       require_atomic?(false)
-      accept([:sop_gate_required, :sop_path, :sop_digest, :sop_acknowledged_at])
+      accept([])
+      change(fn changeset, _context -> acknowledge_sop(changeset) end)
       change(optimistic_lock(:lock_version))
     end
 
@@ -154,6 +154,8 @@ defmodule SpruceGoose.Workflows.Task do
           do: :ok,
           else: {:error, field: :state, message: "cannot transition from #{from} to #{to}"}
       end)
+
+      validate(fn changeset, _context -> validate_start(changeset) end)
 
       change(fn changeset, _context ->
         Ash.Changeset.change_attribute(
@@ -202,6 +204,8 @@ defmodule SpruceGoose.Workflows.Task do
         end
       end)
 
+      validate(fn changeset, _context -> validate_start(changeset) end)
+
       change(fn changeset, _context ->
         to = Ash.Changeset.get_argument(changeset, :to_state)
         reason = Ash.Changeset.get_argument(changeset, :reason)
@@ -249,6 +253,7 @@ defmodule SpruceGoose.Workflows.Task do
 
   defp valid_sop_gate(changeset) do
     required = Ash.Changeset.get_attribute(changeset, :sop_gate_required)
+    id = Ash.Changeset.get_attribute(changeset, :sop_id)
     path = Ash.Changeset.get_attribute(changeset, :sop_path)
     digest = Ash.Changeset.get_attribute(changeset, :sop_digest)
     acknowledged_at = Ash.Changeset.get_attribute(changeset, :sop_acknowledged_at)
@@ -257,8 +262,11 @@ defmodule SpruceGoose.Workflows.Task do
       required == false ->
         :ok
 
-      path != SpruceGoose.SopGate.path() ->
-        {:error, field: :sop_path, message: "must be the canonical Systemwide SOP"}
+      id != SpruceGoose.SopGate.id() ->
+        {:error, field: :sop_id, message: "must identify the Systemwide SOP"}
+
+      not (is_binary(path) and String.trim(path) != "") ->
+        {:error, field: :sop_path, message: "must record the configured Systemwide SOP path"}
 
       not (is_binary(digest) and Regex.match?(~r/^[0-9a-f]{64}$/, digest)) ->
         {:error, field: :sop_digest, message: "must be a lowercase SHA-256 digest"}
@@ -273,6 +281,25 @@ defmodule SpruceGoose.Workflows.Task do
 
   defp valid_date?(value) when is_binary(value), do: match?({:ok, _}, Date.from_iso8601(value))
   defp valid_date?(_value), do: false
+
+  defp acknowledge_sop(changeset) do
+    case SpruceGoose.SopGate.acknowledge(SpruceGoose.SopGate.path()) do
+      {:ok, acknowledgment} ->
+        Enum.reduce(acknowledgment, changeset, fn {attribute, value}, current ->
+          Ash.Changeset.change_attribute(current, attribute, value)
+        end)
+
+      {:error, message} ->
+        Ash.Changeset.add_error(changeset, field: :sop_path, message: message)
+    end
+  end
+
+  defp validate_start(changeset) do
+    if changeset.data.state == :ready and
+         Ash.Changeset.get_argument(changeset, :to_state) == :in_progress,
+       do: SpruceGoose.SopGate.verify(changeset.data),
+       else: :ok
+  end
 
   defp valid_board_metadata(changeset) do
     board_id = Ash.Changeset.get_attribute(changeset, :board_id)
