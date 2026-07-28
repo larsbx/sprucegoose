@@ -4,7 +4,7 @@ config :spruce_goose,
        :systemwide_sop_path,
        System.get_env(
          "SYSTEMWIDE_SOP_PATH",
-         Application.fetch_env!(:spruce_goose, :systemwide_sop_path)
+         "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
        )
 
 if config_env() == :prod do
