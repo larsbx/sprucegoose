@@ -14,6 +14,7 @@ defmodule SpruceGoose.CLI.Executor do
     Task,
     TaskState,
     Todo,
+    TodoDependency,
     Workflow
   }
 
@@ -183,6 +184,86 @@ defmodule SpruceGoose.CLI.Executor do
     with {:ok, filter} <- read_one(SavedFilter, id: filter_id),
          :ok <- destroy(filter) do
       {:ok, %{removed: filter_json(filter)}}
+    end
+  end
+
+  def run({:list_todo_dependencies, task_id}) do
+    with :ok <- require_valid_id(task_id),
+         {:ok, task} <- read_one(Task, task_id: task_id),
+         {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)),
+         {:ok, edges} <- Ash.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
+      by_id = Map.new(todos, &{&1.id, &1})
+      predecessors_of = Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
+      successors_of = Enum.group_by(edges, & &1.predecessor_id, & &1.successor_id)
+
+      {:ok,
+       %{
+         task: task.task_id,
+         todos:
+           todos
+           |> Enum.sort_by(& &1.position)
+           |> Enum.map(fn todo ->
+             blockers =
+               predecessors_of
+               |> Map.get(todo.id, [])
+               |> Enum.map(&Map.fetch!(by_id, &1))
+
+             %{
+               id: todo.todo_id,
+               body: todo.body,
+               position: todo.position,
+               completed: todo.completed,
+               blocked: Enum.any?(blockers, &(not &1.completed)),
+               depends_on: blockers |> Enum.map(&todo_edge_json/1) |> Enum.sort_by(& &1.id),
+               blocks:
+                 successors_of
+                 |> Map.get(todo.id, [])
+                 |> Enum.map(&Map.fetch!(by_id, &1))
+                 |> Enum.map(&todo_edge_json/1)
+                 |> Enum.sort_by(& &1.id)
+             }
+           end)
+       }}
+    end
+  end
+
+  def run({:add_todo_dependency, task_id, todo_id, predecessor_id}) do
+    with {:ok, task, successor, predecessor} <-
+           todo_dependency_pair(task_id, todo_id, predecessor_id),
+         :ok <- require_new_todo_edge(successor, predecessor),
+         :ok <- require_acyclic_todo(task, successor, predecessor),
+         {:ok, edge} <-
+           Ash.create(TodoDependency, %{
+             task_id: task.id,
+             predecessor_id: predecessor.id,
+             successor_id: successor.id
+           }) do
+      {:ok,
+       %{
+         id: edge.id,
+         task: task.task_id,
+         todo: successor.todo_id,
+         depends_on: predecessor.todo_id
+       }}
+    end
+  end
+
+  def run({:remove_todo_dependency, task_id, todo_id, predecessor_id}) do
+    with {:ok, task, successor, predecessor} <-
+           todo_dependency_pair(task_id, todo_id, predecessor_id),
+         {:ok, edge} <-
+           read_one(TodoDependency,
+             predecessor_id: predecessor.id,
+             successor_id: successor.id
+           ),
+         :ok <- destroy(edge) do
+      {:ok,
+       %{
+         removed: edge.id,
+         task: task.task_id,
+         todo: successor.todo_id,
+         depends_on: predecessor.todo_id
+       }}
     end
   end
 
@@ -408,6 +489,7 @@ defmodule SpruceGoose.CLI.Executor do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          {:ok, todo} <- read_one(Todo, task_id: task.id, todo_id: todo_id),
+         :ok <- require_todo_predecessors_complete(task, todo),
          {:ok, todo} <- todo |> Ash.Changeset.for_update(:complete) |> Ash.update() do
       {:ok, todo_json(todo)}
     end
@@ -565,6 +647,83 @@ defmodule SpruceGoose.CLI.Executor do
     case Ash.destroy(record) do
       :ok -> :ok
       {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
+  defp todo_dependency_pair(task_id, todo_id, predecessor_id) do
+    with :ok <- require_valid_id(task_id),
+         {:ok, task} <- read_one(Task, task_id: task_id),
+         {:ok, successor} <- read_one(Todo, task_id: task.id, todo_id: todo_id),
+         {:ok, predecessor} <- read_one(Todo, task_id: task.id, todo_id: predecessor_id) do
+      if successor.id == predecessor.id do
+        {:error, "a TODO cannot depend on itself"}
+      else
+        {:ok, task, successor, predecessor}
+      end
+    end
+  end
+
+  defp require_new_todo_edge(successor, predecessor) do
+    case read_one(TodoDependency,
+           predecessor_id: predecessor.id,
+           successor_id: successor.id
+         ) do
+      {:error, "not found"} -> :ok
+      {:ok, _edge} -> {:error, "dependency already exists"}
+      error -> error
+    end
+  end
+
+  # Scoped to one task's edges. A new predecessor -> successor edge closes a
+  # cycle exactly when successor is already reachable from predecessor.
+  defp require_acyclic_todo(task, successor, predecessor) do
+    with {:ok, edges} <- Ash.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
+      predecessors_of = Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
+
+      if reaches?(predecessor.id, successor.id, predecessors_of, MapSet.new()) do
+        {:error, "dependency would create a cycle"}
+      else
+        :ok
+      end
+    end
+  end
+
+  defp todo_edge_json(todo) do
+    %{
+      id: todo.todo_id,
+      body: todo.body,
+      position: todo.position,
+      completed: todo.completed
+    }
+  end
+
+  # TODOs default to fully concurrent: no edge means no constraint. A TODO is
+  # blocked only while an explicit predecessor is still open.
+  defp require_todo_predecessors_complete(task, todo) do
+    with {:ok, edges} <-
+           Ash.read(Ash.Query.filter_input(TodoDependency, successor_id: todo.id)),
+         false <- edges == [],
+         {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
+      by_id = Map.new(todos, &{&1.id, &1})
+
+      open =
+        edges
+        |> Enum.map(&Map.get(by_id, &1.predecessor_id))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.reject(& &1.completed)
+
+      case open do
+        [] ->
+          :ok
+
+        open ->
+          names = open |> Enum.map(& &1.todo_id) |> Enum.sort() |> Enum.join(", ")
+          {:error, "TODO is blocked by incomplete predecessors: #{names}"}
+      end
+    else
+      # No edges at all: TODOs default to fully concurrent.
+      true -> :ok
       error -> error
     end
   end

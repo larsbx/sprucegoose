@@ -23,6 +23,14 @@ defmodule SpruceGoose.Workflows.Todo do
       attribute_writable?(true)
       public?(true)
     end
+
+    has_many :predecessor_edges, SpruceGoose.Workflows.TodoDependency do
+      destination_attribute(:successor_id)
+    end
+
+    has_many :successor_edges, SpruceGoose.Workflows.TodoDependency do
+      destination_attribute(:predecessor_id)
+    end
   end
 
   identities do

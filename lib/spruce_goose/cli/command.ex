@@ -169,6 +169,20 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["todo", "remove", task_id, todo_id]),
     do: {:ok, {:remove_todo, task_id, todo_id}}
 
+  def parse(["todo", "dep", "list", task_id]), do: {:ok, {:list_todo_dependencies, task_id}}
+
+  def parse(["todo", "dep", "add", task_id, todo_id | args]) do
+    with {:ok, predecessor} <- dependency_option(args) do
+      {:ok, {:add_todo_dependency, task_id, todo_id, predecessor}}
+    end
+  end
+
+  def parse(["todo", "dep", "remove", task_id, todo_id | args]) do
+    with {:ok, predecessor} <- dependency_option(args) do
+      {:ok, {:remove_todo_dependency, task_id, todo_id, predecessor}}
+    end
+  end
+
   def parse(["board", "add", project, roadmap, workflow, key | name]) when name != [],
     do: {:ok, {:add_board, project, roadmap, workflow, key, Enum.join(name, " ")}}
 

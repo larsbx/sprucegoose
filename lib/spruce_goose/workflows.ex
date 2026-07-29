@@ -11,6 +11,7 @@ defmodule SpruceGoose.Workflows do
     resource(SpruceGoose.Workflows.Task)
     resource(SpruceGoose.Workflows.Dependency)
     resource(SpruceGoose.Workflows.Todo)
+    resource(SpruceGoose.Workflows.TodoDependency)
     resource(SpruceGoose.Workflows.InboxItem)
   end
 end
