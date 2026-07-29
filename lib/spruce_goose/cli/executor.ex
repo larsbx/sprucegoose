@@ -765,7 +765,7 @@ defmodule SpruceGoose.CLI.Executor do
             task_id: task.id,
             todo_id: todo_id,
             body: body,
-            position: length(todos) + 1
+            position: next_position(todos)
           },
           return_notifications?: true
         )
@@ -782,6 +782,20 @@ defmodule SpruceGoose.CLI.Executor do
       {:error, error} ->
         {:error, error}
     end
+  end
+
+  # Append after the highest occupied slot rather than at length + 1.
+  # remove_todo deletes without renumbering and (task_id, position) is unique,
+  # so counting rows made any non-tail removal collide with a surviving row and
+  # wedge the checklist permanently. Position is presentational, so gaps are
+  # acceptable; uniqueness and stable ordering are what must hold.
+  defp next_position([]), do: 1
+
+  defp next_position(todos) do
+    todos
+    |> Enum.map(& &1.position)
+    |> Enum.max()
+    |> Kernel.+(1)
   end
 
   defp todo_admission_allowed(%{state: state}) when state in [:completed, :cancelled],
