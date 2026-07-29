@@ -28,6 +28,76 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  def run(:list_projects) do
+    with {:ok, projects} <- Ash.read(Project) do
+      {:ok, %{projects: projects |> Enum.sort_by(& &1.key) |> Enum.map(&project_json/1)}}
+    end
+  end
+
+  def run({:show_project, key}) do
+    with {:ok, project} <- read_one(Project, key: key) do
+      {:ok, project_json(project)}
+    end
+  end
+
+  def run({:list_roadmaps, project_key}) do
+    with {:ok, filter} <- roadmap_scope(project_key),
+         {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, filter)),
+         {:ok, projects} <- Ash.read(Project) do
+      keys = Map.new(projects, &{&1.id, &1.key})
+
+      {:ok,
+       %{
+         roadmaps:
+           roadmaps
+           |> Enum.sort_by(&{Map.get(keys, &1.project_id), &1.key})
+           |> Enum.map(&Map.put(roadmap_json(&1), :project, Map.get(keys, &1.project_id)))
+       }}
+    end
+  end
+
+  def run({:show_roadmap, project_key, key}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key) do
+      {:ok, Map.put(roadmap_json(roadmap), :project, project.key)}
+    end
+  end
+
+  def run({:list_workflows, project_key, roadmap_key}) do
+    with {:ok, roadmap_ids} <- workflow_scope(project_key, roadmap_key),
+         filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
+         {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)),
+         {:ok, labels} <- roadmap_labels() do
+      {:ok,
+       %{
+         workflows:
+           workflows
+           |> Enum.sort_by(&{Map.get(labels, &1.roadmap_id), &1.workflow_id})
+           |> Enum.map(fn workflow ->
+             %{
+               id: workflow.id,
+               roadmap_id: workflow.roadmap_id,
+               roadmap: Map.get(labels, workflow.roadmap_id),
+               workflow_id: workflow.workflow_id,
+               name: workflow.name
+             }
+           end)
+       }}
+    end
+  end
+
+  def run({:show_workflow, project_key, roadmap_key, workflow_key}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
+         {:ok, workflow} <-
+           read_one(Workflow, roadmap_id: roadmap.id, workflow_id: workflow_key) do
+      {:ok,
+       workflow_json(workflow)
+       |> Map.put(:project, project.key)
+       |> Map.put(:roadmap, roadmap.key)}
+    end
+  end
+
   def run({:add_roadmap, project_key, key, name}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <-
@@ -262,6 +332,53 @@ defmodule SpruceGoose.CLI.Executor do
     else
       false -> {:error, "SOP path must be #{SopGate.path()}"}
       result -> result
+    end
+  end
+
+  defp roadmap_scope(nil), do: {:ok, []}
+
+  defp roadmap_scope(project_key) do
+    with {:ok, project} <- read_one(Project, key: project_key) do
+      {:ok, [project_id: project.id]}
+    end
+  end
+
+  defp workflow_scope(nil, nil), do: {:ok, nil}
+
+  defp workflow_scope(nil, roadmap_key) do
+    with {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, key: roadmap_key)) do
+      case roadmaps do
+        [] -> {:error, "not found"}
+        roadmaps -> {:ok, Enum.map(roadmaps, & &1.id)}
+      end
+    end
+  end
+
+  defp workflow_scope(project_key, roadmap_key) do
+    with {:ok, project} <- read_one(Project, key: project_key) do
+      filter =
+        if roadmap_key,
+          do: [project_id: project.id, key: roadmap_key],
+          else: [project_id: project.id]
+
+      with {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, filter)) do
+        case roadmaps do
+          [] -> {:error, "not found"}
+          roadmaps -> {:ok, Enum.map(roadmaps, & &1.id)}
+        end
+      end
+    end
+  end
+
+  defp roadmap_labels do
+    with {:ok, projects} <- Ash.read(Project),
+         {:ok, roadmaps} <- Ash.read(Roadmap) do
+      project_keys = Map.new(projects, &{&1.id, &1.key})
+
+      {:ok,
+       Map.new(roadmaps, fn roadmap ->
+         {roadmap.id, "#{Map.get(project_keys, roadmap.project_id)}/#{roadmap.key}"}
+       end)}
     end
   end
 

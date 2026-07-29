@@ -7,8 +7,28 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["project", "add", key | name]) when name != [],
     do: {:ok, {:add_project, key, Enum.join(name, " ")}}
 
+  def parse(["project", "list"]), do: {:ok, :list_projects}
+  def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
+
   def parse(["roadmap", "add", project, key | name]) when name != [],
     do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
+
+  def parse(["roadmap", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, project: :string) do
+      {:ok, {:list_roadmaps, Keyword.get(opts, :project)}}
+    end
+  end
+
+  def parse(["roadmap", "show", project, key]), do: {:ok, {:show_roadmap, project, key}}
+
+  def parse(["workflow", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, project: :string, roadmap: :string) do
+      {:ok, {:list_workflows, Keyword.get(opts, :project), Keyword.get(opts, :roadmap)}}
+    end
+  end
+
+  def parse(["workflow", "show", project, roadmap, workflow_id]),
+    do: {:ok, {:show_workflow, project, roadmap, workflow_id}}
 
   def parse(["workflow", "add" | args]) do
     {opts, rest, invalid} =
@@ -131,6 +151,13 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(_args), do: {:error, :usage}
+
+  defp scope_options(args, strict) do
+    case OptionParser.parse(args, strict: strict) do
+      {opts, [], []} -> {:ok, opts}
+      _ -> {:error, "invalid list arguments"}
+    end
+  end
 
   defp required(opts, key) do
     case Keyword.get(opts, key) do

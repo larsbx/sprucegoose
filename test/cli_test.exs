@@ -123,6 +123,58 @@ defmodule SpruceGoose.CLITest do
              ])
   end
 
+  test "parses hierarchy read commands with optional scope filters" do
+    assert {:ok, :list_projects} = Command.parse(["project", "list"])
+    assert {:ok, {:show_project, "pi"}} = Command.parse(["project", "show", "pi"])
+
+    assert {:ok, {:list_roadmaps, nil}} = Command.parse(["roadmap", "list"])
+
+    assert {:ok, {:list_roadmaps, "pi"}} =
+             Command.parse(["roadmap", "list", "--project", "pi"])
+
+    assert {:ok, {:show_roadmap, "pi", "pi-platform-governance"}} =
+             Command.parse(["roadmap", "show", "pi", "pi-platform-governance"])
+
+    assert {:ok, {:list_workflows, nil, nil}} = Command.parse(["workflow", "list"])
+
+    assert {:ok, {:list_workflows, "pi", nil}} =
+             Command.parse(["workflow", "list", "--project", "pi"])
+
+    assert {:ok, {:list_workflows, nil, "dashboard"}} =
+             Command.parse(["workflow", "list", "--roadmap", "dashboard"])
+
+    assert {:ok, {:list_workflows, "pi", "pi-platform-governance"}} =
+             Command.parse([
+               "workflow",
+               "list",
+               "--project",
+               "pi",
+               "--roadmap",
+               "pi-platform-governance"
+             ])
+
+    assert {:ok, {:show_workflow, "pi", "pi-platform-governance", "pi-icm-doc-accuracy"}} =
+             Command.parse([
+               "workflow",
+               "show",
+               "pi",
+               "pi-platform-governance",
+               "pi-icm-doc-accuracy"
+             ])
+  end
+
+  test "hierarchy read commands reject stray arguments and unknown options" do
+    assert {:error, :usage} = Command.parse(["project", "list", "extra"])
+    assert {:error, :usage} = Command.parse(["project", "show"])
+    assert {:error, :usage} = Command.parse(["roadmap", "show", "pi"])
+    assert {:error, :usage} = Command.parse(["workflow", "show", "pi", "roadmap"])
+
+    assert {:error, "invalid list arguments"} = Command.parse(["roadmap", "list", "pi"])
+
+    assert {:error, "invalid list arguments"} =
+             Command.parse(["workflow", "list", "--bogus", "x"])
+  end
+
   test "rejects unknown task types and missing titles" do
     base = [
       "task",

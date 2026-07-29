@@ -56,6 +56,122 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert {:ok, %{completed: true}} = Executor.run({:complete_todo, task.id, todo.id})
   end
 
+  test "hierarchy read commands list, scope, and fail closed on unknown keys" do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "build", kind: :oban}]})
+
+    {:ok, alpha} = Ash.create(Project, %{key: "alpha", name: "Alpha"})
+    {:ok, beta} = Ash.create(Project, %{key: "beta", name: "Beta"})
+
+    {:ok, alpha_one} =
+      Ash.create(Roadmap, %{project_id: alpha.id, key: "one", name: "Alpha One"})
+
+    {:ok, _alpha_two} =
+      Ash.create(Roadmap, %{project_id: alpha.id, key: "two", name: "Alpha Two"})
+
+    {:ok, beta_one} =
+      Ash.create(Roadmap, %{project_id: beta.id, key: "solo", name: "Beta Solo"})
+
+    {:ok, _} =
+      Ash.create(Workflow, %{
+        roadmap_id: alpha_one.id,
+        workflow_id: "alpha-flow",
+        name: "Alpha flow",
+        definition: definition
+      })
+
+    {:ok, _} =
+      Ash.create(Workflow, %{
+        roadmap_id: beta_one.id,
+        workflow_id: "beta-flow",
+        name: "Beta flow",
+        definition: definition
+      })
+
+    assert {:ok, %{projects: projects}} = Executor.run(:list_projects)
+    keys = Enum.map(projects, & &1.key)
+    assert "alpha" in keys
+    assert "beta" in keys
+    assert keys == Enum.sort(keys)
+
+    assert {:ok, %{key: "alpha", name: "Alpha"}} = Executor.run({:show_project, "alpha"})
+
+    assert {:ok, %{roadmaps: scoped}} = Executor.run({:list_roadmaps, "alpha"})
+    assert Enum.map(scoped, & &1.key) == ["one", "two"]
+    assert Enum.all?(scoped, &(&1.project == "alpha"))
+
+    assert {:ok, %{roadmaps: all_roadmaps}} = Executor.run({:list_roadmaps, nil})
+    assert length(all_roadmaps) >= 3
+
+    assert {:ok, %{key: "one", project: "alpha"}} =
+             Executor.run({:show_roadmap, "alpha", "one"})
+
+    assert {:ok, %{workflows: alpha_workflows}} = Executor.run({:list_workflows, "alpha", nil})
+    assert Enum.map(alpha_workflows, & &1.workflow_id) == ["alpha-flow"]
+    assert Enum.all?(alpha_workflows, &(&1.roadmap == "alpha/one"))
+
+    assert {:ok, %{workflows: by_roadmap}} = Executor.run({:list_workflows, nil, "solo"})
+    assert Enum.map(by_roadmap, & &1.workflow_id) == ["beta-flow"]
+
+    assert {:ok, %{workflows: narrowed}} = Executor.run({:list_workflows, "alpha", "one"})
+    assert Enum.map(narrowed, & &1.workflow_id) == ["alpha-flow"]
+
+    assert {:ok, %{workflows: []}} = Executor.run({:list_workflows, "alpha", "two"})
+
+    assert {:ok, shown} = Executor.run({:show_workflow, "alpha", "one", "alpha-flow"})
+    assert shown.project == "alpha"
+    assert shown.roadmap == "one"
+    assert Enum.map(shown.definition.tasks, & &1.id) == ["build"]
+
+    assert {:error, "not found"} = Executor.run({:show_project, "missing"})
+    assert {:error, "not found"} = Executor.run({:list_roadmaps, "missing"})
+    assert {:error, "not found"} = Executor.run({:show_roadmap, "alpha", "missing"})
+    assert {:error, "not found"} = Executor.run({:list_workflows, "missing", nil})
+    assert {:error, "not found"} = Executor.run({:list_workflows, nil, "missing"})
+    assert {:error, "not found"} = Executor.run({:show_workflow, "alpha", "one", "missing"})
+    assert {:error, "not found"} = Executor.run({:show_workflow, "beta", "one", "alpha-flow"})
+  end
+
+  test "hierarchy reads expose keys sufficient to admit a governed task" do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
+    {:ok, project} = Ash.create(Project, %{key: "discover", name: "Discover"})
+
+    {:ok, roadmap} =
+      Ash.create(Roadmap, %{project_id: project.id, key: "paths", name: "Paths"})
+
+    {:ok, _} =
+      Ash.create(Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "admission",
+        name: "Admission",
+        definition: definition
+      })
+
+    {:ok, %{projects: projects}} = Executor.run(:list_projects)
+    project_key = Enum.find(projects, &(&1.key == "discover")).key
+
+    {:ok, %{roadmaps: roadmaps}} = Executor.run({:list_roadmaps, project_key})
+    roadmap_key = hd(roadmaps).key
+
+    {:ok, %{workflows: workflows}} = Executor.run({:list_workflows, project_key, roadmap_key})
+    workflow_key = hd(workflows).workflow_id
+
+    assert {:ok, task} =
+             Executor.run({
+               :add_task,
+               %{
+                 project: project_key,
+                 roadmap: roadmap_key,
+                 workflow: workflow_key,
+                 task_type: :task,
+                 title: "Admitted from discovered keys",
+                 definition_of_done: "Discovery closes the admission loop",
+                 sop_path: SopGate.path()
+               }
+             })
+
+    assert task.title == "Admitted from discovered keys"
+  end
+
   test "CLI task admission writes to PostgreSQL and show reads it back" do
     {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
     {:ok, project} = Ash.create(Project, %{key: "pi", name: "Pi"})
