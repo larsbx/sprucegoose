@@ -69,6 +69,20 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["task", "acknowledge-sop", id, sop_path]),
     do: {:ok, {:acknowledge_sop, id, sop_path}}
 
+  def parse(["dep", "list", task_id]), do: {:ok, {:list_dependencies, task_id}}
+
+  def parse(["dep", "add", task_id | args]) do
+    with {:ok, predecessor} <- dependency_option(args) do
+      {:ok, {:add_dependency, task_id, predecessor}}
+    end
+  end
+
+  def parse(["dep", "remove", task_id | args]) do
+    with {:ok, predecessor} <- dependency_option(args) do
+      {:ok, {:remove_dependency, task_id, predecessor}}
+    end
+  end
+
   def parse(["inbox", "list" | args]) do
     with {:ok, opts} <- scope_options(args, state: :string) do
       {:ok, {:list_inbox, Keyword.get(opts, :state)}}
@@ -202,6 +216,19 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(_args), do: {:error, :usage}
+
+  defp dependency_option(args) do
+    case OptionParser.parse(args, strict: [after: :string]) do
+      {opts, [], []} ->
+        case Keyword.get(opts, :after) do
+          value when is_binary(value) and value != "" -> {:ok, value}
+          _ -> {:error, "--after is required"}
+        end
+
+      _ ->
+        {:error, "invalid dependency arguments"}
+    end
+  end
 
   defp scope_options(args, strict) do
     case OptionParser.parse(args, strict: strict) do

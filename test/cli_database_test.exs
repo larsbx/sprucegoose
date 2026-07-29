@@ -451,6 +451,122 @@ defmodule SpruceGoose.CLIDatabaseTest do
     workflow
   end
 
+  test "dependency authoring creates, lists, and clears runtime task edges" do
+    workflow = workflow("deps")
+    upstream = dependency_task(workflow, "upstream")
+    downstream = dependency_task(workflow, "downstream")
+
+    assert {:ok, edge} =
+             Executor.run({:add_dependency, downstream.task_id, upstream.task_id})
+
+    assert edge.task == downstream.task_id
+    assert edge.depends_on == upstream.task_id
+    assert edge.source == "native"
+
+    assert {:ok, listed} = Executor.run({:list_dependencies, downstream.task_id})
+    assert listed.blocked
+    assert [%{task: predecessor_id, state: :inbox}] = listed.predecessors
+    assert predecessor_id == upstream.task_id
+    assert listed.successors == []
+
+    assert {:ok, upstream_view} = Executor.run({:list_dependencies, upstream.task_id})
+    refute upstream_view.blocked
+    assert [%{task: successor_id}] = upstream_view.successors
+    assert successor_id == downstream.task_id
+
+    assert {:ok, removed} =
+             Executor.run({:remove_dependency, downstream.task_id, upstream.task_id})
+
+    assert removed.removed == edge.id
+
+    assert {:ok, %{predecessors: [], blocked: false}} =
+             Executor.run({:list_dependencies, downstream.task_id})
+
+    assert {:error, "not found"} =
+             Executor.run({:remove_dependency, downstream.task_id, upstream.task_id})
+  end
+
+  test "dependency admission rejects cycles, duplicates, self edges, and cross-workflow links" do
+    workflow = workflow("cycles")
+    a = dependency_task(workflow, "a")
+    b = dependency_task(workflow, "b")
+    c = dependency_task(workflow, "c")
+
+    assert {:error, "a task cannot depend on itself"} =
+             Executor.run({:add_dependency, a.task_id, a.task_id})
+
+    assert {:ok, _} = Executor.run({:add_dependency, b.task_id, a.task_id})
+
+    assert {:error, "dependency already exists"} =
+             Executor.run({:add_dependency, b.task_id, a.task_id})
+
+    assert {:error, "dependency would create a cycle"} =
+             Executor.run({:add_dependency, a.task_id, b.task_id})
+
+    # Multi-hop: a -> b -> c, so c -> a would close a three-node cycle.
+    assert {:ok, _} = Executor.run({:add_dependency, c.task_id, b.task_id})
+
+    assert {:error, "dependency would create a cycle"} =
+             Executor.run({:add_dependency, a.task_id, c.task_id})
+
+    # Clearing the middle edge re-legalises the previously cyclic edge.
+    assert {:ok, _} = Executor.run({:remove_dependency, c.task_id, b.task_id})
+    assert {:ok, _} = Executor.run({:add_dependency, a.task_id, c.task_id})
+
+    other = workflow("cycles-other")
+    foreign = dependency_task(other, "foreign")
+
+    assert {:error, "dependencies must stay within one workflow"} =
+             Executor.run({:add_dependency, b.task_id, foreign.task_id})
+
+    assert {:error, "invalid task ID"} =
+             Executor.run({:add_dependency, "nonsense", a.task_id})
+
+    assert {:error, "not found"} =
+             Executor.run({:add_dependency, "tsk-20260101T000000Z-deadbeef", a.task_id})
+  end
+
+  test "dependency edges gate task start and explain the block" do
+    workflow = workflow("gate-deps")
+    upstream = dependency_task(workflow, "gate-upstream")
+    downstream = dependency_task(workflow, "gate-downstream")
+
+    assert {:ok, _} = Executor.run({:add_dependency, downstream.task_id, upstream.task_id})
+
+    for target <- [:proposed, :queued, :ready] do
+      assert {:ok, _} = Executor.run({:transition_task, downstream.task_id, target, nil})
+    end
+
+    assert {:error, "task has incomplete predecessors"} =
+             Executor.run({:transition_task, downstream.task_id, :in_progress, nil})
+
+    assert {:ok, %{blocked: true}} = Executor.run({:list_dependencies, downstream.task_id})
+
+    for target <- [:proposed, :queued, :ready, :in_progress, :completed] do
+      assert {:ok, _} = Executor.run({:transition_task, upstream.task_id, target, nil})
+    end
+
+    assert {:ok, %{blocked: false}} = Executor.run({:list_dependencies, downstream.task_id})
+
+    assert {:ok, %{state: :in_progress}} =
+             Executor.run({:transition_task, downstream.task_id, :in_progress, nil})
+  end
+
+  defp dependency_task(workflow, suffix) do
+    # Task.create sets the SOP acknowledgment itself via acknowledge_sop/1, so
+    # the gate fields must not be passed as inputs here.
+    {:ok, task} =
+      Ash.create(Task, %{
+        workflow_id: workflow.id,
+        task_id: SpruceGoose.TaskId.generate(),
+        title: "Dependency #{suffix}",
+        definition_of_done: "Edge admission is governed",
+        runner: :oban
+      })
+
+    task
+  end
+
   test "CLI inbox captures are distinct per capture and remain non-executable" do
     assert {:ok, first} = Executor.run({:add_inbox, "Unclassified operator note"})
     assert {:ok, second} = Executor.run({:add_inbox, "Unclassified operator note"})

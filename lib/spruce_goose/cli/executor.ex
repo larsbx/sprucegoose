@@ -6,6 +6,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
+    Dependency,
     InboxItem,
     Project,
     Roadmap,
@@ -173,6 +174,63 @@ defmodule SpruceGoose.CLI.Executor do
     else
       false -> {:error, "SOP path must be #{SopGate.path()}"}
       result -> result
+    end
+  end
+
+  def run({:list_dependencies, task_id}) do
+    with :ok <- require_valid_id(task_id),
+         {:ok, task} <- read_one(Task, task_id: task_id),
+         {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]),
+         {:ok, task} <- Ash.load(task, successor_edges: [:successor]) do
+      {:ok,
+       %{
+         task: task.task_id,
+         state: task.state,
+         blocked: Enum.any?(task.predecessor_edges, &(&1.predecessor.state != :completed)),
+         predecessors:
+           task.predecessor_edges
+           |> Enum.map(&edge_json(&1, &1.predecessor))
+           |> Enum.sort_by(& &1.task),
+         successors:
+           task.successor_edges
+           |> Enum.map(&edge_json(&1, &1.successor))
+           |> Enum.sort_by(& &1.task)
+       }}
+    end
+  end
+
+  def run({:add_dependency, task_id, predecessor_id}) do
+    with {:ok, successor, predecessor} <- dependency_pair(task_id, predecessor_id),
+         :ok <- require_same_workflow(successor, predecessor),
+         :ok <- require_new_edge(successor, predecessor),
+         :ok <- require_acyclic(successor, predecessor),
+         {:ok, edge} <-
+           Ash.create(Dependency, %{
+             predecessor_id: predecessor.id,
+             successor_id: successor.id,
+             source: "native"
+           }) do
+      {:ok,
+       %{
+         id: edge.id,
+         task: successor.task_id,
+         depends_on: predecessor.task_id,
+         source: edge.source
+       }}
+    end
+  end
+
+  def run({:remove_dependency, task_id, predecessor_id}) do
+    with {:ok, successor, predecessor} <- dependency_pair(task_id, predecessor_id),
+         {:ok, edge} <-
+           read_one(Dependency, predecessor_id: predecessor.id, successor_id: successor.id),
+         :ok <- Ash.destroy(edge) do
+      {:ok,
+       %{
+         removed: edge.id,
+         task: successor.task_id,
+         depends_on: predecessor.task_id
+       }}
     end
   end
 
@@ -369,6 +427,73 @@ defmodule SpruceGoose.CLI.Executor do
   # unique id still yields exactly one event per capture.
   defp generate_record_id(prefix) do
     prefix <> "-" <> (16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower))
+  end
+
+  defp dependency_pair(task_id, predecessor_id) do
+    with :ok <- require_valid_id(task_id),
+         :ok <- require_valid_id(predecessor_id),
+         {:ok, successor} <- read_one(Task, task_id: task_id),
+         {:ok, predecessor} <- read_one(Task, task_id: predecessor_id) do
+      if successor.id == predecessor.id do
+        {:error, "a task cannot depend on itself"}
+      else
+        {:ok, successor, predecessor}
+      end
+    end
+  end
+
+  defp require_new_edge(successor, predecessor) do
+    case read_one(Dependency, predecessor_id: predecessor.id, successor_id: successor.id) do
+      {:error, "not found"} -> :ok
+      {:ok, _edge} -> {:error, "dependency already exists"}
+      error -> error
+    end
+  end
+
+  defp require_same_workflow(%{workflow_id: id}, %{workflow_id: id}), do: :ok
+
+  defp require_same_workflow(_successor, _predecessor),
+    do: {:error, "dependencies must stay within one workflow"}
+
+  # Dag.validate/1 covers workflow definitions, not runtime task_dependencies
+  # rows, so edge admission needs its own reachability check. A new edge
+  # predecessor -> successor closes a cycle exactly when successor is already
+  # reachable from predecessor by following existing predecessor edges.
+  defp require_acyclic(successor, predecessor) do
+    with {:ok, edges} <- Ash.read(Dependency) do
+      predecessors_of =
+        Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
+
+      if reaches?(predecessor.id, successor.id, predecessors_of, MapSet.new()) do
+        {:error, "dependency would create a cycle"}
+      else
+        :ok
+      end
+    end
+  end
+
+  defp reaches?(from, target, _predecessors_of, _seen) when from == target, do: true
+
+  defp reaches?(from, target, predecessors_of, seen) do
+    if MapSet.member?(seen, from) do
+      false
+    else
+      seen = MapSet.put(seen, from)
+
+      predecessors_of
+      |> Map.get(from, [])
+      |> Enum.any?(&reaches?(&1, target, predecessors_of, seen))
+    end
+  end
+
+  defp edge_json(edge, task) do
+    %{
+      id: edge.id,
+      task: task.task_id,
+      title: task.title,
+      state: task.state,
+      source: edge.source
+    }
   end
 
   @inbox_states ~w(pending resolved dropped)

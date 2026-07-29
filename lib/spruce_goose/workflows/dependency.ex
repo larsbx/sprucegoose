@@ -47,5 +47,9 @@ defmodule SpruceGoose.Workflows.Dependency do
       primary?(true)
       accept([:predecessor_id, :successor_id, :source])
     end
+
+    destroy :destroy do
+      primary?(true)
+    end
   end
 end

@@ -253,6 +253,35 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["filter", "apply", "filter-id"])
   end
 
+  test "parses dependency authoring commands" do
+    id = "tsk-20260727T044500Z-1234abcd"
+    predecessor = "tsk-20260727T044500Z-abcd1234"
+
+    assert {:ok, {:list_dependencies, ^id}} = Command.parse(["dep", "list", id])
+
+    assert {:ok, {:add_dependency, ^id, ^predecessor}} =
+             Command.parse(["dep", "add", id, "--after", predecessor])
+
+    assert {:ok, {:remove_dependency, ^id, ^predecessor}} =
+             Command.parse(["dep", "remove", id, "--after", predecessor])
+  end
+
+  test "dependency commands fail closed on malformed arguments" do
+    id = "tsk-20260727T044500Z-1234abcd"
+
+    assert {:error, "--after is required"} = Command.parse(["dep", "add", id])
+    assert {:error, "--after is required"} = Command.parse(["dep", "remove", id])
+
+    assert {:error, "invalid dependency arguments"} =
+             Command.parse(["dep", "add", id, "--after", "x", "stray"])
+
+    assert {:error, "invalid dependency arguments"} =
+             Command.parse(["dep", "add", id, "--bogus", "x"])
+
+    assert {:error, :usage} = Command.parse(["dep", "list"])
+    assert {:error, :usage} = Command.parse(["dep", "bogus", id])
+  end
+
   test "parses fail-closed inbox capture" do
     assert {:ok, {:add_inbox, "Unclassified operator note"}} =
              Command.parse(["inbox", "add", "Unclassified", "operator", "note"])
