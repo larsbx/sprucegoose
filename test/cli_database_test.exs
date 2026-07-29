@@ -451,7 +451,114 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert first == second
     assert first.state == :pending
 
-    assert {:ok, %{items: [listed]}} = Executor.run(:list_inbox)
+    assert {:ok, %{items: [listed]}} = Executor.run({:list_inbox, nil})
     assert listed == first
+  end
+
+  test "inbox triage resolves, drops, scopes listing, and fails closed on terminal captures" do
+    {:ok, keep} = Executor.run({:add_inbox, "Capture to resolve"})
+    {:ok, junk} = Executor.run({:add_inbox, "Capture to drop"})
+    {:ok, open} = Executor.run({:add_inbox, "Capture left open"})
+
+    assert {:ok, resolved} = Executor.run({:resolve_inbox, keep.id, nil})
+    assert resolved.state == :resolved
+    assert resolved.resolved_at
+
+    assert {:ok, dropped} = Executor.run({:drop_inbox, junk.id, "not actionable"})
+    assert dropped.state == :dropped
+    assert dropped.resolution_reason == "not actionable"
+
+    assert {:ok, %{items: pending}} = Executor.run({:list_inbox, nil})
+    assert Enum.map(pending, & &1.id) == [open.id]
+
+    assert {:ok, %{items: all}} = Executor.run({:list_inbox, "all"})
+    assert length(all) == 3
+
+    assert {:ok, %{items: [only_resolved]}} = Executor.run({:list_inbox, "resolved"})
+    assert only_resolved.id == keep.id
+
+    assert {:ok, %{items: [only_dropped]}} = Executor.run({:list_inbox, "dropped"})
+    assert only_dropped.id == junk.id
+
+    assert {:error, "state must be one of pending, resolved, dropped, all"} =
+             Executor.run({:list_inbox, "bogus"})
+
+    assert {:error, _} = Executor.run({:resolve_inbox, keep.id, nil})
+    assert {:error, _} = Executor.run({:drop_inbox, keep.id, "already closed"})
+    assert {:error, _} = Executor.run({:resolve_inbox, junk.id, nil})
+    assert {:error, "not found"} = Executor.run({:resolve_inbox, "inbox-missing", nil})
+  end
+
+  test "inbox promote admits a governed task and records capture provenance atomically" do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "triage", kind: :oban}]})
+    {:ok, project} = Ash.create(Project, %{key: "triage", name: "Triage"})
+
+    {:ok, roadmap} =
+      Ash.create(Roadmap, %{project_id: project.id, key: "intake", name: "Intake"})
+
+    {:ok, _} =
+      Ash.create(Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "promote",
+        name: "Promote",
+        definition: definition
+      })
+
+    membership = %{
+      project: "triage",
+      roadmap: "intake",
+      workflow: "promote",
+      task_type: :task,
+      definition_of_done: "Capture is promoted",
+      sop_path: SopGate.path()
+    }
+
+    {:ok, capture} = Executor.run({:add_inbox, "Promote this capture"})
+
+    assert {:ok, %{capture: promoted, task: task}} =
+             Executor.run({:promote_inbox, capture.id, Map.put(membership, :title, nil)})
+
+    assert task.title == "Promote this capture"
+    assert task.definition_of_done == "Capture is promoted"
+    assert task.sop_gate_required
+    assert promoted.state == :resolved
+    assert promoted.promoted_task_id == task.id
+    assert promoted.resolution_reason == "promoted to #{task.id}"
+
+    assert {:ok, shown} = Executor.run({:show_task, task.id})
+    assert shown.id == task.id
+
+    assert {:error, _} =
+             Executor.run({:promote_inbox, capture.id, Map.put(membership, :title, nil)})
+
+    {:ok, titled_capture} = Executor.run({:add_inbox, "Capture with override"})
+
+    assert {:ok, %{task: titled}} =
+             Executor.run(
+               {:promote_inbox, titled_capture.id, Map.put(membership, :title, "Explicit title")}
+             )
+
+    assert titled.title == "Explicit title"
+  end
+
+  test "inbox promote leaves the capture open when task admission fails" do
+    {:ok, capture} = Executor.run({:add_inbox, "Capture with bad membership"})
+
+    assert {:error, _} =
+             Executor.run(
+               {:promote_inbox, capture.id,
+                %{
+                  project: "missing-project",
+                  roadmap: "missing",
+                  workflow: "missing",
+                  task_type: :task,
+                  title: nil,
+                  definition_of_done: "Should not be admitted",
+                  sop_path: SopGate.path()
+                }}
+             )
+
+    assert {:ok, %{items: pending}} = Executor.run({:list_inbox, nil})
+    assert capture.id in Enum.map(pending, & &1.id)
   end
 end

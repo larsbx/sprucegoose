@@ -184,9 +184,38 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run(:list_inbox) do
-    with {:ok, items} <- Ash.read(InboxItem) do
+  def run({:list_inbox, state}) do
+    with {:ok, filter} <- inbox_scope(state),
+         {:ok, items} <- Ash.read(Ash.Query.filter_input(InboxItem, filter)) do
       {:ok, %{items: items |> Enum.sort_by(& &1.capture_id) |> Enum.map(&inbox_json/1)}}
+    end
+  end
+
+  def run({:resolve_inbox, capture_id, reason}) do
+    with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
+         {:ok, item} <- resolve_capture(item, :resolved, %{resolution_reason: reason}) do
+      {:ok, inbox_json(item)}
+    end
+  end
+
+  def run({:drop_inbox, capture_id, reason}) do
+    with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
+         {:ok, item} <- resolve_capture(item, :dropped, %{resolution_reason: reason}) do
+      {:ok, inbox_json(item)}
+    end
+  end
+
+  def run({:promote_inbox, capture_id, input}) do
+    with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
+         :ok <- require_open_capture(item),
+         title = input.title || item.body,
+         {:ok, task} <- run({:add_task, Map.put(input, :title, title)}),
+         {:ok, item} <-
+           resolve_capture(item, :resolved, %{
+             resolution_reason: "promoted to #{task.id}",
+             promoted_task_id: task.id
+           }) do
+      {:ok, %{capture: inbox_json(item), task: task}}
     end
   end
 
@@ -333,6 +362,28 @@ defmodule SpruceGoose.CLI.Executor do
       false -> {:error, "SOP path must be #{SopGate.path()}"}
       result -> result
     end
+  end
+
+  @inbox_states ~w(pending resolved dropped)
+
+  defp inbox_scope(nil), do: {:ok, [state: :pending]}
+  defp inbox_scope("all"), do: {:ok, []}
+
+  defp inbox_scope(state) when state in @inbox_states,
+    do: {:ok, [state: String.to_existing_atom(state)]}
+
+  defp inbox_scope(_state),
+    do: {:error, "state must be one of pending, resolved, dropped, all"}
+
+  defp require_open_capture(%{state: :pending}), do: :ok
+
+  defp require_open_capture(%{state: state}),
+    do: {:error, "capture is already #{state}"}
+
+  defp resolve_capture(item, to_state, attrs) do
+    item
+    |> Ash.Changeset.for_update(:resolve, Map.put(attrs, :to_state, to_state))
+    |> Ash.update()
   end
 
   defp roadmap_scope(nil), do: {:ok, []}
@@ -512,7 +563,15 @@ defmodule SpruceGoose.CLI.Executor do
     }
   end
 
-  defp inbox_json(item), do: %{id: item.capture_id, body: item.body, state: item.state}
+  defp inbox_json(item),
+    do: %{
+      id: item.capture_id,
+      body: item.body,
+      state: item.state,
+      resolution_reason: item.resolution_reason,
+      promoted_task_id: item.promoted_task_id,
+      resolved_at: item.resolved_at
+    }
 
   defp project_json(project), do: %{id: project.id, key: project.key, name: project.name}
 

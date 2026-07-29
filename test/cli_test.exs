@@ -257,8 +257,95 @@ defmodule SpruceGoose.CLITest do
     assert {:ok, {:add_inbox, "Unclassified operator note"}} =
              Command.parse(["inbox", "add", "Unclassified", "operator", "note"])
 
-    assert {:ok, :list_inbox} = Command.parse(["inbox", "list"])
+    assert {:ok, {:list_inbox, nil}} = Command.parse(["inbox", "list"])
     assert {:error, :usage} = Command.parse(["inbox", "add"])
+  end
+
+  test "parses inbox triage commands" do
+    assert {:ok, {:list_inbox, "all"}} = Command.parse(["inbox", "list", "--state", "all"])
+
+    assert {:ok, {:list_inbox, "resolved"}} =
+             Command.parse(["inbox", "list", "--state", "resolved"])
+
+    assert {:ok, {:resolve_inbox, "inbox-abc", nil}} =
+             Command.parse(["inbox", "done", "inbox-abc"])
+
+    assert {:ok, {:drop_inbox, "inbox-abc", "not actionable"}} =
+             Command.parse(["inbox", "drop", "inbox-abc", "not", "actionable"])
+
+    assert {:ok, {:promote_inbox, "inbox-abc", promoted}} =
+             Command.parse([
+               "inbox",
+               "promote",
+               "inbox-abc",
+               "--project",
+               "pi",
+               "--roadmap",
+               "buzz-agent-collaboration-plane",
+               "--workflow",
+               "buzz-integration",
+               "--dod",
+               "triage closes",
+               "--sop",
+               SopGate.path()
+             ])
+
+    assert promoted.project == "pi"
+    assert promoted.definition_of_done == "triage closes"
+    assert promoted.task_type == :task
+    assert promoted.title == nil
+
+    assert {:ok, {:promote_inbox, "inbox-abc", %{title: "Explicit title", task_type: :diagnosis}}} =
+             Command.parse([
+               "inbox",
+               "promote",
+               "inbox-abc",
+               "--project",
+               "pi",
+               "--roadmap",
+               "r",
+               "--workflow",
+               "w",
+               "--dod",
+               "d",
+               "--sop",
+               SopGate.path(),
+               "--type",
+               "diagnosis",
+               "--title",
+               "Explicit title"
+             ])
+  end
+
+  test "inbox triage commands fail closed on malformed arguments" do
+    assert {:error, :usage} = Command.parse(["inbox", "done"])
+    assert {:error, :usage} = Command.parse(["inbox", "drop", "inbox-abc"])
+    assert {:error, "invalid list arguments"} = Command.parse(["inbox", "list", "stray"])
+
+    base = [
+      "inbox",
+      "promote",
+      "inbox-abc",
+      "--project",
+      "pi",
+      "--roadmap",
+      "r",
+      "--workflow",
+      "w",
+      "--dod",
+      "d",
+      "--sop",
+      SopGate.path()
+    ]
+
+    assert {:error, "--type must be task or diagnosis"} =
+             Command.parse(base ++ ["--type", "shell"])
+
+    assert {:error, "invalid inbox promote arguments"} = Command.parse(base ++ ["stray"])
+
+    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
+      assert {:error, _} = Command.parse(drop_option(base, "--#{missing}"))
+    end
   end
 
   test "parses subordinate TODO commands" do

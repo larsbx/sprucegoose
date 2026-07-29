@@ -69,10 +69,61 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["task", "acknowledge-sop", id, sop_path]),
     do: {:ok, {:acknowledge_sop, id, sop_path}}
 
-  def parse(["inbox", "list"]), do: {:ok, :list_inbox}
+  def parse(["inbox", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, state: :string) do
+      {:ok, {:list_inbox, Keyword.get(opts, :state)}}
+    end
+  end
 
   def parse(["inbox", "add" | body]) when body != [],
     do: {:ok, {:add_inbox, Enum.join(body, " ")}}
+
+  def parse(["inbox", "done", capture_id]), do: {:ok, {:resolve_inbox, capture_id, nil}}
+
+  def parse(["inbox", "drop", capture_id | reason]) when reason != [],
+    do: {:ok, {:drop_inbox, capture_id, Enum.join(reason, " ")}}
+
+  def parse(["inbox", "promote", capture_id | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          project: :string,
+          roadmap: :string,
+          workflow: :string,
+          dod: :string,
+          sop: :string,
+          type: :string,
+          title: :string
+        ]
+      )
+
+    task_type = Keyword.get(opts, :type, "task")
+
+    with [] <- invalid,
+         [] <- rest,
+         {:ok, project} <- required(opts, :project),
+         {:ok, roadmap} <- required(opts, :roadmap),
+         {:ok, workflow} <- required(opts, :workflow),
+         {:ok, dod} <- required(opts, :dod),
+         {:ok, sop_path} <- required(opts, :sop),
+         true <- task_type in ["task", "diagnosis"] do
+      {:ok,
+       {:promote_inbox, capture_id,
+        %{
+          project: project,
+          roadmap: roadmap,
+          workflow: workflow,
+          definition_of_done: dod,
+          sop_path: sop_path,
+          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
+          title: Keyword.get(opts, :title)
+        }}}
+    else
+      false -> {:error, "--type must be task or diagnosis"}
+      {:error, option} -> {:error, "--#{option} is required"}
+      _ -> {:error, "invalid inbox promote arguments"}
+    end
+  end
 
   def parse(["todo", "list", task_id]), do: {:ok, {:list_todos, task_id}}
 

@@ -16,8 +16,13 @@ defmodule SpruceGoose.Workflows.InboxItem do
     attribute(:state, :atom,
       allow_nil?: false,
       default: :pending,
-      constraints: [one_of: [:pending]]
+      public?: true,
+      constraints: [one_of: [:pending, :resolved, :dropped]]
     )
+
+    attribute(:resolution_reason, :string, public?: true)
+    attribute(:promoted_task_id, :string, public?: true)
+    attribute(:resolved_at, :utc_datetime_usec, public?: true)
 
     timestamps()
   end
@@ -35,6 +40,34 @@ defmodule SpruceGoose.Workflows.InboxItem do
       upsert?(true)
       upsert_identity(:stable_capture)
       upsert_fields([])
+    end
+
+    update :resolve do
+      require_atomic?(false)
+      accept([:resolution_reason, :promoted_task_id])
+
+      argument(:to_state, :atom,
+        allow_nil?: false,
+        constraints: [one_of: [:resolved, :dropped]]
+      )
+
+      change(fn changeset, _context ->
+        case Ash.Changeset.get_data(changeset, :state) do
+          :pending ->
+            changeset
+            |> Ash.Changeset.force_change_attribute(
+              :state,
+              Ash.Changeset.get_argument(changeset, :to_state)
+            )
+            |> Ash.Changeset.force_change_attribute(:resolved_at, DateTime.utc_now())
+
+          state ->
+            Ash.Changeset.add_error(changeset,
+              field: :state,
+              message: "capture is already #{state}"
+            )
+        end
+      end)
     end
   end
 
