@@ -24,6 +24,7 @@ defmodule SpruceGoose.MixProject do
       {:ash, "~> 3.0"},
       {:ash_events, "~> 0.7.0"},
       {:ash_postgres, "~> 2.10"},
+      {:b3, "~> 0.2.0"},
       {:oban, "~> 2.19"}
     ]
   end
