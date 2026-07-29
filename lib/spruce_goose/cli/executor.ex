@@ -177,9 +177,8 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   def run({:add_inbox, body}) do
-    capture_id = "inbox-" <> (:crypto.hash(:sha256, body) |> Base.encode16(case: :lower))
-
-    with {:ok, item} <- Ash.create(InboxItem, %{capture_id: capture_id, body: body}) do
+    with {:ok, item} <-
+           Ash.create(InboxItem, %{capture_id: generate_record_id("inbox"), body: body}) do
       {:ok, inbox_json(item)}
     end
   end
@@ -230,8 +229,7 @@ defmodule SpruceGoose.CLI.Executor do
   def run({:add_todo, task_id, body}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
-         todo_id = "todo-" <> (:crypto.hash(:sha256, body) |> Base.encode16(case: :lower)),
-         {:ok, todo} <- create_or_read_todo(task, todo_id, body) do
+         {:ok, todo} <- create_todo(task, generate_record_id("todo"), body) do
       {:ok, todo_json(todo)}
     end
   end
@@ -364,6 +362,15 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  # Record identity is generated, never derived from content. Deriving
+  # capture_id/todo_id from sha256(body) made two genuinely distinct records
+  # with identical text collapse into one. Outbox dedup does not depend on
+  # this: the inbox trigger keys ON CONFLICT on 'inbox:' || capture_id, so a
+  # unique id still yields exactly one event per capture.
+  defp generate_record_id(prefix) do
+    prefix <> "-" <> (16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower))
+  end
+
   @inbox_states ~w(pending resolved dropped)
 
   defp inbox_scope(nil), do: {:ok, [state: :pending]}
@@ -480,31 +487,23 @@ defmodule SpruceGoose.CLI.Executor do
     |> Ash.update()
   end
 
-  defp create_or_read_todo(task, todo_id, body) do
+  defp create_todo(task, todo_id, body) do
     Repo.transaction(fn ->
       Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [task.id])
 
       with {:ok, fresh_task} <- read_one(Task, id: task.id),
            :ok <- todo_admission_allowed(fresh_task),
-           result <- read_one(Todo, task_id: task.id, todo_id: todo_id) do
-        case result do
-          {:ok, todo} ->
-            {:ok, todo}
-
-          {:error, "not found"} ->
-            with {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
-              Ash.create(
-                Todo,
-                %{
-                  task_id: task.id,
-                  todo_id: todo_id,
-                  body: body,
-                  position: length(todos) + 1
-                },
-                return_notifications?: true
-              )
-            end
-        end
+           {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
+        Ash.create(
+          Todo,
+          %{
+            task_id: task.id,
+            todo_id: todo_id,
+            body: body,
+            position: length(todos) + 1
+          },
+          return_notifications?: true
+        )
       end
     end)
     |> case do

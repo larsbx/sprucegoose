@@ -10,21 +10,38 @@ defmodule SpruceGoose.TransactionalOutboxTest do
     :ok
   end
 
-  test "task and idempotent inbox writes produce one committed outbox event per revision" do
+  test "task and inbox writes produce one committed outbox event per capture" do
     %{task: task} = fixture()
 
     assert [%Event{event_key: "task:" <> _}] = Repo.all(Event)
 
+    # Captures are identified by a generated id, not sha256(body), so two
+    # captures with identical text are two distinct records. Outbox dedup does
+    # not rely on that collapse: the trigger keys ON CONFLICT on
+    # 'inbox:' || capture_id, so each capture still yields exactly one event.
     assert {:ok, first} = Executor.run({:add_inbox, "transactional intake"})
-    assert {:ok, ^first} = Executor.run({:add_inbox, "transactional intake"})
+    assert {:ok, second} = Executor.run({:add_inbox, "transactional intake"})
+    assert first.id != second.id
 
     inbox_events =
       Event
       |> where([event], event.aggregate_type == "inbox")
+      |> order_by([event], event.inserted_at)
       |> Repo.all()
 
-    assert [%Event{aggregate_id: aggregate_id, event_type: "inbox.captured"}] = inbox_events
-    assert aggregate_id == first.id
+    assert [
+             %Event{aggregate_id: first_aggregate, event_type: "inbox.captured"},
+             %Event{aggregate_id: second_aggregate, event_type: "inbox.captured"}
+           ] = inbox_events
+
+    assert first_aggregate == first.id
+    assert second_aggregate == second.id
+
+    # Re-capturing an existing id is still deduplicated by the trigger.
+    assert 2 ==
+             Event
+             |> where([event], event.aggregate_type == "inbox")
+             |> Repo.aggregate(:count)
 
     assert {:ok, _} = Executor.run({:link_task, task.task_id, "evidence", "outbox-proof"})
 

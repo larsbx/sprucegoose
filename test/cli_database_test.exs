@@ -400,8 +400,14 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:transition_task, successor.task_id, :in_progress, nil})
 
     assert {:ok, todo} = Executor.run({:add_todo, successor.task_id, "Attach evidence"})
-    assert {:ok, ^todo} = Executor.run({:add_todo, successor.task_id, "Attach evidence"})
-    assert {:ok, %{todos: [^todo]}} = Executor.run({:list_todos, successor.task_id})
+
+    # Identical checklist text is a second distinct TODO, not a silent no-op.
+    assert {:ok, duplicate} = Executor.run({:add_todo, successor.task_id, "Attach evidence"})
+    assert duplicate.id != todo.id
+    assert [todo.position, duplicate.position] == [1, 2]
+
+    assert {:ok, %{todos: [^todo, ^duplicate]}} =
+             Executor.run({:list_todos, successor.task_id})
 
     assert {:ok, %{completed: true}} =
              Executor.run({:complete_todo, successor.task_id, todo.id})
@@ -445,14 +451,18 @@ defmodule SpruceGoose.CLIDatabaseTest do
     workflow
   end
 
-  test "CLI inbox capture is idempotent and remains non-executable" do
+  test "CLI inbox captures are distinct per capture and remain non-executable" do
     assert {:ok, first} = Executor.run({:add_inbox, "Unclassified operator note"})
     assert {:ok, second} = Executor.run({:add_inbox, "Unclassified operator note"})
-    assert first == second
-    assert first.state == :pending
 
-    assert {:ok, %{items: [listed]}} = Executor.run({:list_inbox, nil})
-    assert listed == first
+    # Capture identity is generated, so repeating the same note records a
+    # genuinely separate capture rather than collapsing onto the first.
+    assert first.id != second.id
+    assert first.state == :pending
+    assert second.state == :pending
+
+    assert {:ok, %{items: items}} = Executor.run({:list_inbox, nil})
+    assert Enum.sort(Enum.map(items, & &1.id)) == Enum.sort([first.id, second.id])
   end
 
   test "inbox triage resolves, drops, scopes listing, and fails closed on terminal captures" do

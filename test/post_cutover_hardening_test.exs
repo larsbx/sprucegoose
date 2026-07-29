@@ -20,7 +20,7 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
              Ledger.import("/home/admin-papa/tasks/todo.txt")
   end
 
-  test "PC-02/06: terminal TODO admission fails and concurrent admission is idempotent" do
+  test "PC-02/06: terminal TODO admission fails and concurrent admission is race-free" do
     %{task: task} = fixture("todos")
     task = advance(task, [:proposed, :queued, :ready, :in_progress, :completed])
 
@@ -47,7 +47,16 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
       |> Enum.map(fn {:ok, result} -> result end)
 
     assert Enum.all?(results, &match?({:ok, _}, &1))
-    assert results |> Enum.map(fn {:ok, todo} -> todo.id end) |> Enum.uniq() |> length() == 1
+
+    # Record identity is generated, not derived from sha256(body). Eight
+    # concurrent admissions of identical text are eight distinct checklist
+    # items, not one. The advisory lock still serializes them, so positions
+    # are contiguous and unique rather than colliding.
+    ids = Enum.map(results, fn {:ok, todo} -> todo.id end)
+    assert ids |> Enum.uniq() |> length() == 8
+
+    positions = Enum.map(results, fn {:ok, todo} -> todo.position end)
+    assert Enum.sort(positions) == Enum.to_list(1..8)
 
     %{task: different_task} = fixture("todo-different")
 
