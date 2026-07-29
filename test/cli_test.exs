@@ -253,6 +253,63 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["filter", "apply", "filter-id"])
   end
 
+  test "parses rename and removal commands across entities" do
+    assert {:ok, {:rename_project, "pi", "Pi Platform"}} =
+             Command.parse(["project", "rename", "pi", "Pi", "Platform"])
+
+    assert {:ok, {:remove_project, "pi"}} = Command.parse(["project", "remove", "pi"])
+
+    assert {:ok, {:rename_roadmap, "pi", "gov", "Governance"}} =
+             Command.parse(["roadmap", "rename", "pi", "gov", "Governance"])
+
+    assert {:ok, {:remove_roadmap, "pi", "gov"}} =
+             Command.parse(["roadmap", "remove", "pi", "gov"])
+
+    assert {:ok, {:rename_workflow, "pi", "gov", "wf", "Renamed flow"}} =
+             Command.parse(["workflow", "rename", "pi", "gov", "wf", "Renamed", "flow"])
+
+    assert {:ok, {:remove_workflow, "pi", "gov", "wf"}} =
+             Command.parse(["workflow", "remove", "pi", "gov", "wf"])
+
+    assert {:ok, {:rename_board, "board-id", "Main board"}} =
+             Command.parse(["board", "rename", "board-id", "Main", "board"])
+
+    assert {:ok, {:remove_board, "board-id"}} =
+             Command.parse(["board", "remove", "board-id"])
+
+    assert {:ok, {:rename_column, "column-id", "In review"}} =
+             Command.parse(["column", "rename", "column-id", "In", "review"])
+
+    assert {:ok, {:remove_column, "column-id"}} =
+             Command.parse(["column", "remove", "column-id"])
+
+    assert {:ok, {:remove_filter, "filter-id"}} =
+             Command.parse(["filter", "remove", "filter-id"])
+
+    id = "tsk-20260727T044500Z-1234abcd"
+
+    assert {:ok, {:remove_todo, ^id, "todo-abc"}} =
+             Command.parse(["todo", "remove", id, "todo-abc"])
+
+    # --remove must win over the positional link clause.
+    assert {:ok, {:unlink_task, ^id, "evidence", "/tmp/proof"}} =
+             Command.parse(["task", "link", id, "--remove", "evidence", "/tmp/proof"])
+
+    assert {:ok, {:link_task, ^id, "evidence", "/tmp/proof"}} =
+             Command.parse(["task", "link", id, "evidence", "/tmp/proof"])
+  end
+
+  test "rename and removal commands reject missing names and stray arguments" do
+    assert {:error, :usage} = Command.parse(["project", "rename", "pi"])
+    assert {:error, :usage} = Command.parse(["roadmap", "rename", "pi", "gov"])
+    assert {:error, :usage} = Command.parse(["workflow", "rename", "pi", "gov", "wf"])
+    assert {:error, :usage} = Command.parse(["board", "rename", "board-id"])
+    assert {:error, :usage} = Command.parse(["column", "rename", "column-id"])
+    assert {:error, :usage} = Command.parse(["project", "remove"])
+    assert {:error, :usage} = Command.parse(["filter", "remove"])
+    assert {:error, :usage} = Command.parse(["todo", "remove", "tsk-20260727T044500Z-1234abcd"])
+  end
+
   test "parses dependency authoring commands" do
     id = "tsk-20260727T044500Z-1234abcd"
     predecessor = "tsk-20260727T044500Z-abcd1234"

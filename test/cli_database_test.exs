@@ -3,7 +3,17 @@ defmodule SpruceGoose.CLIDatabaseTest do
 
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.SopGate
-  alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
+
+  alias SpruceGoose.Workflows.{
+    Board,
+    BoardColumn,
+    Definition,
+    Dependency,
+    Project,
+    Roadmap,
+    Task,
+    Workflow
+  }
 
   test "CLI admits a complete project roadmap workflow DAG task TODO hierarchy" do
     assert {:ok, %{key: "dogfood"} = project} =
@@ -449,6 +459,163 @@ defmodule SpruceGoose.CLIDatabaseTest do
       })
 
     workflow
+  end
+
+  test "rename updates names across the hierarchy without touching keys" do
+    workflow = workflow("rename")
+
+    assert {:ok, %{key: "project-rename", name: "Renamed project"}} =
+             Executor.run({:rename_project, "project-rename", "Renamed project"})
+
+    assert {:ok, %{key: "roadmap-rename", name: "Renamed roadmap"}} =
+             Executor.run(
+               {:rename_roadmap, "project-rename", "roadmap-rename", "Renamed roadmap"}
+             )
+
+    assert {:ok, %{workflow_id: "workflow-rename", name: "Renamed workflow"}} =
+             Executor.run(
+               {:rename_workflow, "project-rename", "roadmap-rename", "workflow-rename",
+                "Renamed workflow"}
+             )
+
+    {:ok, board} = Ash.create(Board, %{workflow_id: workflow.id, key: "b", name: "Board"})
+
+    assert {:ok, %{name: "Renamed board"}} =
+             Executor.run({:rename_board, board.id, "Renamed board"})
+
+    {:ok, column} =
+      Ash.create(BoardColumn, %{
+        board_id: board.id,
+        key: "ready",
+        name: "Ready",
+        position: 1,
+        task_state: :ready
+      })
+
+    assert {:ok, %{name: "Renamed column", key: "ready"}} =
+             Executor.run({:rename_column, column.id, "Renamed column"})
+
+    assert {:error, "not found"} =
+             Executor.run({:rename_project, "missing", "Nope"})
+  end
+
+  test "removal refuses while dependents exist and succeeds once they are gone" do
+    workflow = workflow("removal")
+
+    assert {:error, "cannot remove while 1 roadmaps still reference it"} =
+             Executor.run({:remove_project, "project-removal"})
+
+    assert {:error, "cannot remove while 1 workflows still reference it"} =
+             Executor.run({:remove_roadmap, "project-removal", "roadmap-removal"})
+
+    {:ok, board} = Ash.create(Board, %{workflow_id: workflow.id, key: "b", name: "Board"})
+
+    assert {:error, "cannot remove while 1 boards still reference it"} =
+             Executor.run(
+               {:remove_workflow, "project-removal", "roadmap-removal", "workflow-removal"}
+             )
+
+    {:ok, column} =
+      Ash.create(BoardColumn, %{
+        board_id: board.id,
+        key: "ready",
+        name: "Ready",
+        position: 1,
+        task_state: :ready
+      })
+
+    assert {:error, "cannot remove while 1 columns still reference it"} =
+             Executor.run({:remove_board, board.id})
+
+    assert {:ok, %{removed: %{key: "ready"}}} = Executor.run({:remove_column, column.id})
+    assert {:ok, %{removed: %{key: "b"}}} = Executor.run({:remove_board, board.id})
+
+    assert {:ok, %{removed: %{workflow_id: "workflow-removal"}}} =
+             Executor.run(
+               {:remove_workflow, "project-removal", "roadmap-removal", "workflow-removal"}
+             )
+
+    assert {:ok, %{removed: %{key: "roadmap-removal"}}} =
+             Executor.run({:remove_roadmap, "project-removal", "roadmap-removal"})
+
+    assert {:ok, %{removed: %{key: "project-removal"}}} =
+             Executor.run({:remove_project, "project-removal"})
+
+    assert {:error, "not found"} = Executor.run({:show_project, "project-removal"})
+    assert {:error, "not found"} = Executor.run({:remove_project, "project-removal"})
+  end
+
+  test "workflow removal refuses while tasks reference it" do
+    workflow = workflow("task-guard")
+    _task = dependency_task(workflow, "guard")
+
+    assert {:error, "cannot remove while 1 tasks still reference it"} =
+             Executor.run(
+               {:remove_workflow, "project-task-guard", "roadmap-task-guard",
+                "workflow-task-guard"}
+             )
+  end
+
+  test "todo removal clears checklist items and refuses on terminal tasks" do
+    workflow = workflow("todo-removal")
+    task = dependency_task(workflow, "todo-host")
+
+    {:ok, todo} = Executor.run({:add_todo, task.task_id, "Remove me"})
+    {:ok, kept} = Executor.run({:add_todo, task.task_id, "Keep me"})
+
+    assert {:ok, %{removed: %{id: removed_id}}} =
+             Executor.run({:remove_todo, task.task_id, todo.id})
+
+    assert removed_id == todo.id
+
+    assert {:ok, %{todos: [remaining]}} = Executor.run({:list_todos, task.task_id})
+    assert remaining.id == kept.id
+
+    assert {:error, "not found"} = Executor.run({:remove_todo, task.task_id, todo.id})
+
+    for target <- [:proposed, :queued, :ready, :in_progress] do
+      {:ok, _} = Executor.run({:transition_task, task.task_id, target, nil})
+    end
+
+    {:ok, _} = Executor.run({:complete_todo, task.task_id, kept.id})
+    {:ok, _} = Executor.run({:transition_task, task.task_id, :completed, nil})
+
+    assert {:error, "cannot add TODO to terminal task"} =
+             Executor.run({:remove_todo, task.task_id, kept.id})
+  end
+
+  test "task link --remove clears a single reference and leaves the rest intact" do
+    workflow = workflow("unlink")
+    task = dependency_task(workflow, "unlink-host")
+
+    {:ok, _} = Executor.run({:link_task, task.task_id, "repo", "sprucegoose@abc123"})
+    {:ok, linked} = Executor.run({:link_task, task.task_id, "evidence", "/tmp/proof"})
+
+    assert length(linked.references) == 2
+
+    assert {:ok, unlinked} =
+             Executor.run({:unlink_task, task.task_id, "evidence", "/tmp/proof"})
+
+    assert unlinked.references == [%{"kind" => "repo", "value" => "sprucegoose@abc123"}]
+
+    assert {:error, "reference not found"} =
+             Executor.run({:unlink_task, task.task_id, "evidence", "/tmp/proof"})
+
+    assert {:error, "invalid task ID"} =
+             Executor.run({:unlink_task, "nonsense", "repo", "x"})
+  end
+
+  test "filter removal clears saved filters" do
+    workflow = workflow("filter-removal")
+    {:ok, board} = Ash.create(Board, %{workflow_id: workflow.id, key: "b", name: "Board"})
+
+    {:ok, filter} =
+      Executor.run({:add_filter, board.id, "mine", ~s({"state":"ready"})})
+
+    assert {:ok, %{filters: [_]}} = Executor.run({:list_filters, board.id})
+    assert {:ok, %{removed: %{name: "mine"}}} = Executor.run({:remove_filter, filter.id})
+    assert {:ok, %{filters: []}} = Executor.run({:list_filters, board.id})
+    assert {:error, "not found"} = Executor.run({:remove_filter, filter.id})
   end
 
   test "dependency authoring creates, lists, and clears runtime task edges" do

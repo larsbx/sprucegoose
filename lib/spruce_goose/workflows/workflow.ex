@@ -45,5 +45,14 @@ defmodule SpruceGoose.Workflows.Workflow do
       accept([:definition])
       change(optimistic_lock(:lock_version))
     end
+
+    update :rename do
+      accept([:name])
+      change(optimistic_lock(:lock_version))
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
   end
 end

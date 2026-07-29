@@ -26,6 +26,14 @@ defmodule SpruceGoose.Workflows.Project do
   actions do
     defaults([:read])
 
+    update :rename do
+      accept([:name])
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
+
     create :create do
       primary?(true)
       accept([:key, :name])

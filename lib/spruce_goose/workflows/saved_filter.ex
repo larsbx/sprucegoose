@@ -33,6 +33,15 @@ defmodule SpruceGoose.Workflows.SavedFilter do
   actions do
     defaults([:read])
 
+    update :revise do
+      require_atomic?(false)
+      accept([:name, :criteria])
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
+
     create :create do
       primary?(true)
       accept([:board_id, :name, :criteria])

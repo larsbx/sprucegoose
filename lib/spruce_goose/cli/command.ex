@@ -10,6 +10,11 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["project", "list"]), do: {:ok, :list_projects}
   def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
 
+  def parse(["project", "rename", key | name]) when name != [],
+    do: {:ok, {:rename_project, key, Enum.join(name, " ")}}
+
+  def parse(["project", "remove", key]), do: {:ok, {:remove_project, key}}
+
   def parse(["roadmap", "add", project, key | name]) when name != [],
     do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
 
@@ -21,6 +26,11 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["roadmap", "show", project, key]), do: {:ok, {:show_roadmap, project, key}}
 
+  def parse(["roadmap", "rename", project, key | name]) when name != [],
+    do: {:ok, {:rename_roadmap, project, key, Enum.join(name, " ")}}
+
+  def parse(["roadmap", "remove", project, key]), do: {:ok, {:remove_roadmap, project, key}}
+
   def parse(["workflow", "list" | args]) do
     with {:ok, opts} <- scope_options(args, project: :string, roadmap: :string) do
       {:ok, {:list_workflows, Keyword.get(opts, :project), Keyword.get(opts, :roadmap)}}
@@ -29,6 +39,12 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["workflow", "show", project, roadmap, workflow_id]),
     do: {:ok, {:show_workflow, project, roadmap, workflow_id}}
+
+  def parse(["workflow", "rename", project, roadmap, workflow_id | name]) when name != [],
+    do: {:ok, {:rename_workflow, project, roadmap, workflow_id, Enum.join(name, " ")}}
+
+  def parse(["workflow", "remove", project, roadmap, workflow_id]),
+    do: {:ok, {:remove_workflow, project, roadmap, workflow_id}}
 
   def parse(["workflow", "add" | args]) do
     {opts, rest, invalid} =
@@ -62,6 +78,9 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["task", "wait", id | reason]) when reason != [],
     do: {:ok, {:transition_task, id, :waiting, Enum.join(reason, " ")}}
+
+  def parse(["task", "link", id, "--remove", kind, value]),
+    do: {:ok, {:unlink_task, id, kind, value}}
 
   def parse(["task", "link", id, kind, value]),
     do: {:ok, {:link_task, id, kind, value}}
@@ -147,16 +166,29 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["todo", "done", task_id, todo_id]),
     do: {:ok, {:complete_todo, task_id, todo_id}}
 
+  def parse(["todo", "remove", task_id, todo_id]),
+    do: {:ok, {:remove_todo, task_id, todo_id}}
+
   def parse(["board", "add", project, roadmap, workflow, key | name]) when name != [],
     do: {:ok, {:add_board, project, roadmap, workflow, key, Enum.join(name, " ")}}
 
   def parse(["board", "list", project, roadmap, workflow]),
     do: {:ok, {:list_boards, project, roadmap, workflow}}
 
+  def parse(["board", "rename", board_id | name]) when name != [],
+    do: {:ok, {:rename_board, board_id, Enum.join(name, " ")}}
+
+  def parse(["board", "remove", board_id]), do: {:ok, {:remove_board, board_id}}
+
   def parse(["column", "add", board_id, key, position, state | name]) when name != [],
     do: {:ok, {:add_column, board_id, key, position, state, Enum.join(name, " ")}}
 
   def parse(["column", "list", board_id]), do: {:ok, {:list_columns, board_id}}
+
+  def parse(["column", "rename", column_id | name]) when name != [],
+    do: {:ok, {:rename_column, column_id, Enum.join(name, " ")}}
+
+  def parse(["column", "remove", column_id]), do: {:ok, {:remove_column, column_id}}
 
   def parse(["task", "move", task_id, board_id, column_id, rank]),
     do: {:ok, {:move_task, task_id, board_id, column_id, rank}}
@@ -169,6 +201,7 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["filter", "list", board_id]), do: {:ok, {:list_filters, board_id}}
   def parse(["filter", "apply", filter_id]), do: {:ok, {:apply_filter, filter_id}}
+  def parse(["filter", "remove", filter_id]), do: {:ok, {:remove_filter, filter_id}}
 
   def parse(["ledger", "import", path]), do: {:ok, {:import_ledger, path}}
   def parse(["ledger", "parity", path]), do: {:ok, {:parity_ledger, path}}

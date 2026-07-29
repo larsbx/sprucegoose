@@ -38,6 +38,14 @@ defmodule SpruceGoose.Workflows.Todo do
       accept([:task_id, :todo_id, :body, :position])
     end
 
+    update :revise do
+      accept([:body])
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
+
     update :complete do
       accept([])
       change(set_attribute(:completed, true))

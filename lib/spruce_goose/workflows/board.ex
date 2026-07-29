@@ -44,5 +44,9 @@ defmodule SpruceGoose.Workflows.Board do
       accept([:name])
       change(optimistic_lock(:lock_version))
     end
+
+    destroy :destroy do
+      primary?(true)
+    end
   end
 end

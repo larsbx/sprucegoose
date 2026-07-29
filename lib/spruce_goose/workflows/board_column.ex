@@ -38,6 +38,14 @@ defmodule SpruceGoose.Workflows.BoardColumn do
   actions do
     defaults([:read])
 
+    update :revise do
+      accept([:name, :position])
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
+
     create :create do
       primary?(true)
       accept([:board_id, :key, :name, :position, :task_state])

@@ -99,6 +99,118 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  def run({:rename_project, key, name}) do
+    with {:ok, project} <- read_one(Project, key: key),
+         {:ok, project} <- Ash.update(project, %{name: name}, action: :rename) do
+      {:ok, project_json(project)}
+    end
+  end
+
+  def run({:remove_project, key}) do
+    with {:ok, project} <- read_one(Project, key: key),
+         :ok <- require_no_dependents(Roadmap, [project_id: project.id], "roadmaps"),
+         :ok <- destroy(project) do
+      {:ok, %{removed: project_json(project)}}
+    end
+  end
+
+  def run({:rename_roadmap, project_key, key, name}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key),
+         {:ok, roadmap} <- Ash.update(roadmap, %{name: name}, action: :rename) do
+      {:ok, Map.put(roadmap_json(roadmap), :project, project.key)}
+    end
+  end
+
+  def run({:remove_roadmap, project_key, key}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key),
+         :ok <- require_no_dependents(Workflow, [roadmap_id: roadmap.id], "workflows"),
+         :ok <- destroy(roadmap) do
+      {:ok, %{removed: Map.put(roadmap_json(roadmap), :project, project.key)}}
+    end
+  end
+
+  def run({:rename_workflow, project_key, roadmap_key, workflow_key, name}) do
+    with {:ok, workflow} <- resolve_workflow(project_key, roadmap_key, workflow_key),
+         {:ok, workflow} <- Ash.update(workflow, %{name: name}, action: :rename) do
+      {:ok, workflow_json(workflow)}
+    end
+  end
+
+  def run({:remove_workflow, project_key, roadmap_key, workflow_key}) do
+    with {:ok, workflow} <- resolve_workflow(project_key, roadmap_key, workflow_key),
+         :ok <- require_no_dependents(Task, [workflow_id: workflow.id], "tasks"),
+         :ok <- require_no_dependents(Board, [workflow_id: workflow.id], "boards"),
+         :ok <- destroy(workflow) do
+      {:ok, %{removed: workflow_json(workflow)}}
+    end
+  end
+
+  def run({:rename_board, board_id, name}) do
+    with {:ok, board} <- read_one(Board, id: board_id),
+         {:ok, board} <- Ash.update(board, %{name: name}, action: :revise) do
+      {:ok, board_json(board)}
+    end
+  end
+
+  def run({:remove_board, board_id}) do
+    with {:ok, board} <- read_one(Board, id: board_id),
+         :ok <- require_no_dependents(BoardColumn, [board_id: board.id], "columns"),
+         :ok <- require_no_dependents(SavedFilter, [board_id: board.id], "filters"),
+         :ok <- require_no_dependents(Task, [board_id: board.id], "tasks"),
+         :ok <- destroy(board) do
+      {:ok, %{removed: board_json(board)}}
+    end
+  end
+
+  def run({:rename_column, column_id, name}) do
+    with {:ok, column} <- read_one(BoardColumn, id: column_id),
+         {:ok, column} <- Ash.update(column, %{name: name}, action: :revise) do
+      {:ok, column_json(column)}
+    end
+  end
+
+  def run({:remove_column, column_id}) do
+    with {:ok, column} <- read_one(BoardColumn, id: column_id),
+         :ok <- require_no_dependents(Task, [column_id: column.id], "tasks"),
+         :ok <- destroy(column) do
+      {:ok, %{removed: column_json(column)}}
+    end
+  end
+
+  def run({:remove_filter, filter_id}) do
+    with {:ok, filter} <- read_one(SavedFilter, id: filter_id),
+         :ok <- destroy(filter) do
+      {:ok, %{removed: filter_json(filter)}}
+    end
+  end
+
+  def run({:remove_todo, task_id, todo_id}) do
+    with :ok <- require_valid_id(task_id),
+         {:ok, task} <- read_one(Task, task_id: task_id),
+         :ok <- todo_admission_allowed(task),
+         {:ok, todo} <- read_one(Todo, task_id: task.id, todo_id: todo_id),
+         :ok <- destroy(todo) do
+      {:ok, %{removed: todo_json(todo)}}
+    end
+  end
+
+  def run({:unlink_task, id, kind, value}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         references = Map.get(task.input, "references", []),
+         target = %{"kind" => kind, "value" => value},
+         true <- target in references,
+         input = Map.put(task.input, "references", List.delete(references, target)),
+         {:ok, task} <- task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Ash.update() do
+      {:ok, task_json(task)}
+    else
+      false -> {:error, "reference not found"}
+      result -> result
+    end
+  end
+
   def run({:add_roadmap, project_key, key, name}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <-
@@ -427,6 +539,34 @@ defmodule SpruceGoose.CLI.Executor do
   # unique id still yields exactly one event per capture.
   defp generate_record_id(prefix) do
     prefix <> "-" <> (16 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower))
+  end
+
+  defp resolve_workflow(project_key, roadmap_key, workflow_key) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key) do
+      read_one(Workflow, roadmap_id: roadmap.id, workflow_id: workflow_key)
+    end
+  end
+
+  # Every foreign key is ON DELETE NO ACTION, so Postgres already refuses an
+  # orphaning delete. These checks run first so the CLI reports which
+  # dependents block removal instead of leaking a raw constraint error, and so
+  # removal is never silently cascading.
+  defp require_no_dependents(resource, filter, label) do
+    with {:ok, rows} <- Ash.read(Ash.Query.filter_input(resource, filter)) do
+      case length(rows) do
+        0 -> :ok
+        count -> {:error, "cannot remove while #{count} #{label} still reference it"}
+      end
+    end
+  end
+
+  defp destroy(record) do
+    case Ash.destroy(record) do
+      :ok -> :ok
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   defp dependency_pair(task_id, predecessor_id) do

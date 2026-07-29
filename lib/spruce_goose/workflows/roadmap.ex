@@ -32,6 +32,14 @@ defmodule SpruceGoose.Workflows.Roadmap do
   actions do
     defaults([:read])
 
+    update :rename do
+      accept([:name])
+    end
+
+    destroy :destroy do
+      primary?(true)
+    end
+
     create :create do
       primary?(true)
       accept([:project_id, :key, :name])
