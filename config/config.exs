@@ -16,7 +16,11 @@ config :spruce_goose, Oban,
   repo: SpruceGoose.Repo,
   queues: [outbox: 1]
 
-config :spruce_goose, :start_outbox_dispatcher, true
+config :spruce_goose, :start_outbox_dispatcher, false
+config :spruce_goose, :outbox_handler, nil
+
+# Delivery is deliberately opt-in. Runtime configuration must name a module
+# implementing deliver/1; enabling without one fails closed in runtime.exs.
 
 config :spruce_goose,
        :systemwide_sop_path,

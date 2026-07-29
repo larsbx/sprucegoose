@@ -156,6 +156,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
         Ash.Changeset.change_attribute(
@@ -205,6 +206,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
         to = Ash.Changeset.get_argument(changeset, :to_state)
@@ -299,6 +301,26 @@ defmodule SpruceGoose.Workflows.Task do
          Ash.Changeset.get_argument(changeset, :to_state) == :in_progress,
        do: SpruceGoose.SopGate.verify(changeset.data),
        else: :ok
+  end
+
+  defp validate_predecessors(changeset) do
+    if Ash.Changeset.get_argument(changeset, :to_state) == :in_progress do
+      sql = """
+      SELECT 1
+      FROM task_dependencies AS dependency
+      JOIN workflow_tasks AS predecessor ON predecessor.id = dependency.predecessor_id
+      WHERE dependency.successor_id = $1::text::uuid
+        AND predecessor.state <> 'completed'
+      LIMIT 1
+      """
+
+      case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [changeset.data.id]).rows do
+        [] -> :ok
+        _ -> {:error, field: :state, message: "task has incomplete predecessors"}
+      end
+    else
+      :ok
+    end
   end
 
   defp valid_board_metadata(changeset) do

@@ -67,17 +67,32 @@ defmodule SpruceGoose.TransactionalOutboxTest do
 
   test "dispatcher marks committed rows and records failed delivery attempts" do
     fixture()
+    before = DateTime.utc_now()
 
     assert {:ok, [{:error, _}]} = Dispatcher.dispatch_batch(fn _ -> {:error, :offline} end)
-    assert %Event{status: :pending, attempts: 1, last_error: error} = Repo.one!(Event)
-    assert error =~ "offline"
 
+    assert %Event{status: :pending, attempts: 1, last_error: error, available_at: available_at} =
+             Repo.one!(Event)
+
+    assert error =~ "offline"
+    assert DateTime.compare(available_at, before) == :gt
+
+    Repo.update_all(Event, set: [available_at: DateTime.utc_now()])
     assert {:ok, [{:ok, _}]} = Dispatcher.dispatch_batch(fn _ -> :ok end)
 
     assert %Event{status: :dispatched, attempts: 2, dispatched_at: dispatched_at} =
              Repo.one!(Event)
 
     assert dispatched_at
+  end
+
+  test "dispatcher dead-letters an event after the bounded attempt limit" do
+    fixture()
+    Repo.update_all(Event, set: [attempts: 19])
+
+    assert {:ok, [{:error, _}]} = Dispatcher.dispatch_batch(fn _ -> {:error, :offline} end)
+    assert %Event{status: :failed, attempts: 20} = Repo.one!(Event)
+    assert {:ok, []} = Dispatcher.dispatch_batch(fn _ -> :ok end)
   end
 
   test "only one dispatcher job may be scheduled at a time" do
@@ -99,7 +114,7 @@ defmodule SpruceGoose.TransactionalOutboxTest do
              )
 
     assert message == "outbox event content is immutable"
-    assert {:ok, [{:ok, _}]} = Dispatcher.dispatch_batch()
+    assert {:ok, [{:ok, _}]} = Dispatcher.dispatch_batch(fn _ -> :ok end)
     assert Repo.get!(Event, event.id).status == :dispatched
   end
 

@@ -1,7 +1,16 @@
 defmodule SpruceGoose.PersistenceInvariantsTest do
   use SpruceGoose.DataCase, async: false
 
-  alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
+  alias SpruceGoose.Workflows.{
+    Definition,
+    Dependency,
+    Project,
+    Roadmap,
+    Task,
+    Todo,
+    TodoDependency,
+    Workflow
+  }
 
   test "task revisions and transitions reject stale records" do
     {_workflow, task} = hierarchy()
@@ -100,6 +109,108 @@ defmodule SpruceGoose.PersistenceInvariantsTest do
                "SELECT count(*) FROM task_dependencies WHERE workflow_id = $1::text::uuid",
                [workflow.id]
              )
+  end
+
+  test "all Ash start entry points reject incomplete task predecessors" do
+    workflow = workflow_for("ash-start")
+    predecessor = task_for(workflow, "ash-predecessor")
+    successor = task_for(workflow, "ash-successor")
+
+    assert {:ok, _} =
+             Ash.create(Dependency, %{predecessor_id: predecessor.id, successor_id: successor.id})
+
+    successor =
+      Enum.reduce([:proposed, :queued, :ready], successor, fn state, current ->
+        Ash.update!(current, %{to_state: state}, action: :transition)
+      end)
+
+    assert {:error, transition_error} =
+             Ash.update(successor, %{to_state: :in_progress}, action: :transition)
+
+    assert Exception.message(transition_error) =~ "incomplete predecessors"
+
+    assert {:error, move_error} =
+             Ash.update(successor, %{to_state: :in_progress}, action: :move)
+
+    assert Exception.message(move_error) =~ "incomplete predecessors"
+
+    assert {:error, %Postgrex.Error{postgres: %{message: "task has incomplete predecessors"}}} =
+             Repo.query(
+               "UPDATE workflow_tasks SET state = 'in_progress' WHERE id = $1::text::uuid",
+               [successor.id],
+               mode: :savepoint
+             )
+  end
+
+  test "database enforces TODO dependency ownership and cycles for direct Ash callers" do
+    workflow = workflow_for("todo-integrity")
+    first_task = task_for(workflow, "todo-first-task")
+    second_task = task_for(workflow, "todo-second-task")
+
+    first =
+      Ash.create!(Todo, %{task_id: first_task.id, todo_id: "first", body: "First", position: 1})
+
+    second =
+      Ash.create!(Todo, %{task_id: first_task.id, todo_id: "second", body: "Second", position: 2})
+
+    foreign =
+      Ash.create!(Todo, %{
+        task_id: second_task.id,
+        todo_id: "foreign",
+        body: "Foreign",
+        position: 1
+      })
+
+    assert {:error, ownership_error} =
+             Ash.create(TodoDependency, %{
+               task_id: first_task.id,
+               predecessor_id: foreign.id,
+               successor_id: second.id
+             })
+
+    assert Exception.message(ownership_error) =~ "same task"
+
+    assert {:ok, _} =
+             Ash.create(TodoDependency, %{
+               task_id: first_task.id,
+               predecessor_id: first.id,
+               successor_id: second.id
+             })
+
+    assert {:error, cycle_error} =
+             Ash.create(TodoDependency, %{
+               task_id: first_task.id,
+               predecessor_id: second.id,
+               successor_id: first.id
+             })
+
+    assert Exception.message(cycle_error) =~ "cycle"
+  end
+
+  test "concurrent opposing TODO dependency inserts cannot persist a cycle" do
+    workflow = workflow_for("todo-concurrent")
+    task = task_for(workflow, "todo-concurrent-task")
+    first = Ash.create!(Todo, %{task_id: task.id, todo_id: "one", body: "One", position: 1})
+    second = Ash.create!(Todo, %{task_id: task.id, todo_id: "two", body: "Two", position: 2})
+
+    insert = fn predecessor, successor ->
+      Repo.query(
+        "INSERT INTO task_todo_dependencies (task_id, predecessor_id, successor_id) VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid)",
+        [task.id, predecessor, successor]
+      )
+    end
+
+    results =
+      [{first.id, second.id}, {second.id, first.id}]
+      |> Elixir.Task.async_stream(
+        fn {predecessor, successor} -> insert.(predecessor, successor) end,
+        max_concurrency: 2,
+        ordered: false
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    assert Enum.count(results, &match?({:ok, _}, &1)) == 1
+    assert Enum.count(results, &match?({:error, %Postgrex.Error{}}, &1)) == 1
   end
 
   test "foreign keys prevent deleting a task that owns checklist or dependency state" do

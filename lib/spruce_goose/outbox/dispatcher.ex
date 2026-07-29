@@ -10,6 +10,10 @@ defmodule SpruceGoose.Outbox.Dispatcher do
   alias SpruceGoose.Outbox.Event
   alias SpruceGoose.Repo
 
+  @max_event_attempts 20
+  @base_backoff_seconds 5
+  @max_backoff_seconds 3_600
+
   def child_spec(opts) do
     %{
       id: __MODULE__,
@@ -30,12 +34,12 @@ defmodule SpruceGoose.Outbox.Dispatcher do
 
   @impl Oban.Worker
   def perform(_job) do
-    dispatch_batch()
+    dispatch_batch(configured_handler())
     enqueue()
     :ok
   end
 
-  def dispatch_batch(handler \\ &default_handler/1) do
+  def dispatch_batch(handler) when is_function(handler, 1) do
     Repo.transaction(fn ->
       events =
         Event
@@ -48,6 +52,8 @@ defmodule SpruceGoose.Outbox.Dispatcher do
       Enum.map(events, &dispatch(&1, handler))
     end)
   end
+
+  def dispatch_batch(handler) when is_atom(handler), do: dispatch_batch(&handler.deliver/1)
 
   defp dispatch(event, handler) do
     case handler.(event) do
@@ -64,10 +70,18 @@ defmodule SpruceGoose.Outbox.Dispatcher do
 
       {:error, reason} ->
         now = DateTime.utc_now()
+        attempts = event.attempts + 1
+        status = if attempts >= @max_event_attempts, do: :failed, else: :pending
+        available_at = DateTime.add(now, backoff_seconds(attempts), :second)
 
         from(item in Event, where: item.id == ^event.id)
         |> Repo.update_all(
-          set: [last_error: inspect(reason), updated_at: now],
+          set: [
+            status: status,
+            available_at: available_at,
+            last_error: reason |> inspect() |> String.slice(0, 4_000),
+            updated_at: now
+          ],
           inc: [attempts: 1]
         )
 
@@ -75,5 +89,14 @@ defmodule SpruceGoose.Outbox.Dispatcher do
     end
   end
 
-  defp default_handler(_event), do: :ok
+  defp configured_handler do
+    case Application.get_env(:spruce_goose, :outbox_handler) do
+      handler when is_atom(handler) and not is_nil(handler) -> handler
+      _ -> raise "outbox delivery requires a configured :outbox_handler"
+    end
+  end
+
+  defp backoff_seconds(attempts) do
+    min(@base_backoff_seconds * Integer.pow(2, max(attempts - 1, 0)), @max_backoff_seconds)
+  end
 end
