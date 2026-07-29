@@ -398,7 +398,10 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:link_task, task.task_id, "evidence", "/tmp/proof"})
 
     assert linked.lock_version > 1
-    assert {:ok, %{tasks: [%{id: id, state: :waiting}]}} = Executor.run({:list_tasks, "waiting"})
+
+    assert {:ok, %{tasks: [%{id: id, state: :waiting}]}} =
+             Executor.run({:list_tasks, %{state: "waiting"}})
+
     assert id == task.task_id
 
     for target <- [:ready, :in_progress, :completed] do

@@ -1,6 +1,7 @@
 defmodule SpruceGoose.CLI.Executor do
   @moduledoc false
 
+  alias SpruceGoose.CLI.Command
   alias SpruceGoose.{Ledger, Repo, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
@@ -17,6 +18,9 @@ defmodule SpruceGoose.CLI.Executor do
     TodoDependency,
     Workflow
   }
+
+  def run(:help), do: {:ok, Command.help()}
+  def run(:version), do: {:ok, %{version: Command.version()}}
 
   def run(:generate_id), do: {:ok, %{id: TaskId.generate()}}
 
@@ -326,11 +330,20 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:list_tasks, state}) do
-    with {:ok, state} <- optional_state(state),
-         query = if(state, do: Ash.Query.filter_input(Task, state: state), else: Task),
-         {:ok, tasks} <- Ash.read(query) do
-      {:ok, %{tasks: tasks |> Enum.sort_by(& &1.task_id) |> Enum.map(&task_json/1)}}
+  def run({:list_tasks, filters}) do
+    with {:ok, state} <- optional_state(Map.get(filters, :state)),
+         {:ok, task_type} <- optional_task_type(Map.get(filters, :type)),
+         {:ok, workflow_ids} <- task_workflow_scope(filters),
+         {:ok, tasks} <- Ash.read(Task) do
+      tasks =
+        tasks
+        |> filter_by(state, &(&1.state == state))
+        |> filter_by(task_type, &(&1.task_type == task_type))
+        |> filter_by(workflow_ids, &(&1.workflow_id in workflow_ids))
+        |> apply_task_criteria(filters)
+        |> Enum.sort_by(& &1.task_id)
+
+      {:ok, %{tasks: Enum.map(tasks, &task_json/1)}}
     end
   end
 
@@ -516,9 +529,10 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_column, board_id, key, position, state, name}) do
+  def run({:add_column, board_ref, key, position, state, name}) do
     with {position, ""} <- Integer.parse(position),
          {:ok, state} <- optional_state(state),
+         {:ok, board_id} <- resolve_board_ref(board_ref),
          {:ok, column} <-
            Ash.create(BoardColumn, %{
              board_id: board_id,
@@ -534,16 +548,19 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:list_columns, board_id}) do
-    with {:ok, columns} <- Ash.read(Ash.Query.filter_input(BoardColumn, board_id: board_id)) do
+  def run({:list_columns, board_ref}) do
+    with {:ok, board_id} <- resolve_board_ref(board_ref),
+         {:ok, columns} <- Ash.read(Ash.Query.filter_input(BoardColumn, board_id: board_id)) do
       {:ok, %{columns: columns |> Enum.sort_by(& &1.position) |> Enum.map(&column_json/1)}}
     end
   end
 
-  def run({:move_task, task_id, board_id, column_id, rank}) do
+  def run({:move_task, task_id, board_ref, column_ref, rank}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
-         {:ok, column} <- read_one(BoardColumn, id: column_id, board_id: board_id),
+         {:ok, board_id} <- resolve_board_ref(board_ref),
+         {:ok, column} <- resolve_column(board_id, column_ref),
+         column_id = column.id,
          {:ok, task} <-
            Ash.update(
              task,
@@ -563,16 +580,18 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_filter, board_id, name, json}) do
-    with {:ok, criteria} <- decode_json_object(json),
+  def run({:add_filter, board_ref, name, json}) do
+    with {:ok, board_id} <- resolve_board_ref(board_ref),
+         {:ok, criteria} <- decode_json_object(json),
          {:ok, filter} <-
            Ash.create(SavedFilter, %{board_id: board_id, name: name, criteria: criteria}) do
       {:ok, filter_json(filter)}
     end
   end
 
-  def run({:list_filters, board_id}) do
-    with {:ok, filters} <- Ash.read(Ash.Query.filter_input(SavedFilter, board_id: board_id)) do
+  def run({:list_filters, board_ref}) do
+    with {:ok, board_id} <- resolve_board_ref(board_ref),
+         {:ok, filters} <- Ash.read(Ash.Query.filter_input(SavedFilter, board_id: board_id)) do
       {:ok, %{filters: Enum.map(filters, &filter_json/1)}}
     end
   end
@@ -873,6 +892,84 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp require_valid_id(id) do
     if TaskId.valid?(id), do: :ok, else: {:error, "invalid task ID"}
+  end
+
+  # Accept either a UUID or a friendly key. board add/list take
+  # project/roadmap/workflow keys, so column, filter, and move should not
+  # demand raw UUIDs for the same board.
+  defp resolve_board_ref(ref) do
+    if uuid?(ref) do
+      {:ok, ref}
+    else
+      with {:ok, board} <- read_one(Board, key: ref) do
+        {:ok, board.id}
+      end
+    end
+  end
+
+  defp resolve_column(board_id, ref) do
+    if uuid?(ref) do
+      read_one(BoardColumn, id: ref, board_id: board_id)
+    else
+      read_one(BoardColumn, key: ref, board_id: board_id)
+    end
+  end
+
+  defp uuid?(value) when is_binary(value) do
+    match?({:ok, _}, Ecto.UUID.cast(value))
+  end
+
+  defp uuid?(_value), do: false
+
+  defp optional_task_type(nil), do: {:ok, nil}
+  defp optional_task_type("task"), do: {:ok, :task}
+  defp optional_task_type("diagnosis"), do: {:ok, :diagnosis}
+  defp optional_task_type(_), do: {:error, "type must be task or diagnosis"}
+
+  # nil scope means "no constraint"; anything else applies the predicate.
+  defp filter_by(tasks, nil, _predicate), do: tasks
+  defp filter_by(tasks, _scope, predicate), do: Enum.filter(tasks, predicate)
+
+  # Narrow to the workflows implied by --project/--roadmap/--workflow.
+  # nil means unscoped; a list means restrict to those workflow ids.
+  defp task_workflow_scope(filters) do
+    project = Map.get(filters, :project)
+    roadmap = Map.get(filters, :roadmap)
+    workflow = Map.get(filters, :workflow)
+
+    if is_nil(project) and is_nil(roadmap) and is_nil(workflow) do
+      {:ok, nil}
+    else
+      with {:ok, roadmap_ids} <- workflow_scope(project, roadmap),
+           filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
+           filter = if(workflow, do: [{:workflow_id, workflow} | filter], else: filter),
+           {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)) do
+        case workflows do
+          [] -> {:error, "not found"}
+          workflows -> {:ok, Enum.map(workflows, & &1.id)}
+        end
+      end
+    end
+  end
+
+  # Reuses the saved-filter criteria matcher so list and filter apply share one
+  # implementation rather than drifting apart.
+  defp apply_task_criteria(tasks, filters) do
+    criteria =
+      %{
+        "label" => Map.get(filters, :label),
+        "assignee" => Map.get(filters, :assignee),
+        "priority" => Map.get(filters, :priority),
+        "text" => Map.get(filters, :text)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+
+    if criteria == %{} do
+      tasks
+    else
+      Enum.filter(tasks, &matches_filter?(&1, criteria))
+    end
   end
 
   defp optional_state(nil), do: {:ok, nil}

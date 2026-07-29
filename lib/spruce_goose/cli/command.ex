@@ -1,6 +1,116 @@
 defmodule SpruceGoose.CLI.Command do
   @moduledoc false
 
+  # Grouped by noun, in the order a caller discovers them: look things up,
+  # admit work, move it, attach evidence. Kept adjacent to the parse/1 clauses
+  # so drift is visible in one screen rather than across two files.
+  @usage [
+    {"id", ["id", "validate-id ID"]},
+    {"project", ["add KEY NAME", "list", "show KEY", "rename KEY NAME", "remove KEY"]},
+    {"roadmap",
+     [
+       "add PROJECT KEY NAME",
+       "list [--project KEY]",
+       "show PROJECT KEY",
+       "rename PROJECT KEY NAME",
+       "remove PROJECT KEY"
+     ]},
+    {"workflow",
+     [
+       "add --project KEY --roadmap KEY --definition JSON ID NAME",
+       "list [--project KEY] [--roadmap KEY]",
+       "show PROJECT ROADMAP ID",
+       "rename PROJECT ROADMAP ID NAME",
+       "remove PROJECT ROADMAP ID"
+     ]},
+    {"task",
+     [
+       "add --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--type task|diagnosis] TITLE",
+       "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
+       "show ID",
+       "propose|queue|ready|start|done ID",
+       "wait ID REASON",
+       "cancel ID REASON",
+       "link ID KIND VALUE",
+       "link ID --remove KIND VALUE",
+       "acknowledge-sop ID PATH",
+       "move ID BOARD COLUMN RANK",
+       "metadata ID JSON"
+     ]},
+    {"dep",
+     [
+       "add TASK_ID --after PREDECESSOR_ID",
+       "remove TASK_ID --after PREDECESSOR_ID",
+       "list TASK_ID"
+     ]},
+    {"todo",
+     [
+       "add TASK_ID BODY",
+       "list TASK_ID",
+       "done TASK_ID TODO_ID",
+       "remove TASK_ID TODO_ID",
+       "dep add TASK_ID TODO_ID --after PREDECESSOR_ID",
+       "dep remove TASK_ID TODO_ID --after PREDECESSOR_ID",
+       "dep list TASK_ID"
+     ]},
+    {"board",
+     [
+       "add PROJECT ROADMAP WORKFLOW KEY NAME",
+       "list PROJECT ROADMAP WORKFLOW",
+       "rename BOARD NAME",
+       "remove BOARD"
+     ]},
+    {"column",
+     ["add BOARD KEY POSITION STATE NAME", "list BOARD", "rename COLUMN NAME", "remove COLUMN"]},
+    {"filter", ["add BOARD NAME JSON", "list BOARD", "apply FILTER", "remove FILTER"]},
+    {"inbox",
+     [
+       "add TEXT",
+       "list [--state pending|resolved|dropped|all]",
+       "done CAPTURE_ID",
+       "drop CAPTURE_ID REASON",
+       "promote CAPTURE_ID --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--title T]"
+     ]},
+    {"ledger", ["import PATH", "parity PATH"]},
+    {"meta", ["version", "help"]}
+  ]
+
+  @doc "Single-line usage summary, derived from the command table."
+  def usage do
+    @usage
+    |> Enum.flat_map(fn
+      {"meta", forms} -> forms
+      {noun, forms} -> Enum.map(forms, &"#{noun} #{&1}")
+    end)
+    |> Enum.join("|")
+  end
+
+  @doc "Grouped help, one noun per entry."
+  def help do
+    %{
+      usage: "sprucegoose <command> [args]",
+      version: version(),
+      commands:
+        Map.new(@usage, fn
+          {"meta", forms} -> {"meta", forms}
+          {noun, forms} -> {noun, forms}
+        end)
+    }
+  end
+
+  def version do
+    case :application.get_key(:spruce_goose, :vsn) do
+      {:ok, vsn} -> List.to_string(vsn)
+      _ -> "unknown"
+    end
+  end
+
+  def parse(["help"]), do: {:ok, :help}
+  def parse(["--help"]), do: {:ok, :help}
+  def parse(["-h"]), do: {:ok, :help}
+  def parse(["version"]), do: {:ok, :version}
+  def parse(["--version"]), do: {:ok, :version}
+
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}
 
@@ -65,8 +175,26 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
-  def parse(["task", "list"]), do: {:ok, {:list_tasks, nil}}
-  def parse(["task", "list", "--state", state]), do: {:ok, {:list_tasks, state}}
+
+  def parse(["task", "list" | args]) do
+    case OptionParser.parse(args,
+           strict: [
+             state: :string,
+             project: :string,
+             roadmap: :string,
+             workflow: :string,
+             type: :string,
+             label: :string,
+             assignee: :string,
+             priority: :integer,
+             text: :string
+           ]
+         ) do
+      {opts, [], []} -> {:ok, {:list_tasks, Map.new(opts)}}
+      _ -> {:error, "invalid task list arguments"}
+    end
+  end
+
   def parse(["task", "propose", id]), do: {:ok, {:transition_task, id, :proposed, nil}}
   def parse(["task", "queue", id]), do: {:ok, {:transition_task, id, :queued, nil}}
   def parse(["task", "ready", id]), do: {:ok, {:transition_task, id, :ready, nil}}
