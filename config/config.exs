@@ -1,6 +1,8 @@
 import Config
 
-config :spruce_goose, ash_domains: [SpruceGoose.Notes, SpruceGoose.Workflows]
+config :spruce_goose,
+  ash_domains: [SpruceGoose.Notes, SpruceGoose.Workflows, SpruceGoose.Knowledge.Domain]
+
 config :spruce_goose, ecto_repos: [SpruceGoose.Repo]
 
 config :spruce_goose, SpruceGoose.Repo,
