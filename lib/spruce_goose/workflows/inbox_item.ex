@@ -27,10 +27,6 @@ defmodule SpruceGoose.Workflows.InboxItem do
     timestamps()
   end
 
-  identities do
-    identity(:stable_capture, [:capture_id])
-  end
-
   actions do
     defaults([:read])
 
@@ -69,6 +65,10 @@ defmodule SpruceGoose.Workflows.InboxItem do
         end
       end)
     end
+  end
+
+  identities do
+    identity(:stable_capture, [:capture_id])
   end
 
   validations do

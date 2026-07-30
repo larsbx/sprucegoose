@@ -19,10 +19,6 @@ defmodule SpruceGoose.Workflows.Project do
     has_many(:roadmaps, SpruceGoose.Workflows.Roadmap)
   end
 
-  identities do
-    identity(:unique_project_key, [:key])
-  end
-
   actions do
     defaults([:read])
 
@@ -38,5 +34,9 @@ defmodule SpruceGoose.Workflows.Project do
       primary?(true)
       accept([:key, :name])
     end
+  end
+
+  identities do
+    identity(:unique_project_key, [:key])
   end
 end

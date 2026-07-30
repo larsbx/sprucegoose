@@ -28,10 +28,6 @@ defmodule SpruceGoose.Workflows.Board do
     has_many(:saved_filters, SpruceGoose.Workflows.SavedFilter)
   end
 
-  identities do
-    identity(:unique_board_key_per_workflow, [:workflow_id, :key])
-  end
-
   actions do
     defaults([:read])
 
@@ -48,5 +44,9 @@ defmodule SpruceGoose.Workflows.Board do
     destroy :destroy do
       primary?(true)
     end
+  end
+
+  identities do
+    identity(:unique_board_key_per_workflow, [:workflow_id, :key])
   end
 end

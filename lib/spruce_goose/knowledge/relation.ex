@@ -30,10 +30,6 @@ defmodule SpruceGoose.Knowledge.Relation do
     )
   end
 
-  identities do
-    identity(:unique_relation_position, [:generation_id, :position])
-  end
-
   actions do
     defaults([:read])
 
@@ -52,5 +48,9 @@ defmodule SpruceGoose.Knowledge.Relation do
         :position
       ])
     end
+  end
+
+  identities do
+    identity(:unique_relation_position, [:generation_id, :position])
   end
 end

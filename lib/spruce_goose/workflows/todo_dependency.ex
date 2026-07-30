@@ -45,10 +45,6 @@ defmodule SpruceGoose.Workflows.TodoDependency do
     end
   end
 
-  identities do
-    identity(:unique_todo_dependency, [:predecessor_id, :successor_id])
-  end
-
   actions do
     defaults([:read])
 
@@ -60,5 +56,9 @@ defmodule SpruceGoose.Workflows.TodoDependency do
     destroy :destroy do
       primary?(true)
     end
+  end
+
+  identities do
+    identity(:unique_todo_dependency, [:predecessor_id, :successor_id])
   end
 end

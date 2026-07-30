@@ -4,13 +4,13 @@ defmodule SpruceGoose.Notes.Note do
     data_layer: AshPostgres.DataLayer,
     extensions: [AshEvents.Events]
 
-  events do
-    event_log(SpruceGoose.Events.Event)
-  end
-
   postgres do
     table "notes"
     repo SpruceGoose.Repo
+  end
+
+  events do
+    event_log(SpruceGoose.Events.Event)
   end
 
   attributes do

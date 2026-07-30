@@ -33,11 +33,6 @@ defmodule SpruceGoose.Workflows.Todo do
     end
   end
 
-  identities do
-    identity(:stable_todo_per_task, [:task_id, :todo_id])
-    identity(:stable_position_per_task, [:task_id, :position])
-  end
-
   actions do
     defaults([:read])
 
@@ -58,5 +53,10 @@ defmodule SpruceGoose.Workflows.Todo do
       accept([])
       change(set_attribute(:completed, true))
     end
+  end
+
+  identities do
+    identity(:stable_todo_per_task, [:task_id, :todo_id])
+    identity(:stable_position_per_task, [:task_id, :position])
   end
 end

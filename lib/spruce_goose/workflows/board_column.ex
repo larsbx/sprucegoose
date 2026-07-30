@@ -29,12 +29,6 @@ defmodule SpruceGoose.Workflows.BoardColumn do
     end
   end
 
-  identities do
-    identity(:unique_column_key_per_board, [:board_id, :key])
-    identity(:unique_column_position_per_board, [:board_id, :position])
-    identity(:unique_column_state_per_board, [:board_id, :task_state])
-  end
-
   actions do
     defaults([:read])
 
@@ -50,5 +44,11 @@ defmodule SpruceGoose.Workflows.BoardColumn do
       primary?(true)
       accept([:board_id, :key, :name, :position, :task_state])
     end
+  end
+
+  identities do
+    identity(:unique_column_key_per_board, [:board_id, :key])
+    identity(:unique_column_position_per_board, [:board_id, :position])
+    identity(:unique_column_state_per_board, [:board_id, :task_state])
   end
 end

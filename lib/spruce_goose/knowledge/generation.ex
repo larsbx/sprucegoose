@@ -23,10 +23,6 @@ defmodule SpruceGoose.Knowledge.Generation do
     timestamps()
   end
 
-  identities do
-    identity(:unique_source_digest, [:source_digest])
-  end
-
   actions do
     defaults([:read])
 
@@ -39,5 +35,9 @@ defmodule SpruceGoose.Knowledge.Generation do
       accept([])
       change(set_attribute(:state, :retired))
     end
+  end
+
+  identities do
+    identity(:unique_source_digest, [:source_digest])
   end
 end

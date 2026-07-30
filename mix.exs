@@ -22,11 +22,20 @@ defmodule SpruceGoose.MixProject do
 
   defp deps do
     [
+      {:req, "~> 0.5"},
+      {:picosat_elixir, "~> 0.2"},
       {:ash, "~> 3.0"},
       {:ash_events, "~> 0.7.0"},
       {:ash_postgres, "~> 2.10"},
+      {:ash_ai, "~> 0.8"},
+      {:ash_authentication, "~> 5.0-rc"},
+      {:ash_authentication_oauth2_server, "~> 0.3"},
+      {:phoenix, "~> 1.8"},
+      {:bandit, "~> 1.12"},
+      {:jason, "~> 1.4"},
       {:b3, "~> 0.2.0"},
-      {:oban, "~> 2.19"}
+      {:oban, "~> 2.19"},
+      {:igniter, "~> 0.6", only: [:dev, :test]}
     ]
   end
 end

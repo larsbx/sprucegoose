@@ -29,10 +29,6 @@ defmodule SpruceGoose.Workflows.Workflow do
     has_many(:tasks, SpruceGoose.Workflows.Task)
   end
 
-  identities do
-    identity(:unique_workflow_id_per_roadmap, [:roadmap_id, :workflow_id])
-  end
-
   actions do
     defaults([:read])
 
@@ -54,5 +50,9 @@ defmodule SpruceGoose.Workflows.Workflow do
     destroy :destroy do
       primary?(true)
     end
+  end
+
+  identities do
+    identity(:unique_workflow_id_per_roadmap, [:roadmap_id, :workflow_id])
   end
 end

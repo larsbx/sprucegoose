@@ -1,7 +1,15 @@
 import Config
 
+config :spark,
+  formatter: ["Ash.Resource": [section_order: [:authentication, :token, :user_identity]]]
+
 config :spruce_goose,
-  ash_domains: [SpruceGoose.Notes, SpruceGoose.Workflows, SpruceGoose.Knowledge.Domain]
+  ash_domains: [
+    SpruceGoose.Accounts,
+    SpruceGoose.Notes,
+    SpruceGoose.Workflows,
+    SpruceGoose.Knowledge.Domain
+  ]
 
 config :spruce_goose, ecto_repos: [SpruceGoose.Repo]
 
@@ -13,6 +21,21 @@ config :spruce_goose, SpruceGoose.Repo,
   pool_size: 5
 
 config :ash, disable_async?: true
+
+config :phoenix, :json_library, Jason
+
+# The MCP/OAuth endpoint is opt-in. SpruceGoose stays CLI-first: nothing binds
+# a port unless SPRUCE_GOOSE_MCP_ENABLED is set (see config/runtime.exs).
+config :spruce_goose, :start_web_endpoint, false
+
+# Loopback-only by default. Exposing this endpoint off-host is a separate,
+# governed security decision.
+config :spruce_goose, SpruceGoose.Web.Endpoint,
+  adapter: Bandit.PhoenixAdapter,
+  url: [host: "127.0.0.1"],
+  http: [ip: {127, 0, 0, 1}, port: 4000],
+  server: false,
+  render_errors: [formats: [json: SpruceGoose.Web.ErrorJSON], layout: false]
 
 config :spruce_goose, Oban,
   repo: SpruceGoose.Repo,

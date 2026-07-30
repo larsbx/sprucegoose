@@ -26,10 +26,6 @@ defmodule SpruceGoose.Workflows.SavedFilter do
     end
   end
 
-  identities do
-    identity(:unique_filter_name_per_board, [:board_id, :name])
-  end
-
   actions do
     defaults([:read])
 
@@ -46,6 +42,10 @@ defmodule SpruceGoose.Workflows.SavedFilter do
       primary?(true)
       accept([:board_id, :name, :criteria])
     end
+  end
+
+  identities do
+    identity(:unique_filter_name_per_board, [:board_id, :name])
   end
 
   validations do

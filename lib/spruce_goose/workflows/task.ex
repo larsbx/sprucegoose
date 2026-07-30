@@ -77,11 +77,6 @@ defmodule SpruceGoose.Workflows.Task do
     end
   end
 
-  identities do
-    identity(:stable_task_id, [:task_id])
-    identity(:idempotent_origin_event, [:origin_event_id], nils_distinct?: true)
-  end
-
   actions do
     defaults([:read])
 
@@ -220,6 +215,11 @@ defmodule SpruceGoose.Workflows.Task do
 
       change(optimistic_lock(:lock_version))
     end
+  end
+
+  identities do
+    identity(:stable_task_id, [:task_id])
+    identity(:idempotent_origin_event, [:origin_event_id], nils_distinct?: true)
   end
 
   validations do
