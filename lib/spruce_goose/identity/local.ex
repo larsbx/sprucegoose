@@ -1,0 +1,72 @@
+defmodule SpruceGoose.Identity.Local do
+  @moduledoc """
+  Local adapter for `SpruceGoose.Identity` (docs/identifier-model.md).
+
+  Deliberately the only adapter today, and deliberately replaceable. When
+  `coop_substrate` is assimilated its canonical log supplies `global_seq` /
+  `stream_seq` and Ed25519 signer sets, and this module is deleted rather
+  than migrated: IDs already minted stay valid because a dot does not change
+  meaning when the counter's storage moves.
+
+  ## Durability
+
+  `origin_seq` is a Postgres SEQUENCE. `nextval()` never returns a value twice,
+  including across restarts and crashes. After an unclean shutdown it may SKIP
+  values, which is the correct trade: gaps keep IDs distinct, reuse would mint
+  colliding IDs for distinct events. Sequences are also non-transactional, so a
+  rolled-back transaction does not return its value to the pool.
+
+  ## Key handling
+
+  The peer keypair lives in `spruce_goose_identity`, a raw single-row table
+  guarded by a DB trigger that rejects changes to either key half. Retaining the
+  private seed is mandatory so the peer can later prove ownership.
+  """
+
+  @behaviour SpruceGoose.Identity
+
+  alias SpruceGoose.Repo
+
+  @impl true
+  def peer_id do
+    case Repo.query!("SELECT peer_public_key FROM spruce_goose_identity WHERE id IS TRUE", []) do
+      %{rows: [[key]]} when is_binary(key) -> key
+      %{rows: []} -> provision_peer_key()
+    end
+  end
+
+  @impl true
+  def next_seq do
+    %{rows: [[seq]]} = Repo.query!("SELECT nextval('spruce_goose_origin_seq')", [])
+    seq
+  end
+
+  @impl true
+  def origin_wall_ms, do: System.system_time(:millisecond)
+
+  @doc """
+  Provision this peer's key exactly once.
+
+  Concurrent callers race harmlessly: the singleton primary key means one
+  insert wins and the loser reads the winner's key. Never overwrites, so a
+  second call cannot silently re-key the peer.
+  """
+  def provision_peer_key do
+    {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
+
+    Repo.query!(
+      """
+      INSERT INTO spruce_goose_identity
+        (id, peer_public_key, peer_private_key, key_algorithm)
+      VALUES (TRUE, $1, $2, 'ed25519')
+      ON CONFLICT (id) DO NOTHING
+      """,
+      [public_key, private_key]
+    )
+
+    %{rows: [[key]]} =
+      Repo.query!("SELECT peer_public_key FROM spruce_goose_identity WHERE id IS TRUE", [])
+
+    key
+  end
+end
