@@ -74,6 +74,7 @@ defmodule SpruceGoose.CLI.Command do
     {"ledger", ["import PATH", "parity PATH"]},
     {"meta", ["version", "help"]}
   ]
+  @help_nouns @usage |> Enum.map(&elem(&1, 0)) |> List.delete("meta")
 
   @doc "Single-line usage summary, derived from the command table."
   def usage do
@@ -98,6 +99,18 @@ defmodule SpruceGoose.CLI.Command do
     }
   end
 
+  @doc "Help for one top-level command family."
+  def help(noun) when noun in @help_nouns do
+    {_noun, forms} = List.keyfind!(@usage, noun, 0)
+
+    %{
+      usage: "sprucegoose #{noun} <command> [args]",
+      version: version(),
+      command: noun,
+      forms: forms
+    }
+  end
+
   def version do
     case :application.get_key(:spruce_goose, :vsn) do
       {:ok, vsn} -> List.to_string(vsn)
@@ -110,6 +123,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["-h"]), do: {:ok, :help}
   def parse(["version"]), do: {:ok, :version}
   def parse(["--version"]), do: {:ok, :version}
+
+  def parse([noun, help]) when noun in @help_nouns and help in ["help", "--help", "-h"],
+    do: {:ok, {:help, noun}}
 
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}

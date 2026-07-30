@@ -20,6 +20,7 @@ defmodule SpruceGoose.CLI.Executor do
   }
 
   def run(:help), do: {:ok, Command.help()}
+  def run({:help, noun}), do: {:ok, Command.help(noun)}
   def run(:version), do: {:ok, %{version: Command.version()}}
 
   def run(:generate_id), do: {:ok, %{id: TaskId.generate()}}

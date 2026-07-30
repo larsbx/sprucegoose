@@ -1,9 +1,30 @@
 defmodule SpruceGoose.CLITest do
   use ExUnit.Case, async: true
 
+  alias SpruceGoose.CLI
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.SopGate
   alias SpruceGoose.TaskId
+
+  test "returns scoped help for every command family and rejects unknown families" do
+    families = ~w(id project roadmap workflow task dep todo board column filter inbox ledger)
+
+    for family <- families, help_arg <- ["help", "--help"] do
+      assert {:ok, help} = CLI.run([family, help_arg])
+      assert help.command == family
+      assert help.usage == "sprucegoose #{family} <command> [args]"
+      assert help.forms != []
+    end
+
+    assert {:ok, task_help} = CLI.run(["task", "--help"])
+
+    assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
+
+    assert {:error, :usage} = CLI.run(["unknown", "--help"])
+    assert {:ok, root_help} = CLI.run(["--help"])
+    assert root_help.usage == "sprucegoose <command> [args]"
+    assert {:ok, %{version: _}} = CLI.run(["--version"])
+  end
 
   test "generates and validates the spec task ID schema" do
     now = ~U[2026-07-27 01:23:51Z]
