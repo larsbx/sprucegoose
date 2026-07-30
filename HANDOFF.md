@@ -1,185 +1,226 @@
-# Orchestrator Authority-Cutover Handoff
+# SpruceGoose Current-State Handoff
 
-Status: Historical — cutover completed; current findings are in
-`POST_CUTOVER_AUDIT_REPORT.md`
+Status: Identity seam remediated and committed; not yet activated in production write paths
 
-Date: 2026-07-27 UTC
+Date: 2026-07-30 UTC
+
+Canonical repository: `/home/admin-papa/sprucegoose`
+
+Branch: `main`
+
+Current handoff commit base: `8a7a617`
 
 ## Executive status
 
-The audit remediation has been implemented and independently rechecked. All
-eight findings from `REAUDIT_REPORT.md` are addressed in the current working
-tree.
+The interrupted identity-seam work has been repaired, made reproducible, tested,
+committed, and closed in authoritative SpruceGoose governance.
 
-The full verification gate passes:
+Two critical defects from the audit are fixed:
 
-- 32 tests, 0 failures
-- compilation with warnings treated as errors
-- formatting check
-- Ash/Postgres migration-drift check
-- escript build
-- Git diff whitespace/integrity check
+- fixed-width derivation inputs now reject overflow instead of silently wrapping
+  to colliding encodings;
+- local Ed25519 provisioning retains the private seed with the public key, so a
+  newly provisioned peer can prove ownership later.
 
-The remediation is not committed. `REAUDIT_REPORT.md`, this handoff, the
-authority module, the authority/dependency migration, its resource snapshot,
-and the regression test are untracked at handoff time. Other remediation files
-are modified in the working tree.
+The seam remains deliberately inactive outside its own modules and tests. Task,
+inbox, TODO, outbox, and surrogate-table identifiers still use their existing
+schemes. Swapping those write paths, adding `payload_b3`, and deriving outbox
+`event_id` are a separate phase and were explicitly excluded from the completed
+identity task.
 
-## Toolchain
+## Repository state
 
-The repository pins:
+Relevant commits, newest first:
 
-- Erlang/OTP 28.3.1
-- Elixir 1.19.5-otp-28
+- `8a7a617` — Prove identity sequence restart durability
+- `41065ee` — Add durable identity derivation seam
+- `316997a` — Add red historical graph migration regression
+- `1643c93` — Harden dependency and outbox invariants
+- `ba79baf` — Add BLAKE3 dependency with reference vector tests
+- `8ca72be` — Record identifier model specification (diagnosis)
 
-Initialize the operator shell so `erl`, `elixir`, and `mix` resolve to the
-versions pinned in `.tool-versions`, then run Mix commands directly. Confirm
-the resolved versions before deployment or cutover.
+The worktree was clean at handoff preparation.
 
-## Audit remediation
+The rebuilt `sprucegoose` escript was generated from the remediated source on
+2026-07-29 at 22:06:21 UTC. Use this binary, not the retired or captured
+`orchestrator` escript.
 
-### Authority and ledger safety
+## Identity seam
 
-`Orchestrator.Authority` reads the durable singleton authority record.
-`Ledger.import/1` is accepted only while the authority mode is `tuxedo`.
-After the authority record changes to `ash`, imports fail closed.
+### Derivation invariants
 
-Before cutover, Tuxedo refreshes:
+`SpruceGoose.Derive` provides:
 
-- update only tasks carrying `legacy_source = "tuxedo"`
-- refuse to overwrite native Ash tasks
-- merge legacy provenance into `input` instead of replacing native metadata
-- increment `lock_version`, invalidating stale writers
-- run transactionally with exact parity verification
+- length-prefixed tuple-field encoding;
+- BLAKE3 namespace-separated hashing;
+- big-endian `u32` and `u64` encoding;
+- deterministic RFC 9562 UUIDv7 layout with a 48-bit timestamp and 74 digest
+  bits;
+- originated and parent-derived identity helpers;
+- stable task suffix projection.
 
-### Dependency reconciliation
+The accepted numeric domains are now explicit:
 
-Dependency edges now carry a `source` value. A ledger refresh removes and
-reconstructs only `tuxedo` edges. Native Ash edges remain intact.
+- `u32be/1`: `0..2^32-1`;
+- `u64be/1`: `0..2^64-1`;
+- `uuid_v7d/2` timestamp: `0..2^48-1`.
 
-### Lifecycle governance
+Values above those maxima fail with no wrapped output.
 
-Lifecycle movement is explicit:
+### Peer identity and sequence
 
-```text
-task propose
-task queue
-task ready
-task start
-task wait
-task done
-task cancel
-```
+`SpruceGoose.Identity` defines the adapter contract. The current local adapter
+uses:
 
-`task start` accepts only a ready task and verifies that all predecessors are
-complete. The CLI no longer searches for and silently traverses a multi-state
-path.
+- a singleton `spruce_goose_identity` row;
+- a 32-byte Ed25519 public key as `peer_id`;
+- the matching retained 32-byte private seed;
+- database constraints for singleton shape, algorithm, and key lengths;
+- a trigger making both key halves immutable;
+- the non-transactional `spruce_goose_origin_seq` PostgreSQL sequence.
 
-Wait and cancellation reasons are stored in the same optimistic-locking update
-as the state transition. Diagnosis completion requires:
+Concurrent first provisioning converges on the winning row. The private seed is
+not logged or linked as evidence.
 
-- a `finding` reference
-- a `regression` reference
-- an `sop` reference
-- every subordinate TODO to be complete
+### Upgrade behavior
 
-Task JSON now exposes references, wait/cancellation reasons, lock version, and
-legacy-import provenance.
+Migration `20260729145500_add_identity_seam.exs` creates the complete schema for
+a fresh database.
 
-### Fail-closed parsing
+Migration `20260729182000_preserve_identity_private_key.exs` upgrades databases
+that had already applied the public-only version. It fails closed if a
+public-only row exists because no new private key could match that public key.
+The verified dev and test databases had no identity row, so both upgraded
+without orphaning an identity.
 
-Ledger parsing rejects unknown task schemas, task types, and task statuses.
-Legacy records that omit those optional fields retain the documented legacy
-defaults.
+A disposable fresh database was created, migrated from zero, ran the focused
+identity suite, and was dropped successfully.
+
+## Verification state
+
+Passing gates:
+
+- focused identity and derivation suite: 24 tests, 0 failures;
+- all implemented tests excluding the separately committed intentional-red
+  historical-graph regression: 123 tests, 0 failures;
+- formatting check;
+- development compilation with warnings treated as errors;
+- Ash/PostgreSQL migration drift check;
+- Git diff whitespace check;
+- dev and test migration upgrade;
+- disposable fresh-database migration and focused tests;
+- escript rebuild;
+- compiled-CLI schema/workflow dogfood.
+
+The unfiltered suite is intentionally not green at this handoff. Commit
+`316997a` added two red tests in
+`test/historical_graph_migration_regression_test.exs`. They call the not-yet-
+implemented `SpruceGoose.Knowledge` API. Current result after the restart test
+was added is expected to be 125 tests with those same 2 failures. Do not
+attribute those failures to the identity seam and do not weaken or delete the
+red regression to obtain a green count.
+
+## Compiled-CLI dogfood evidence
+
+The rebuilt CLI created and completed this full chain in the development
+database:
+
+- project: `identity-seam-dogfood-20260729`
+- roadmap: `identity-seam`
+- workflow DAG: `identity-seam-v1`
+- task: `tsk-20260729T223019Z-9dadd930`
+- TODO: `todo-bc9b2bcd37bdf37f1676c09323e19733`
+
+The task exercised `propose → queue → ready → start → completed`; its TODO was
+completed and regression evidence was attached.
+
+## Governance state
+
+Completed identity audit diagnosis:
+
+- `tsk-20260729T175713Z-6627857d`
+
+Completed identity implementation task:
+
+- `tsk-20260729T145111Z-c2959f95`
+
+The implementation task links commits `41065ee` and `8a7a617`, focused/full
+regression evidence, dev/test and fresh-database migration proof, dogfood
+identities, and the Systemwide SOP digest.
+
+Previously stale completed work was reconciled:
+
+- P1.1 `tsk-20260729T093354Z-d9508883` — completed with its existing five refs;
+- P1.2 `tsk-20260729T101831Z-652186d1` — completed with its existing five refs;
+- P1.3 `tsk-20260729T102757Z-58638d6e` — completed with its existing five refs;
+- P2 `tsk-20260729T123559Z-8c6ced7d` — commit, regression, and SOP evidence
+  attached, then completed.
+
+Authoritative task state is PostgreSQL through the compiled `sprucegoose` CLI.
+Tuxedo, `taskctl`, `/home/admin-papa/tasks/todo.txt`, historical Graphify output,
+and captured `orchestrator` binaries are not current authority.
+
+## Next bounded work
+
+1. Implement the separately committed historical-graph migration contract in
+   `SpruceGoose.Knowledge` until the two red tests pass. Keep current canonical
+   source and PostgreSQL as authority; historical Graphify data is input only.
+2. Admit a separate governed phase before activating derived identity in live
+   write paths.
+3. In that phase, enumerate every Ash action, CLI path, SQL trigger/default,
+   import path, retry path, and concurrency boundary before changing IDs.
+4. Add `payload_b3` and deterministic outbox `event_id` with migration/backfill
+   and mixed-version compatibility evidence.
+5. Decide and document private-key operational custody before signing is
+   exposed. Never print, link, or commit the private seed.
+6. Rebuild the escript after every source change and dogfood schema or workflow-
+   admission changes through a fresh Project → Roadmap → Workflow → Task → TODO
+   chain.
+
+## Recovery and operator notes
+
+The local PostgreSQL 16 cluster uses:
+
+- data: `/home/admin-papa/pgdata`
+- server binaries: `/home/admin-papa/pglocal/usr/lib/postgresql/16/bin`
+- port: `5432`
+- Unix socket directory: `/tmp`
+
+It was restarted during remediation using its existing `postmaster.opts`; no
+replacement database was created. If it is down, inspect current cluster state
+and logs before restarting the same data directory.
+
+For a public-only identity upgrade failure, do not generate a replacement key
+and pretend it owns the stored public key. Restore the matching private seed, or
+if direct evidence proves the identity was never used, explicitly reset the
+unused singleton row before retrying the migration.
+
+## Primary files
+
+- `docs/identifier-model.md`
+- `lib/spruce_goose/derive.ex`
+- `lib/spruce_goose/identity.ex`
+- `lib/spruce_goose/identity/local.ex`
+- `priv/repo/migrations/20260729145500_add_identity_seam.exs`
+- `priv/repo/migrations/20260729182000_preserve_identity_private_key.exs`
+- `test/derive_golden_test.exs`
+- `test/identity_local_test.exs`
+- `test/historical_graph_migration_regression_test.exs`
 
 ## Verification commands
 
-From the repository root:
+From `/home/admin-papa/sprucegoose` with the pinned asdf toolchain:
 
 ```sh
-mix test
-mix compile --warnings-as-errors
-mix format --check-formatted
-mix ash_postgres.generate_migrations --check
-mix escript.build
+asdf exec mix test test/derive_golden_test.exs test/identity_local_test.exs
+asdf exec mix test $(rg --files test -g '*_test.exs' | rg -v 'historical_graph_migration_regression_test.exs')
+asdf exec mix format --check-formatted
+MIX_ENV=dev asdf exec mix compile --warnings-as-errors
+asdf exec mix ash_postgres.generate_migrations --check
+asdf exec mix escript.build
 git diff --check
 ```
 
-Last result: all commands passed; the test suite reported 32 tests and zero
-failures.
-
-The dedicated regression contract is:
-
-```sh
-mix test test/reaudit_regression_test.exs
-```
-
-It covers:
-
-- refresh locking and native metadata preservation
-- import rejection after Ash cutover
-- stale imported-edge removal and native-edge preservation
-- explicit lifecycle gates
-- atomic wait/cancel reasons
-- diagnosis evidence and TODO completion requirements
-- task JSON visibility
-
-## Deployment and cutover sequence
-
-Do not retire Tuxedo or `taskctl` until every step below succeeds in the target
-environment.
-
-1. Review and commit the complete working tree as one coherent remediation.
-2. Deploy the application with the pinned Erlang/Elixir toolchain.
-3. Apply the new database migration:
-
-   ```sh
-   mix ecto.migrate
-   ```
-
-4. Confirm the authority row exists and is still `tuxedo`.
-5. Perform the final ledger import from the unchanged authoritative
-   `todo.txt`.
-6. Run exact ledger parity and preserve its output as cutover evidence.
-7. Exercise Ash CLI task reads and lifecycle commands against the target
-   database.
-8. In one controlled database operation, change the singleton authority mode
-   from `tuxedo` to `ash` and set `cutover_at`.
-9. Prove that a subsequent ledger import is rejected.
-10. Re-run the test/compile/format/migration/escript/diff gate on the deployed
-    revision.
-11. Only after the above evidence is retained, retire Tuxedo and `taskctl`
-    entry points according to the approved operational procedure.
-
-The authority migration intentionally initializes the mode as `tuxedo`; merely
-deploying or migrating does not perform the cutover.
-
-## Rollback boundary
-
-Before authority transfer, the unchanged `todo.txt` remains the recovery
-source, and the transactional import can reconstruct the imported Ash data.
-
-After authority changes to `ash`, ledger import is deliberately disabled.
-Do not switch authority back casually: post-cutover Ash-native changes may not
-exist in the legacy ledger. A rollback after Ash becomes writable requires an
-explicit reconciliation and data-preservation plan, not only an authority-row
-update.
-
-## Files central to the remediation
-
-- `lib/orchestrator/authority.ex`
-- `lib/orchestrator/ledger.ex`
-- `lib/orchestrator/cli/command.ex`
-- `lib/orchestrator/cli/executor.ex`
-- `lib/orchestrator/workflows/task.ex`
-- `lib/orchestrator/workflows/dependency.ex`
-- `priv/repo/migrations/20260727104241_harden_authority_and_dependency_import.exs`
-- `test/reaudit_regression_test.exs`
-- `REAUDIT_REPORT.md`
-
-## Immediate owner action
-
-Review the uncommitted diff and stage the handoff, reports, source changes,
-migration, resource snapshot, and tests together. The next operational decision
-is whether to schedule the controlled authority transfer; this document does
-not itself execute that destructive cutover or retire legacy tooling.
+Run unfiltered `asdf exec mix test` as well; until the knowledge migration is
+implemented, its only expected failures are the two intentional-red tests named
+above.
