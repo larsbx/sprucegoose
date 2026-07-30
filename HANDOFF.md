@@ -1,6 +1,6 @@
 # SpruceGoose Current-State Handoff
 
-Status: Identity seam remediated and committed; not yet activated in production write paths
+Status: Historical knowledge projection green; identity seam remains inactive in production write paths
 
 Date: 2026-07-30 UTC
 
@@ -8,7 +8,7 @@ Canonical repository: `/home/admin-papa/sprucegoose`
 
 Branch: `main`
 
-Current code-state base: `b593d19`
+Current code-state base: `8cba43a`
 
 ## Executive status
 
@@ -28,10 +28,15 @@ schemes. Swapping those write paths, adding `payload_b3`, and deriving outbox
 `event_id` are a separate phase and were explicitly excluded from the completed
 identity task.
 
+The historical Graphify migration contract is now implemented as an isolated
+Ash/PostgreSQL knowledge projection. Historical artifacts are inputs only;
+current canonical source and the existing workflow tables remain authoritative.
+
 ## Repository state
 
 Relevant commits, newest first:
 
+- `8cba43a` — Implement historical knowledge projection
 - `b593d19` — Complete P2 scoped CLI help
 - `8a7a617` — Prove identity sequence restart durability
 - `41065ee` — Add durable identity derivation seam
@@ -102,8 +107,8 @@ identity suite, and was dropped successfully.
 Passing gates:
 
 - focused identity and derivation suite: 24 tests, 0 failures;
-- all implemented tests excluding the separately committed intentional-red
-  historical-graph regression: 124 tests, 0 failures;
+- focused historical-graph migration suite: 2 tests, 0 failures;
+- full unfiltered suite: 126 tests, 0 failures;
 - formatting check;
 - development compilation with warnings treated as errors;
 - Ash/PostgreSQL migration drift check;
@@ -113,13 +118,13 @@ Passing gates:
 - escript rebuild;
 - compiled-CLI schema/workflow dogfood.
 
-The unfiltered suite is intentionally not green at this handoff. Commit
-`316997a` added two red tests in
-`test/historical_graph_migration_regression_test.exs`. They call the not-yet-
-implemented `SpruceGoose.Knowledge` API. Current result after the restart test
-was added is expected to be 126 tests with those same 2 failures. Do not
-attribute those failures to the identity seam and do not weaken or delete the
-red regression to obtain a green count.
+Migration `20260730075851_add_knowledge_projection.exs` is applied to
+development and test. It creates `knowledge_generations`, `knowledge_nodes`,
+and `knowledge_relations`; its down path drops only those projection tables.
+The importer serializes generation activation, preserves exact source
+provenance, treats exact digest/revision replay as idempotent, rejects stale or
+incomplete input, and retains the last complete active generation. It does not
+write workflow authority tables.
 
 ## Compiled-CLI dogfood evidence
 
@@ -162,24 +167,33 @@ left by the original P2 task. Every supported top-level command family now
 accepts both `FAMILY help` and `FAMILY --help`; unknown families still fail
 closed. Commit `b593d19` carries the implementation and regression.
 
+Historical knowledge implementation task:
+
+- `tsk-20260730T075422Z-80456c08`
+
+Compiled-CLI schema dogfood completed:
+
+- project: `knowledge-migration-dogfood-20260730`
+- roadmap: `knowledge-projection`
+- workflow: `knowledge-projection-v1`
+- task: `tsk-20260730T080608Z-b6a1094e`
+- TODO: `todo-258536095535e8793b29be0bc653b740`
+
 Authoritative task state is PostgreSQL through the compiled `sprucegoose` CLI.
 Tuxedo, `taskctl`, `/home/admin-papa/tasks/todo.txt`, historical Graphify output,
 and captured `orchestrator` binaries are not current authority.
 
 ## Next bounded work
 
-1. Implement the separately committed historical-graph migration contract in
-   `SpruceGoose.Knowledge` until the two red tests pass. Keep current canonical
-   source and PostgreSQL as authority; historical Graphify data is input only.
-2. Admit a separate governed phase before activating derived identity in live
+1. Admit a separate governed phase before activating derived identity in live
    write paths.
-3. In that phase, enumerate every Ash action, CLI path, SQL trigger/default,
+2. In that phase, enumerate every Ash action, CLI path, SQL trigger/default,
    import path, retry path, and concurrency boundary before changing IDs.
-4. Add `payload_b3` and deterministic outbox `event_id` with migration/backfill
+3. Add `payload_b3` and deterministic outbox `event_id` with migration/backfill
    and mixed-version compatibility evidence.
-5. Decide and document private-key operational custody before signing is
+4. Decide and document private-key operational custody before signing is
    exposed. Never print, link, or commit the private seed.
-6. Rebuild the escript after every source change and dogfood schema or workflow-
+5. Rebuild the escript after every source change and dogfood schema or workflow-
    admission changes through a fresh Project → Roadmap → Workflow → Task → TODO
    chain.
 
@@ -211,6 +225,9 @@ unused singleton row before retrying the migration.
 - `priv/repo/migrations/20260729182000_preserve_identity_private_key.exs`
 - `test/derive_golden_test.exs`
 - `test/identity_local_test.exs`
+- `lib/spruce_goose/knowledge.ex`
+- `lib/spruce_goose/knowledge/`
+- `priv/repo/migrations/20260730075851_add_knowledge_projection.exs`
 - `test/historical_graph_migration_regression_test.exs`
 
 ## Verification commands
@@ -220,7 +237,8 @@ shim on this host:
 
 ```sh
 mix test test/derive_golden_test.exs test/identity_local_test.exs
-mix test $(rg --files test -g '*_test.exs' | rg -v 'historical_graph_migration_regression_test.exs')
+mix test test/historical_graph_migration_regression_test.exs
+mix test
 mix format --check-formatted
 MIX_ENV=dev mix compile --warnings-as-errors
 mix ash_postgres.generate_migrations --check
@@ -228,6 +246,4 @@ mix escript.build
 git diff --check
 ```
 
-Run unfiltered `mix test` as well; until the knowledge migration is
-implemented, its only expected failures are the two intentional-red tests named
-above.
+The full unfiltered suite is expected to remain green.
