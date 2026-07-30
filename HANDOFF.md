@@ -8,7 +8,7 @@ Canonical repository: `/home/admin-papa/sprucegoose`
 
 Branch: `main`
 
-Current handoff commit base: `8a7a617`
+Current code-state base: `b593d19`
 
 ## Executive status
 
@@ -32,6 +32,7 @@ identity task.
 
 Relevant commits, newest first:
 
+- `b593d19` — Complete P2 scoped CLI help
 - `8a7a617` — Prove identity sequence restart durability
 - `41065ee` — Add durable identity derivation seam
 - `316997a` — Add red historical graph migration regression
@@ -41,8 +42,8 @@ Relevant commits, newest first:
 
 The worktree was clean at handoff preparation.
 
-The rebuilt `sprucegoose` escript was generated from the remediated source on
-2026-07-29 at 22:06:21 UTC. Use this binary, not the retired or captured
+The rebuilt `sprucegoose` escript was generated from the current source on
+2026-07-30 at 01:37:52 UTC. Use this binary, not the retired or captured
 `orchestrator` escript.
 
 ## Identity seam
@@ -102,7 +103,7 @@ Passing gates:
 
 - focused identity and derivation suite: 24 tests, 0 failures;
 - all implemented tests excluding the separately committed intentional-red
-  historical-graph regression: 123 tests, 0 failures;
+  historical-graph regression: 124 tests, 0 failures;
 - formatting check;
 - development compilation with warnings treated as errors;
 - Ash/PostgreSQL migration drift check;
@@ -116,7 +117,7 @@ The unfiltered suite is intentionally not green at this handoff. Commit
 `316997a` added two red tests in
 `test/historical_graph_migration_regression_test.exs`. They call the not-yet-
 implemented `SpruceGoose.Knowledge` API. Current result after the restart test
-was added is expected to be 125 tests with those same 2 failures. Do not
+was added is expected to be 126 tests with those same 2 failures. Do not
 attribute those failures to the identity seam and do not weaken or delete the
 red regression to obtain a green count.
 
@@ -155,6 +156,11 @@ Previously stale completed work was reconciled:
 - P1.3 `tsk-20260729T102757Z-58638d6e` — completed with its existing five refs;
 - P2 `tsk-20260729T123559Z-8c6ced7d` — commit, regression, and SOP evidence
   attached, then completed.
+
+The P2.3 follow-up `tsk-20260730T013248Z-1f7e1498` closes the scoped-help gap
+left by the original P2 task. Every supported top-level command family now
+accepts both `FAMILY help` and `FAMILY --help`; unknown families still fail
+closed. Commit `b593d19` carries the implementation and regression.
 
 Authoritative task state is PostgreSQL through the compiled `sprucegoose` CLI.
 Tuxedo, `taskctl`, `/home/admin-papa/tasks/todo.txt`, historical Graphify output,
@@ -209,18 +215,19 @@ unused singleton row before retrying the migration.
 
 ## Verification commands
 
-From `/home/admin-papa/sprucegoose` with the pinned asdf toolchain:
+From `/home/admin-papa/sprucegoose`; `mix` resolves through the pinned asdf
+shim on this host:
 
 ```sh
-asdf exec mix test test/derive_golden_test.exs test/identity_local_test.exs
-asdf exec mix test $(rg --files test -g '*_test.exs' | rg -v 'historical_graph_migration_regression_test.exs')
-asdf exec mix format --check-formatted
-MIX_ENV=dev asdf exec mix compile --warnings-as-errors
-asdf exec mix ash_postgres.generate_migrations --check
-asdf exec mix escript.build
+mix test test/derive_golden_test.exs test/identity_local_test.exs
+mix test $(rg --files test -g '*_test.exs' | rg -v 'historical_graph_migration_regression_test.exs')
+mix format --check-formatted
+MIX_ENV=dev mix compile --warnings-as-errors
+mix ash_postgres.generate_migrations --check
+mix escript.build
 git diff --check
 ```
 
-Run unfiltered `asdf exec mix test` as well; until the knowledge migration is
+Run unfiltered `mix test` as well; until the knowledge migration is
 implemented, its only expected failures are the two intentional-red tests named
 above.
