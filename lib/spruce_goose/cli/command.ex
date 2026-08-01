@@ -202,8 +202,11 @@ defmodule SpruceGoose.CLI.Command do
              type: :string,
              label: :string,
              assignee: :string,
-             priority: :integer,
-             text: :string
+             priority: :string,
+             text: :string,
+             limit: :integer,
+             offset: :integer,
+             sort: :string
            ]
          ) do
       {opts, [], []} -> {:ok, {:list_tasks, Map.new(opts)}}

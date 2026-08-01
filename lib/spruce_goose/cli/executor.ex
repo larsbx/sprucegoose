@@ -74,19 +74,31 @@ defmodule SpruceGoose.CLI.Executor do
     with {:ok, roadmap_ids} <- workflow_scope(project_key, roadmap_key),
          filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
          {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)),
-         {:ok, labels} <- roadmap_labels() do
+         {:ok, labels} <- roadmap_labels(),
+         {:ok, tasks} <- Ash.read(Task) do
+      # Live vs. done counts let an operator spot an active workflow without
+      # issuing a follow-up task list per workflow.
+      by_workflow = Enum.group_by(tasks, & &1.workflow_id)
+
       {:ok,
        %{
          workflows:
            workflows
            |> Enum.sort_by(&{Map.get(labels, &1.roadmap_id), &1.workflow_id})
            |> Enum.map(fn workflow ->
+             rows = Map.get(by_workflow, workflow.id, [])
+             counts = Enum.frequencies_by(rows, &to_string(&1.state))
+
              %{
                id: workflow.id,
                roadmap_id: workflow.roadmap_id,
                roadmap: Map.get(labels, workflow.roadmap_id),
                workflow_id: workflow.workflow_id,
-               name: workflow.name
+               name: workflow.name,
+               task_count: length(rows),
+               open_count:
+                 Enum.count(rows, &(to_string(&1.state) not in ["completed", "cancelled"])),
+               state_counts: counts
              }
            end)
        }}
@@ -332,19 +344,39 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   def run({:list_tasks, filters}) do
-    with {:ok, state} <- optional_state(Map.get(filters, :state)),
+    with {:ok, states} <- optional_states(Map.get(filters, :state)),
          {:ok, task_type} <- optional_task_type(Map.get(filters, :type)),
+         {:ok, priority} <- optional_priority(Map.get(filters, :priority)),
+         {:ok, sorter} <- optional_sort(Map.get(filters, :sort)),
+         {:ok, limit} <- optional_window(Map.get(filters, :limit), "limit"),
+         {:ok, offset} <- optional_window(Map.get(filters, :offset), "offset"),
          {:ok, workflow_ids} <- task_workflow_scope(filters),
-         {:ok, tasks} <- Ash.read(Task) do
-      tasks =
+         {:ok, tasks} <- Ash.read(Task),
+         {:ok, memberships} <- workflow_memberships() do
+      matched =
         tasks
-        |> filter_by(state, &(&1.state == state))
+        |> filter_by(states, &(to_string(&1.state) in states))
         |> filter_by(task_type, &(&1.task_type == task_type))
         |> filter_by(workflow_ids, &(&1.workflow_id in workflow_ids))
-        |> apply_task_criteria(filters)
-        |> Enum.sort_by(& &1.task_id)
+        |> filter_by(priority, &priority_matches?(&1, priority))
+        |> apply_task_criteria(Map.delete(filters, :priority))
+        |> Enum.sort_by(sorter)
 
-      {:ok, %{tasks: Enum.map(tasks, &task_json/1)}}
+      total = length(matched)
+
+      windowed =
+        matched
+        |> Enum.drop(offset || 0)
+        |> then(fn rows -> if limit, do: Enum.take(rows, limit), else: rows end)
+
+      {:ok,
+       %{
+         total: total,
+         count: length(windowed),
+         offset: offset || 0,
+         limit: limit,
+         tasks: Enum.map(windowed, &task_json(&1, memberships))
+       }}
     end
   end
 
@@ -992,6 +1024,116 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  # --state accepts one state or a comma-separated set ("ready,in_progress").
+  # Returns a list of stringified states, or nil when unscoped.
+  defp optional_states(nil), do: {:ok, nil}
+
+  defp optional_states(raw) do
+    raw
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> case do
+      [] ->
+        {:error, "invalid task state"}
+
+      parts ->
+        Enum.reduce_while(parts, {:ok, []}, fn part, {:ok, acc} ->
+          case optional_state(part) do
+            {:ok, state} -> {:cont, {:ok, [to_string(state) | acc]}}
+            error -> {:halt, error}
+          end
+        end)
+        |> case do
+          {:ok, states} -> {:ok, states |> Enum.reverse() |> Enum.uniq()}
+          error -> error
+        end
+    end
+  end
+
+  # --priority accepts 0..5, or "none" to reach legacy rows admitted before
+  # the priority gate existed (stored as NULL).
+  defp optional_priority(nil), do: {:ok, nil}
+  defp optional_priority("none"), do: {:ok, :none}
+  defp optional_priority("unset"), do: {:ok, :none}
+
+  defp optional_priority(raw) do
+    case Integer.parse(raw) do
+      {value, ""} when value >= 0 and value <= 5 -> {:ok, value}
+      _ -> {:error, "priority must be 0 through 5, or none"}
+    end
+  end
+
+  defp priority_matches?(task, :none), do: is_nil(task.priority)
+  defp priority_matches?(task, value), do: task.priority == value
+
+  @sort_fields %{
+    "id" => :id,
+    "priority" => :priority,
+    "state" => :state,
+    "title" => :title,
+    "created" => :created,
+    "recent" => :recent
+  }
+
+  defp optional_sort(nil), do: {:ok, & &1.task_id}
+
+  defp optional_sort(raw) do
+    case Map.fetch(@sort_fields, raw) do
+      {:ok, :id} ->
+        {:ok, & &1.task_id}
+
+      {:ok, :created} ->
+        {:ok, & &1.task_id}
+
+      # Task IDs are lexically time-ordered, so descending id == most recent.
+      {:ok, :recent} ->
+        {:ok, &{&1.task_id <= "", negated_id(&1.task_id)}}
+
+      {:ok, :priority} ->
+        # nil priority sorts last rather than crashing the comparison.
+        {:ok, &{&1.priority || 99, &1.task_id}}
+
+      {:ok, :state} ->
+        {:ok, &{to_string(&1.state), &1.task_id}}
+
+      {:ok, :title} ->
+        {:ok, &{String.downcase(&1.title || ""), &1.task_id}}
+
+      :error ->
+        {:error, "sort must be one of: #{@sort_fields |> Map.keys() |> Enum.sort() |> Enum.join(", ")}"}
+    end
+  end
+
+  # Invert a lexical id so ascending sort yields most-recent-first.
+  defp negated_id(id), do: for(<<c <- id>>, into: "", do: <<255 - c>>)
+
+  defp optional_window(nil, _name), do: {:ok, nil}
+  defp optional_window(value, _name) when is_integer(value) and value >= 0, do: {:ok, value}
+  defp optional_window(_value, name), do: {:error, "#{name} must be a non-negative integer"}
+
+  # Human-readable project/roadmap/workflow membership for each workflow row.
+  defp workflow_memberships do
+    with {:ok, projects} <- Ash.read(Project),
+         {:ok, roadmaps} <- Ash.read(Roadmap),
+         {:ok, workflows} <- Ash.read(Workflow) do
+      project_keys = Map.new(projects, &{&1.id, &1.key})
+      roadmap_rows = Map.new(roadmaps, &{&1.id, &1})
+
+      {:ok,
+       Map.new(workflows, fn workflow ->
+         roadmap = Map.get(roadmap_rows, workflow.roadmap_id)
+
+         {workflow.id,
+          %{
+            project: roadmap && Map.get(project_keys, roadmap.project_id),
+            roadmap: roadmap && roadmap.key,
+            workflow: workflow.workflow_id,
+            workflow_name: workflow.name
+          }}
+       end)}
+    end
+  end
+
   defp require_transition_preconditions(%{state: :ready} = task, :in_progress) do
     with :ok <- SopGate.verify(task),
          {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]) do
@@ -1070,12 +1212,20 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp todo_admission_allowed(_task), do: :ok
 
-  defp task_json(task) do
+  defp task_json(task), do: task_json(task, %{})
+
+  defp task_json(task, memberships) do
+    membership = Map.get(memberships, task.workflow_id)
+
     %{
       id: task.task_id,
       type: task.task_type,
       title: task.title,
       description: task.description,
+      project: membership && membership.project,
+      roadmap: membership && membership.roadmap,
+      workflow: membership && membership.workflow,
+      workflow_name: membership && membership.workflow_name,
       definition_of_done: task.definition_of_done,
       sop_gate_required: task.sop_gate_required,
       sop_id: task.sop_id,

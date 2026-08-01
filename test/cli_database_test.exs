@@ -871,4 +871,186 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert {:ok, %{items: pending}} = Executor.run({:list_inbox, nil})
     assert capture.id in Enum.map(pending, & &1.id)
   end
+
+  defp list_fixture do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
+    {:ok, project} = Ash.create(Project, %{key: "listing", name: "Listing"})
+
+    {:ok, roadmap} =
+      Ash.create(Roadmap, %{project_id: project.id, key: "reads", name: "Reads"})
+
+    {:ok, workflow} =
+      Ash.create(Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "read-flow",
+        name: "Read Flow",
+        definition: definition
+      })
+
+    %{project: project, roadmap: roadmap, workflow: workflow}
+  end
+
+  defp admit(title, priority) do
+    {:ok, task} =
+      Executor.run({
+        :add_task,
+        %{
+          project: "listing",
+          roadmap: "reads",
+          workflow: "read-flow",
+          priority: priority,
+          task_type: :task,
+          title: title,
+          definition_of_done: "Listed correctly",
+          sop_path: SopGate.path()
+        }
+      })
+
+    task
+  end
+
+  test "task list resolves human project roadmap and workflow membership" do
+    list_fixture()
+    task = admit("Membership is resolved", 1)
+
+    assert {:ok, %{tasks: tasks}} = Executor.run({:list_tasks, %{workflow: "read-flow"}})
+    row = Enum.find(tasks, &(&1.id == task.id))
+
+    # The whole point: no UUID join required to learn where a task lives.
+    assert row.project == "listing"
+    assert row.roadmap == "reads"
+    assert row.workflow == "read-flow"
+    assert row.workflow_name == "Read Flow"
+  end
+
+  test "task list paginates with limit and offset while reporting the full total" do
+    list_fixture()
+    for n <- 1..5, do: admit("Paged #{n}", 2)
+
+    assert {:ok, %{total: total, count: 2, offset: 0, limit: 2, tasks: page_one}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2}})
+
+    assert total == 5
+    assert length(page_one) == 2
+
+    assert {:ok, %{total: 5, count: 2, offset: 2, tasks: page_two}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2, offset: 2}})
+
+    # Pages must not overlap, or pagination is worse than useless.
+    assert Enum.map(page_one, & &1.id) != Enum.map(page_two, & &1.id)
+    assert MapSet.disjoint?(ids(page_one), ids(page_two))
+
+    assert {:ok, %{total: 5, count: 1, tasks: tail}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2, offset: 4}})
+
+    assert length(tail) == 1
+  end
+
+  defp ids(rows), do: rows |> Enum.map(& &1.id) |> MapSet.new()
+
+  test "task list filters legacy null priority rows via none" do
+    %{workflow: workflow} = list_fixture()
+    prioritized = admit("Has priority", 3)
+
+    # Simulate a pre-gate row admitted before priority was mandatory.
+    {:ok, legacy} =
+      Ash.create(Task, %{
+        task_id: SpruceGoose.TaskId.generate(),
+        title: "Legacy row",
+        workflow_id: workflow.id,
+        definition_of_done: "Grandfathered",
+        runner: :oban,
+        priority: nil
+      })
+
+    assert {:ok, %{tasks: none_rows}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", priority: "none"}})
+
+    none_ids = Enum.map(none_rows, & &1.id)
+    assert legacy.task_id in none_ids
+    refute prioritized.id in none_ids
+
+    assert {:ok, %{tasks: three_rows}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", priority: "3"}})
+
+    assert Enum.map(three_rows, & &1.id) == [prioritized.id]
+
+    assert {:error, "priority must be 0 through 5, or none"} =
+             Executor.run({:list_tasks, %{priority: "abc"}})
+
+    assert {:error, "priority must be 0 through 5, or none"} =
+             Executor.run({:list_tasks, %{priority: "9"}})
+  end
+
+  test "task list accepts a comma separated state set" do
+    list_fixture()
+    waiting = admit("Will wait", 1)
+    queued = admit("Will queue", 1)
+    untouched = admit("Stays in inbox", 1)
+
+    for target <- [:proposed, :queued] do
+      {:ok, _} = Executor.run({:transition_task, queued.id, target, nil})
+    end
+
+    # waiting is only reachable from in_progress, which is SOP-gated.
+    for target <- [:proposed, :queued, :ready, :in_progress] do
+      {:ok, _} = Executor.run({:transition_task, waiting.id, target, nil})
+    end
+
+    {:ok, _} = Executor.run({:transition_task, waiting.id, :waiting, "holding"})
+
+    assert {:ok, %{tasks: rows}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", state: "waiting,queued"}})
+
+    found = ids(rows)
+    assert MapSet.member?(found, waiting.id)
+    assert MapSet.member?(found, queued.id)
+    refute MapSet.member?(found, untouched.id)
+
+    assert {:error, "invalid task state"} =
+             Executor.run({:list_tasks, %{state: "waiting,bogus"}})
+  end
+
+  test "task list sorts by priority and most recent" do
+    list_fixture()
+    low = admit("Low priority", 5)
+    high = admit("High priority", 0)
+
+    assert {:ok, %{tasks: by_priority}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "priority"}})
+
+    assert hd(by_priority).id == high.id
+    assert List.last(by_priority).id == low.id
+
+    assert {:ok, %{tasks: by_recent}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "recent"}})
+
+    # Task ids are lexically time-ordered, so "recent" is exactly descending id.
+    # Task ids only carry second granularity and tiebreak on random hex, so two
+    # rows admitted in the same second have no defined admission order. Assert
+    # the ordering property rather than which specific row landed first.
+    recent_ids = Enum.map(by_recent, & &1.id)
+    assert recent_ids == Enum.sort(recent_ids, :desc)
+    assert MapSet.new(recent_ids) == MapSet.new([high.id, low.id])
+
+    assert {:error, "sort must be one of: created, id, priority, recent, state, title"} =
+             Executor.run({:list_tasks, %{sort: "bogus"}})
+  end
+
+  test "workflow list reports task and open counts" do
+    list_fixture()
+    open = admit("Still open", 2)
+    _second = admit("Also open", 2)
+
+    for target <- [:proposed, :queued, :ready, :in_progress, :completed] do
+      Executor.run({:transition_task, open.id, target, nil})
+    end
+
+    assert {:ok, %{workflows: workflows}} = Executor.run({:list_workflows, "listing", "reads"})
+    row = Enum.find(workflows, &(&1.workflow_id == "read-flow"))
+
+    assert row.task_count == 2
+    assert row.open_count == 1
+    assert row.state_counts["completed"] == 1
+  end
 end
