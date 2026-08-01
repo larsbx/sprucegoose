@@ -25,7 +25,7 @@ defmodule SpruceGoose.CLI.Command do
      ]},
     {"task",
      [
-       "add --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--type task|diagnosis] TITLE",
+       "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] TITLE",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
        "propose|queue|ready|start|done ID",
@@ -69,7 +69,7 @@ defmodule SpruceGoose.CLI.Command do
        "list [--state pending|resolved|dropped|all]",
        "done CAPTURE_ID",
        "drop CAPTURE_ID REASON",
-       "promote CAPTURE_ID --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--title T]"
+       "promote CAPTURE_ID --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--title T]"
      ]},
     {"ledger", ["import PATH", "parity PATH"]},
     {"meta", ["version", "help"]}
@@ -267,6 +267,7 @@ defmodule SpruceGoose.CLI.Command do
           project: :string,
           roadmap: :string,
           workflow: :string,
+          priority: :integer,
           dod: :string,
           sop: :string,
           type: :string,
@@ -281,6 +282,7 @@ defmodule SpruceGoose.CLI.Command do
          {:ok, project} <- required(opts, :project),
          {:ok, roadmap} <- required(opts, :roadmap),
          {:ok, workflow} <- required(opts, :workflow),
+         {:ok, priority} <- required_priority(opts),
          {:ok, dod} <- required(opts, :dod),
          {:ok, sop_path} <- required(opts, :sop),
          true <- task_type in ["task", "diagnosis"] do
@@ -290,6 +292,7 @@ defmodule SpruceGoose.CLI.Command do
           project: project,
           roadmap: roadmap,
           workflow: workflow,
+          priority: priority,
           definition_of_done: dod,
           sop_path: sop_path,
           task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
@@ -297,6 +300,7 @@ defmodule SpruceGoose.CLI.Command do
         }}}
     else
       false -> {:error, "--type must be task or diagnosis"}
+      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
       {:error, option} -> {:error, "--#{option} is required"}
       _ -> {:error, "invalid inbox promote arguments"}
     end
@@ -371,6 +375,7 @@ defmodule SpruceGoose.CLI.Command do
           project: :string,
           roadmap: :string,
           workflow: :string,
+          priority: :integer,
           dod: :string,
           sop: :string,
           type: :string
@@ -383,6 +388,7 @@ defmodule SpruceGoose.CLI.Command do
          {:ok, project} <- required(opts, :project),
          {:ok, roadmap} <- required(opts, :roadmap),
          {:ok, workflow} <- required(opts, :workflow),
+         {:ok, priority} <- required_priority(opts),
          {:ok, dod} <- required(opts, :dod),
          {:ok, sop_path} <- required(opts, :sop),
          true <- task_type in ["task", "diagnosis"],
@@ -393,6 +399,7 @@ defmodule SpruceGoose.CLI.Command do
           project: project,
           roadmap: roadmap,
           workflow: workflow,
+          priority: priority,
           definition_of_done: dod,
           sop_path: sop_path,
           task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
@@ -400,6 +407,7 @@ defmodule SpruceGoose.CLI.Command do
         }}}
     else
       false -> {:error, "--type must be task or diagnosis"}
+      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
       "" -> {:error, "task title is required"}
       {:error, option} -> {:error, "--#{option} is required"}
       _ -> {:error, "invalid task add arguments"}
@@ -432,6 +440,14 @@ defmodule SpruceGoose.CLI.Command do
     case Keyword.get(opts, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
       _ -> {:error, key}
+    end
+  end
+
+  defp required_priority(opts) do
+    case Keyword.fetch(opts, :priority) do
+      {:ok, priority} when priority in 0..5 -> {:ok, priority}
+      {:ok, _priority} -> {:error, :priority_range}
+      :error -> {:error, :priority}
     end
   end
 end

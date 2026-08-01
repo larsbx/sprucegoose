@@ -7,7 +7,8 @@ config :spruce_goose,
          "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
        )
 
-outbox_enabled? = System.get_env("OUTBOX_DISPATCHER_ENABLED", "false") in ["1", "true"]
+outbox_flag = System.get_env("OUTBOX_DISPATCHER_ENABLED", "false")
+outbox_enabled? = outbox_flag == "1" or outbox_flag == "true"
 
 outbox_handler =
   case System.get_env("OUTBOX_HANDLER") do
@@ -72,7 +73,8 @@ if config_env() == :prod do
     System.get_env("DATABASE_URL") ||
       raise "DATABASE_URL is required in production"
 
-  ssl = System.get_env("DATABASE_SSL", "true") not in ["false", "0"]
+  ssl_flag = System.get_env("DATABASE_SSL", "true")
+  ssl = ssl_flag != "false" and ssl_flag != "0"
 
   config :spruce_goose, SpruceGoose.Repo,
     url: database_url,

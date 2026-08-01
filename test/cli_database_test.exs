@@ -55,6 +55,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
                  project: "dogfood",
                  roadmap: "dev",
                  workflow: "proof",
+                 priority: 3,
                  task_type: :task,
                  title: "Exercise the hierarchy",
                  definition_of_done: "TODO is complete",
@@ -172,6 +173,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
                  project: project_key,
                  roadmap: roadmap_key,
                  workflow: workflow_key,
+                 priority: 3,
                  task_type: :task,
                  title: "Admitted from discovered keys",
                  definition_of_done: "Discovery closes the admission loop",
@@ -208,6 +210,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
                  project: "pi",
                  roadmap: "sprucegoose",
                  workflow: "audit-fixes",
+                 priority: 2,
                  task_type: :task,
                  title: "Persist through CLI",
                  definition_of_done: "The record is readable",
@@ -216,12 +219,20 @@ defmodule SpruceGoose.CLIDatabaseTest do
              })
 
     assert created.title == "Persist through CLI"
+    assert created.priority == 2
     assert created.sop_gate_required
     assert created.sop_path == SopGate.path()
     assert created.sop_digest =~ ~r/^[0-9a-f]{64}$/
     assert created.sop_acknowledged_at
     assert {:ok, shown} = Executor.run({:show_task, created.id})
     assert shown == created
+  end
+
+  test "executor rejects absent and invalid task priority before admission" do
+    assert {:error, "priority is required"} = Executor.run({:add_task, %{}})
+
+    assert {:error, "priority must be between 0 and 5"} =
+             Executor.run({:add_task, %{priority: 6}})
   end
 
   test "start rejects stale SOP acknowledgment and accepts a refreshed acknowledgment" do
@@ -246,6 +257,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
           project: "sop-gate",
           roadmap: "admission",
           workflow: "verify",
+          priority: 1,
           task_type: :task,
           title: "Require current SOP",
           definition_of_done: "Start is gated",
@@ -804,6 +816,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
       project: "triage",
       roadmap: "intake",
       workflow: "promote",
+      priority: 2,
       task_type: :task,
       definition_of_done: "Capture is promoted",
       sop_path: SopGate.path()
@@ -847,6 +860,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
                   project: "missing-project",
                   roadmap: "missing",
                   workflow: "missing",
+                  priority: 3,
                   task_type: :task,
                   title: nil,
                   definition_of_done: "Should not be admitted",

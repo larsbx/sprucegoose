@@ -18,6 +18,8 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, task_help} = CLI.run(["task", "--help"])
 
+    assert "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] TITLE" in task_help.forms
+
     assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
 
     assert {:error, :usage} = CLI.run(["unknown", "--help"])
@@ -48,6 +50,8 @@ defmodule SpruceGoose.CLITest do
                "buzz-agent-collaboration-plane",
                "--workflow",
                "buzz-integration",
+               "--priority",
+               "1",
                "--dod",
                "focused checks pass",
                "--sop",
@@ -62,6 +66,7 @@ defmodule SpruceGoose.CLITest do
     assert task.project == "pi"
     assert task.roadmap == "buzz-agent-collaboration-plane"
     assert task.workflow == "buzz-integration"
+    assert task.priority == 1
     assert task.definition_of_done == "focused checks pass"
     assert task.sop_path == SopGate.path()
     assert task.task_type == :diagnosis
@@ -77,6 +82,8 @@ defmodule SpruceGoose.CLITest do
                "buzz-agent-collaboration-plane",
                "--workflow",
                "buzz-integration",
+               "--priority",
+               "3",
                "--dod",
                "focused checks pass",
                "--sop",
@@ -84,7 +91,7 @@ defmodule SpruceGoose.CLITest do
                "Default task"
              ])
 
-    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
+    for missing <- ["project", "roadmap", "workflow", "priority", "dod", "sop"] do
       args =
         [
           "task",
@@ -95,6 +102,8 @@ defmodule SpruceGoose.CLITest do
           "roadmap",
           "--workflow",
           "workflow",
+          "--priority",
+          "3",
           "--dod",
           "done",
           "--sop",
@@ -104,6 +113,27 @@ defmodule SpruceGoose.CLITest do
         |> drop_option("--#{missing}")
 
       assert {:error, _} = Command.parse(args)
+    end
+
+    for priority <- ["-1", "6"] do
+      assert {:error, "--priority must be between 0 and 5"} =
+               Command.parse([
+                 "task",
+                 "add",
+                 "--project",
+                 "pi",
+                 "--roadmap",
+                 "roadmap",
+                 "--workflow",
+                 "workflow",
+                 "--priority",
+                 priority,
+                 "--dod",
+                 "done",
+                 "--sop",
+                 SopGate.path(),
+                 "title"
+               ])
     end
   end
 
@@ -206,6 +236,8 @@ defmodule SpruceGoose.CLITest do
       "roadmap",
       "--workflow",
       "workflow",
+      "--priority",
+      "3",
       "--dod",
       "done",
       "--sop",
@@ -392,6 +424,8 @@ defmodule SpruceGoose.CLITest do
                "buzz-agent-collaboration-plane",
                "--workflow",
                "buzz-integration",
+               "--priority",
+               "2",
                "--dod",
                "triage closes",
                "--sop",
@@ -399,6 +433,7 @@ defmodule SpruceGoose.CLITest do
              ])
 
     assert promoted.project == "pi"
+    assert promoted.priority == 2
     assert promoted.definition_of_done == "triage closes"
     assert promoted.task_type == :task
     assert promoted.title == nil
@@ -414,6 +449,8 @@ defmodule SpruceGoose.CLITest do
                "r",
                "--workflow",
                "w",
+               "--priority",
+               "4",
                "--dod",
                "d",
                "--sop",
@@ -440,6 +477,8 @@ defmodule SpruceGoose.CLITest do
       "r",
       "--workflow",
       "w",
+      "--priority",
+      "3",
       "--dod",
       "d",
       "--sop",
@@ -451,7 +490,10 @@ defmodule SpruceGoose.CLITest do
 
     assert {:error, "invalid inbox promote arguments"} = Command.parse(base ++ ["stray"])
 
-    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
+    assert {:error, "--priority must be between 0 and 5"} =
+             Command.parse(replace_option(base, "--priority", "6"))
+
+    for missing <- ["project", "roadmap", "workflow", "priority", "dod", "sop"] do
       assert {:error, _} = Command.parse(drop_option(base, "--#{missing}"))
     end
   end
@@ -473,5 +515,10 @@ defmodule SpruceGoose.CLITest do
       {left, [_option, _value | right]} -> left ++ right
       _ -> args
     end
+  end
+
+  defp replace_option(args, option, value) do
+    {left, [_option, _current | right]} = Enum.split_while(args, &(&1 != option))
+    left ++ [option, value | right]
   end
 end

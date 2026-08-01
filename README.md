@@ -34,6 +34,7 @@ mix escript.build
   --project pi \
   --roadmap buzz-agent-collaboration-plane \
   --workflow buzz-integration \
+  --priority 2 \
   --dod "Focused checks pass" \
   --sop "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" \
   "Implement the next slice"

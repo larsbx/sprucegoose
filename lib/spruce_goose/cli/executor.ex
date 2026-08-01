@@ -609,7 +609,8 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   def run({:add_task, input}) do
-    with {:ok, project} <- read_one(Project, key: input.project),
+    with {:ok, priority} <- required_task_priority(input),
+         {:ok, project} <- read_one(Project, key: input.project),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: input.roadmap),
          {:ok, workflow} <-
            read_one(Workflow, roadmap_id: roadmap.id, workflow_id: input.workflow),
@@ -624,6 +625,7 @@ defmodule SpruceGoose.CLI.Executor do
                task_type: input.task_type,
                title: input.title,
                definition_of_done: input.definition_of_done,
+               priority: priority,
                runner: :oban
              }
            ) do
@@ -631,6 +633,14 @@ defmodule SpruceGoose.CLI.Executor do
     else
       false -> {:error, "SOP path must be #{SopGate.path()}"}
       result -> result
+    end
+  end
+
+  defp required_task_priority(input) do
+    case Map.fetch(input, :priority) do
+      {:ok, priority} when priority in 0..5 -> {:ok, priority}
+      {:ok, _priority} -> {:error, "priority must be between 0 and 5"}
+      :error -> {:error, "priority is required"}
     end
   end
 
