@@ -1053,4 +1053,81 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert row.open_count == 1
     assert row.state_counts["completed"] == 1
   end
+
+  # A workflow_id is only unique within its roadmap. Two roadmaps under the
+  # same project can both define "shared-flow", and matching on workflow_id
+  # alone silently unions both -- a total the operator cannot account for.
+  defp ambiguous_fixture do
+    {:ok, definition} = Definition.parse(%{tasks: [%{id: "admit", kind: :oban}]})
+    {:ok, project} = Ash.create(Project, %{key: "dual", name: "Dual"})
+
+    for {roadmap_key, roadmap_name} <- [{"first", "First"}, {"second", "Second"}] do
+      {:ok, roadmap} =
+        Ash.create(Roadmap, %{project_id: project.id, key: roadmap_key, name: roadmap_name})
+
+      {:ok, _workflow} =
+        Ash.create(Workflow, %{
+          roadmap_id: roadmap.id,
+          workflow_id: "shared-flow",
+          name: "Shared Flow",
+          definition: definition
+        })
+    end
+
+    for roadmap_key <- ["first", "second"] do
+      {:ok, _task} =
+        Executor.run({
+          :add_task,
+          %{
+            project: "dual",
+            roadmap: roadmap_key,
+            workflow: "shared-flow",
+            priority: 2,
+            task_type: :task,
+            title: "Lives in #{roadmap_key}",
+            definition_of_done: "Scoped correctly",
+            sop_path: SopGate.path()
+          }
+        })
+    end
+
+    :ok
+  end
+
+  test "task list rejects a workflow_id that is ambiguous across roadmaps" do
+    ambiguous_fixture()
+
+    assert {:error, message} = Executor.run({:list_tasks, %{workflow: "shared-flow"}})
+
+    # Fail closed, and name both qualified paths so the caller can scope it.
+    assert message =~ "ambiguous across 2 roadmaps"
+    assert message =~ "dual/first/shared-flow"
+    assert message =~ "dual/second/shared-flow"
+    assert message =~ "--project"
+  end
+
+  test "scoping by roadmap disambiguates a shared workflow_id" do
+    ambiguous_fixture()
+
+    assert {:ok, %{tasks: [first]}} =
+             Executor.run({:list_tasks, %{workflow: "shared-flow", roadmap: "first"}})
+
+    assert first.title == "Lives in first"
+    assert first.roadmap == "first"
+
+    assert {:ok, %{tasks: [second]}} =
+             Executor.run({:list_tasks, %{workflow: "shared-flow", roadmap: "second"}})
+
+    assert second.title == "Lives in second"
+    assert second.roadmap == "second"
+  end
+
+  test "an unambiguous workflow_id is unaffected by the ambiguity check" do
+    list_fixture()
+    task = admit("Still reachable unscoped", 2)
+
+    # Only one roadmap defines read-flow, so no scoping should be required.
+    assert {:ok, %{tasks: tasks}} = Executor.run({:list_tasks, %{workflow: "read-flow"}})
+    assert Enum.any?(tasks, &(&1.id == task.id))
+  end
 end

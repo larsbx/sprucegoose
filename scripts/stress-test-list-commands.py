@@ -270,19 +270,69 @@ record(
     f"keys={sorted(w0.keys())}",
 )
 
-# ------------------------------------------- known defect: workflow_id ambiguity
+# ------------------------------------------------- workflow_id ambiguity
+# A workflow_id is only unique within its roadmap, so duplicates across
+# roadmaps are legitimate data, not a defect. What matters is that the CLI
+# refuses to silently union them. An earlier version of this probe asserted
+# that no duplicates existed, which tested the fixture rather than the code.
 seen = {}
 for w in (allw or {"workflows": []})["workflows"]:
     seen.setdefault(w["workflow_id"], []).append(w["roadmap"])
 dups = [(k, v) for k, v in seen.items() if len(v) > 1]
-record(
-    not dups,
-    "workflow_id ambiguity across roadmaps",
-    "--workflow ID",
-    f"{len(dups)} duplicated ids e.g. {dups[:2]}"
-    if dups
-    else "no duplicate workflow_id across roadmaps",
+
+if dups:
+    ambiguous_key, ambiguous_roadmaps = dups[0]
+
+    # Unscoped: must fail closed and name the qualified paths.
+    rc, out, err = run("task", "list", "--workflow", ambiguous_key)
+    err_doc = parse(err)
+    record(
+        rc == 2
+        and err_doc is not None
+        and err_doc.get("ok") is False
+        and "ambiguous" in err_doc.get("error", ""),
+        "ambiguous workflow_id is rejected, not silently unioned",
+        f"--workflow {ambiguous_key}",
+        f'rc={rc}; error="{(err_doc or {}).get("error", out[:80])}"',
+    )
+
+    # Scoping by roadmap must resolve it and return only that roadmap's rows.
+    scoped_roadmap = ambiguous_roadmaps[0].split("/")[-1]
+    rc, out, err = run(
+        "task", "list", "--workflow", ambiguous_key, "--roadmap", scoped_roadmap
+    )
+    out_doc = parse(out)
+    record(
+        rc == 0
+        and out_doc is not None
+        and out_doc.get("ok")
+        and all(t.get("roadmap") == scoped_roadmap for t in out_doc.get("tasks", [])),
+        "scoping by roadmap disambiguates a shared workflow_id",
+        f"--workflow {ambiguous_key} --roadmap {scoped_roadmap}",
+        f"rc={rc}; n={len((out_doc or {}).get('tasks', []))}",
+    )
+else:
+    record(
+        True,
+        "ambiguous workflow_id is rejected, not silently unioned",
+        "--workflow ID",
+        "no duplicate workflow_id in current data; nothing to disambiguate",
+    )
+
+# An unambiguous workflow_id must still resolve without scoping.
+unique_key = next(
+    (k for k, v in seen.items() if len(v) == 1),
+    None,
 )
+if unique_key:
+    rc, out, err = run("task", "list", "--workflow", unique_key)
+    out_doc = parse(out)
+    record(
+        rc == 0 and out_doc is not None and out_doc.get("ok"),
+        "unambiguous workflow_id resolves without scoping",
+        f"--workflow {unique_key}",
+        f"rc={rc}; n={len((out_doc or {}).get('tasks', []))}",
+    )
 
 # ----------------------------------------------------------------- report
 print(json.dumps(

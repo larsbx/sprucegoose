@@ -914,6 +914,28 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  # A workflow_id is only unique within its roadmap, so the same key can exist
+  # under several roadmaps. Matching on workflow_id alone would silently union
+  # rows from every one of them and report a total the operator cannot explain.
+  # Fail closed and name the qualified paths so the caller can scope the query.
+  defp reject_ambiguous_workflow(workflows, nil), do: {:ok, workflows}
+
+  defp reject_ambiguous_workflow(workflows, workflow_key) when length(workflows) > 1 do
+    with {:ok, labels} <- roadmap_labels() do
+      paths =
+        workflows
+        |> Enum.map(&"#{Map.get(labels, &1.roadmap_id)}/#{&1.workflow_id}")
+        |> Enum.sort()
+        |> Enum.join(", ")
+
+      {:error,
+       "workflow #{workflow_key} is ambiguous across #{length(workflows)} roadmaps (#{paths}); " <>
+         "scope it with --project and/or --roadmap"}
+    end
+  end
+
+  defp reject_ambiguous_workflow(workflows, _workflow_key), do: {:ok, workflows}
+
   defp roadmap_labels do
     with {:ok, projects} <- Ash.read(Project),
          {:ok, roadmaps} <- Ash.read(Roadmap) do
@@ -986,7 +1008,8 @@ defmodule SpruceGoose.CLI.Executor do
       with {:ok, roadmap_ids} <- workflow_scope(project, roadmap),
            filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
            filter = if(workflow, do: [{:workflow_id, workflow} | filter], else: filter),
-           {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)) do
+           {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)),
+           {:ok, workflows} <- reject_ambiguous_workflow(workflows, workflow) do
         case workflows do
           [] -> {:error, "not found"}
           workflows -> {:ok, Enum.map(workflows, & &1.id)}
