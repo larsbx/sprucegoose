@@ -34,6 +34,11 @@ The retained `sprucegoose-direct` escript is break-glass recovery only. Normal
 automation uses `./sprucegoose`, which preserves the governed task ID schema
 and admits work through the running Ash application:
 
+Rollback is explicit: stop and disable `sprucegoose.service`, then install the
+retained `sprucegoose-direct` artifact back to `./sprucegoose`. Direct mode
+requires the production database and signing environment and restores the old
+cold-start latency; it is recovery, not an automatic fallback.
+
 ```sh
 mix escript.build
 ./sprucegoose id
