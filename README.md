@@ -16,8 +16,23 @@ DSL. Ash resources and actions model:
 Allowed task kinds map to Oban, TaskFlow, or OpenClaw. Those runtimes remain
 effect executors; Postgres/Ash owns orchestration state and invariants.
 
-The application builds an operator CLI that preserves the governed task ID
-schema and admits work through Ash:
+The production operator CLI is a thin client for a persistent OTP service over
+`$XDG_RUNTIME_DIR/sprucegoose/cli.sock`. The socket directory is mode `0700`,
+each request runs in its own supervised task, and every request has a bounded
+deadline. One stalled request therefore cannot head-of-line block another.
+There is no cold-start fallback: an unavailable service fails fast so an
+operator never mistakes a second application boot for a successful command.
+
+Build the release and install the thin client:
+
+```sh
+MIX_ENV=prod mix release --overwrite
+install -m 0755 scripts/sprucegoose-client.py ./sprucegoose
+```
+
+The retained `sprucegoose-direct` escript is break-glass recovery only. Normal
+automation uses `./sprucegoose`, which preserves the governed task ID schema
+and admits work through the running Ash application:
 
 ```sh
 mix escript.build
@@ -120,6 +135,15 @@ with completion and is rejected after completion or cancellation.
 Run the focused contract:
 
 ```sh
+mix test test/cli/socket_plug_test.exs test/cli/socket_service_test.exs
 mix test test/cli_test.exs test/workflow_definition_test.exs test/ledger_test.exs
 mix ash_postgres.generate_migrations --check
 ```
+
+The service boundary was reviewed against Twelve-Factor `main` commit
+`655b020ac25eac8f912ccc845094ec16cdf6b30b`: dependencies and configuration
+remain explicit, PostgreSQL is a backing service, build/release/run are
+separate, requests are concurrent and disposable, logs remain event streams,
+and administrative commands use the same running release. The Unix socket is
+a stronger local security boundary than application port binding and is an
+intentional host-level extension beyond the application factors.

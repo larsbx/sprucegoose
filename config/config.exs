@@ -43,6 +43,9 @@ config :spruce_goose, Oban,
 
 config :spruce_goose, :start_outbox_dispatcher, false
 config :spruce_goose, :outbox_handler, nil
+config :spruce_goose, :start_cli_service, false
+config :spruce_goose, :cli_socket_path, nil
+config :spruce_goose, :cli_request_timeout, 30_000
 
 # Delivery is deliberately opt-in. Runtime configuration must name a module
 # implementing deliver/1; enabling without one fails closed in runtime.exs.

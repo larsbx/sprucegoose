@@ -2,6 +2,7 @@ _build/
 deps/
 *.ez
 /sprucegoose
+/sprucegoose-direct
 .elixir_ls/
 graphify-out/
 backups/

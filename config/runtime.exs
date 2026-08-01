@@ -29,6 +29,20 @@ config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler
 
+cli_service_enabled? =
+  System.get_env("SPRUCE_GOOSE_CLI_SERVICE_ENABLED", "false") in ["1", "true"]
+
+runtime_dir = System.get_env("XDG_RUNTIME_DIR", "/run/user/#{System.get_env("UID", "")}")
+
+cli_socket_path =
+  System.get_env("SPRUCE_GOOSE_CLI_SOCKET", Path.join(runtime_dir, "sprucegoose/cli.sock"))
+
+config :spruce_goose,
+  start_cli_service: cli_service_enabled?,
+  cli_socket_path: cli_socket_path,
+  cli_request_timeout:
+    String.to_integer(System.get_env("SPRUCE_GOOSE_CLI_REQUEST_TIMEOUT_MS", "30000"))
+
 # MCP/OAuth endpoint. Opt-in and loopback-only.
 #
 # SpruceGoose is CLI-first; nothing binds a port unless this is switched on.
