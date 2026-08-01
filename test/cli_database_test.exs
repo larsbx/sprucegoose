@@ -1130,4 +1130,94 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert {:ok, %{tasks: tasks}} = Executor.run({:list_tasks, %{workflow: "read-flow"}})
     assert Enum.any?(tasks, &(&1.id == task.id))
   end
+
+  # Filtering, sorting, and pagination now run in Postgres rather than in
+  # Elixir. Postgres does not sort the way Enum.sort_by/2 does, and with
+  # --limit/--offset a different comparator returns *different rows* for the
+  # same window, not merely the same rows reordered. These pin the comparator.
+  test "title sort is case-insensitive, matching the previous in-memory order" do
+    list_fixture()
+
+    # Under the database's en_US.UTF-8 collation "apple" sorts before "Banana";
+    # under a bare COLLATE "C" every capital sorts first, so "Banana" would
+    # lead. Case-insensitive ordering is the behaviour being preserved.
+    admit("banana lowercase", 2)
+    admit("Apple capitalised", 2)
+    admit("cherry lowercase", 2)
+
+    assert {:ok, %{tasks: tasks}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "title"}})
+
+    assert Enum.map(tasks, & &1.title) == [
+             "Apple capitalised",
+             "banana lowercase",
+             "cherry lowercase"
+           ]
+  end
+
+  test "state sort keeps in_progress before inbox" do
+    list_fixture()
+
+    inbox_task = admit("Sits in inbox", 2)
+    running = admit("Is running", 2)
+
+    for target <- [:proposed, :queued, :ready, :in_progress] do
+      Executor.run({:transition_task, running.id, target, nil})
+    end
+
+    assert {:ok, %{tasks: tasks}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "state"}})
+
+    ordered = Enum.map(tasks, & &1.id)
+
+    # Byte order puts "in_progress" before "inbox"; the en_US collation ignores
+    # the underscore and reverses them. Assert the byte-order result.
+    assert Enum.find_index(ordered, &(&1 == running.id)) <
+             Enum.find_index(ordered, &(&1 == inbox_task.id))
+  end
+
+  test "pagination windows the sorted set rather than an unsorted read" do
+    list_fixture()
+
+    for letter <- ["e", "d", "c", "b", "a"], do: admit("#{letter} title", 2)
+
+    assert {:ok, %{tasks: page_one, total: total}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "title", limit: 2}})
+
+    assert {:ok, %{tasks: page_two}} =
+             Executor.run({
+               :list_tasks,
+               %{workflow: "read-flow", sort: "title", limit: 2, offset: 2}
+             })
+
+    # total describes the whole match, not the window.
+    assert total == 5
+    assert Enum.map(page_one, & &1.title) == ["a title", "b title"]
+    assert Enum.map(page_two, & &1.title) == ["c title", "d title"]
+  end
+
+  test "priority sort places null priority last" do
+    %{workflow: workflow} = list_fixture()
+
+    high = admit("High priority", 0)
+
+    # Legacy rows predate the priority gate and are stored as NULL, so they
+    # cannot be created through admission.
+    {:ok, legacy} =
+      Ash.create(SpruceGoose.Workflows.Task, %{
+        workflow_id: workflow.id,
+        task_id: "tsk-20260101T000000Z-0000dead",
+        title: "Legacy null priority",
+        definition_of_done: "Sorted last",
+        runner: :oban,
+        priority: nil
+      })
+
+    assert {:ok, %{tasks: tasks}} =
+             Executor.run({:list_tasks, %{workflow: "read-flow", sort: "priority"}})
+
+    ordered = Enum.map(tasks, & &1.id)
+    assert List.last(ordered) == legacy.task_id
+    assert Enum.find_index(ordered, &(&1 == high.id)) == 0
+  end
 end

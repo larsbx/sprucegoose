@@ -1,6 +1,9 @@
 defmodule SpruceGoose.CLI.Executor do
   @moduledoc false
 
+  require Ash.Query
+  import Ash.Expr
+
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.{Ledger, Repo, SopGate, TaskId}
 
@@ -347,35 +350,26 @@ defmodule SpruceGoose.CLI.Executor do
     with {:ok, states} <- optional_states(Map.get(filters, :state)),
          {:ok, task_type} <- optional_task_type(Map.get(filters, :type)),
          {:ok, priority} <- optional_priority(Map.get(filters, :priority)),
-         {:ok, sorter} <- optional_sort(Map.get(filters, :sort)),
+         {:ok, sort} <- optional_sort(Map.get(filters, :sort)),
          {:ok, limit} <- optional_window(Map.get(filters, :limit), "limit"),
          {:ok, offset} <- optional_window(Map.get(filters, :offset), "offset"),
          {:ok, workflow_ids} <- task_workflow_scope(filters),
-         {:ok, tasks} <- Ash.read(Task),
+         query =
+           Task
+           |> task_scope_query(states, task_type, workflow_ids, priority, filters)
+           |> task_sort_query(sort),
+         # Count in SQL against the same filters, so `total` describes the
+         # whole match while only the requested window is materialised.
+         {:ok, total} <- Ash.count(query),
+         {:ok, tasks} <- Ash.read(paginate_query(query, limit, offset)),
          {:ok, memberships} <- workflow_memberships() do
-      matched =
-        tasks
-        |> filter_by(states, &(to_string(&1.state) in states))
-        |> filter_by(task_type, &(&1.task_type == task_type))
-        |> filter_by(workflow_ids, &(&1.workflow_id in workflow_ids))
-        |> filter_by(priority, &priority_matches?(&1, priority))
-        |> apply_task_criteria(Map.delete(filters, :priority))
-        |> Enum.sort_by(sorter)
-
-      total = length(matched)
-
-      windowed =
-        matched
-        |> Enum.drop(offset || 0)
-        |> then(fn rows -> if limit, do: Enum.take(rows, limit), else: rows end)
-
       {:ok,
        %{
          total: total,
-         count: length(windowed),
+         count: length(tasks),
          offset: offset || 0,
          limit: limit,
-         tasks: Enum.map(windowed, &task_json(&1, memberships))
+         tasks: Enum.map(tasks, &task_json(&1, memberships))
        }}
     end
   end
@@ -991,9 +985,100 @@ defmodule SpruceGoose.CLI.Executor do
   defp optional_task_type("diagnosis"), do: {:ok, :diagnosis}
   defp optional_task_type(_), do: {:error, "type must be task or diagnosis"}
 
-  # nil scope means "no constraint"; anything else applies the predicate.
-  defp filter_by(tasks, nil, _predicate), do: tasks
-  defp filter_by(tasks, _scope, predicate), do: Enum.filter(tasks, predicate)
+  # Build the WHERE clause for task list. Every predicate here used to run in
+  # Elixir after reading the whole table; expressing them as Ash filters lets
+  # Postgres do the work, so --limit bounds the query rather than just the
+  # response payload.
+  defp task_scope_query(query, states, task_type, workflow_ids, priority, filters) do
+    query
+    |> then(fn q ->
+      if states, do: Ash.Query.filter(q, expr(state in ^states)), else: q
+    end)
+    |> then(fn q ->
+      if task_type, do: Ash.Query.filter(q, expr(task_type == ^task_type)), else: q
+    end)
+    |> then(fn q ->
+      if workflow_ids, do: Ash.Query.filter(q, expr(workflow_id in ^workflow_ids)), else: q
+    end)
+    |> then(fn q ->
+      case priority do
+        nil -> q
+        # "none" reaches legacy rows admitted before the priority gate.
+        :none -> Ash.Query.filter(q, expr(is_nil(priority)))
+        value -> Ash.Query.filter(q, expr(priority == ^value))
+      end
+    end)
+    |> then(fn q ->
+      case Map.get(filters, :label) do
+        nil -> q
+        label -> Ash.Query.filter(q, expr(^label in labels))
+      end
+    end)
+    |> then(fn q ->
+      case Map.get(filters, :assignee) do
+        nil -> q
+        assignee -> Ash.Query.filter(q, expr(^assignee in assignees))
+      end
+    end)
+    |> then(fn q ->
+      case Map.get(filters, :text) do
+        nil ->
+          q
+
+        # Matches the previous case-insensitive substring search on title.
+        text ->
+          Ash.Query.filter(q, expr(contains(fragment("lower(?)", title), ^String.downcase(text))))
+      end
+    end)
+  end
+
+  # Task IDs are lexically time-ordered, so ordering by task_id is also
+  # creation order and `recent` is simply its descending form.
+  #
+  # state and title sort by byte order under COLLATE "C", and title is
+  # lowercased first, exactly reproducing the previous in-memory
+  # `Enum.sort_by(&{String.downcase(&1.title), &1.task_id})`.
+  #
+  # Neither the database's en_US.UTF-8 collation nor a bare COLLATE "C" is
+  # equivalent. en_US ignores case and punctuation on its first pass, so it
+  # orders "inbox" before "in_progress"; plain COLLATE "C" is byte order, so
+  # it puts every uppercase title ahead of every lowercase one ("Add G" before
+  # "Add a"). Both disagree with the old behaviour, and the disagreement is
+  # not cosmetic: with --limit/--offset a different comparator returns
+  # *different rows* for the same window, silently repartitioning existing
+  # pagination.
+  defp task_sort_query(query, sort) do
+    case sort do
+      :recent ->
+        Ash.Query.sort(query, task_id: :desc)
+
+      :priority ->
+        Ash.Query.sort(query, priority: :asc_nils_last, task_id: :asc)
+
+      :state ->
+        Ash.Query.sort(query, [
+          {calc(fragment("? COLLATE \"C\"", state), type: :string), :asc},
+          {:task_id, :asc}
+        ])
+
+      :title ->
+        Ash.Query.sort(query, [
+          {calc(fragment("lower(coalesce(?, '')) COLLATE \"C\"", title), type: :string), :asc},
+          {:task_id, :asc}
+        ])
+
+      _ ->
+        Ash.Query.sort(query, task_id: :asc)
+    end
+  end
+
+  defp paginate_query(query, nil, nil), do: query
+
+  defp paginate_query(query, limit, offset) do
+    query
+    |> then(fn q -> if offset && offset > 0, do: Ash.Query.offset(q, offset), else: q end)
+    |> then(fn q -> if limit, do: Ash.Query.limit(q, limit), else: q end)
+  end
 
   # Narrow to the workflows implied by --project/--roadmap/--workflow.
   # nil means unscoped; a list means restrict to those workflow ids.
@@ -1015,26 +1100,6 @@ defmodule SpruceGoose.CLI.Executor do
           workflows -> {:ok, Enum.map(workflows, & &1.id)}
         end
       end
-    end
-  end
-
-  # Reuses the saved-filter criteria matcher so list and filter apply share one
-  # implementation rather than drifting apart.
-  defp apply_task_criteria(tasks, filters) do
-    criteria =
-      %{
-        "label" => Map.get(filters, :label),
-        "assignee" => Map.get(filters, :assignee),
-        "priority" => Map.get(filters, :priority),
-        "text" => Map.get(filters, :text)
-      }
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Map.new()
-
-    if criteria == %{} do
-      tasks
-    else
-      Enum.filter(tasks, &matches_filter?(&1, criteria))
     end
   end
 
@@ -1086,9 +1151,6 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  defp priority_matches?(task, :none), do: is_nil(task.priority)
-  defp priority_matches?(task, value), do: task.priority == value
-
   @sort_fields %{
     "id" => :id,
     "priority" => :priority,
@@ -1098,37 +1160,17 @@ defmodule SpruceGoose.CLI.Executor do
     "recent" => :recent
   }
 
-  defp optional_sort(nil), do: {:ok, & &1.task_id}
+  defp optional_sort(nil), do: {:ok, :id}
 
   defp optional_sort(raw) do
     case Map.fetch(@sort_fields, raw) do
-      {:ok, :id} ->
-        {:ok, & &1.task_id}
-
-      {:ok, :created} ->
-        {:ok, & &1.task_id}
-
-      # Task IDs are lexically time-ordered, so descending id == most recent.
-      {:ok, :recent} ->
-        {:ok, &{&1.task_id <= "", negated_id(&1.task_id)}}
-
-      {:ok, :priority} ->
-        # nil priority sorts last rather than crashing the comparison.
-        {:ok, &{&1.priority || 99, &1.task_id}}
-
-      {:ok, :state} ->
-        {:ok, &{to_string(&1.state), &1.task_id}}
-
-      {:ok, :title} ->
-        {:ok, &{String.downcase(&1.title || ""), &1.task_id}}
+      {:ok, field} when field in [:id, :created, :recent, :priority, :state, :title] ->
+        {:ok, field}
 
       :error ->
         {:error, "sort must be one of: #{@sort_fields |> Map.keys() |> Enum.sort() |> Enum.join(", ")}"}
     end
   end
-
-  # Invert a lexical id so ascending sort yields most-recent-first.
-  defp negated_id(id), do: for(<<c <- id>>, into: "", do: <<255 - c>>)
 
   defp optional_window(nil, _name), do: {:ok, nil}
   defp optional_window(value, _name) when is_integer(value) and value >= 0, do: {:ok, value}
