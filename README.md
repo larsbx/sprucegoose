@@ -39,6 +39,12 @@ retained `sprucegoose-direct` artifact back to `./sprucegoose`. Direct mode
 requires the production database and signing environment and restores the old
 cold-start latency; it is recovery, not an automatic fallback.
 
+The live authority moved from evergreen to mama on 2026-08-02. See
+[`ops/mama-authority/README.md`](ops/mama-authority/README.md) for the
+versioned bridge, backup, restart, and rollback procedure and
+[`ops/mama-authority/MIGRATION_PROGRESS.md`](ops/mama-authority/MIGRATION_PROGRESS.md)
+for the cutover evidence.
+
 ```sh
 mix escript.build
 ./sprucegoose id

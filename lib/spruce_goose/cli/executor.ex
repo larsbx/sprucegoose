@@ -1168,7 +1168,8 @@ defmodule SpruceGoose.CLI.Executor do
         {:ok, field}
 
       :error ->
-        {:error, "sort must be one of: #{@sort_fields |> Map.keys() |> Enum.sort() |> Enum.join(", ")}"}
+        {:error,
+         "sort must be one of: #{@sort_fields |> Map.keys() |> Enum.sort() |> Enum.join(", ")}"}
     end
   end
 
