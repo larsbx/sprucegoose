@@ -1391,6 +1391,10 @@ defmodule SpruceGoose.CLI.Executor do
       sop_id: task.sop_id,
       sop_path: task.sop_path,
       sop_digest: task.sop_digest,
+      # Exposed because the vault's write gate re-implements the same rule and
+      # reads this JSON; without the version it could only apply the digest
+      # branch and would refuse tasks SpruceGoose considers valid.
+      sop_version: task.sop_version,
       sop_acknowledged_at: task.sop_acknowledged_at,
       state: task.state,
       workflow_id: task.workflow_id,

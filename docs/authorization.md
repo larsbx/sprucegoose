@@ -211,4 +211,6 @@ anyone from reaching.
 ## Related
 
 - `docs/revisions.md` — the governed revise verb these roles gate.
+- `docs/sop-versioning.md` — the other gate a task must pass, and why a patch
+  bump to the SOP no longer re-acknowledges the fleet.
 - `lib/spruce_goose/actors/resolver.ex` — the boundary, stated in full.

@@ -48,6 +48,11 @@ defmodule SpruceGoose.Workflows.Task do
     attribute(:sop_id, :string, public?: true)
     attribute(:sop_path, :string, public?: true)
     attribute(:sop_digest, :string, public?: true)
+
+    # Nullable because null *is* the grandfathered state: every acknowledgment
+    # taken before the SOP declared a version carries none, and must stay
+    # representable rather than being backfilled with a version nobody read.
+    attribute(:sop_version, :string, public?: true)
     attribute(:sop_acknowledged_at, :utc_datetime_usec, public?: true)
 
     attribute(:state, SpruceGoose.Workflows.TaskState,
@@ -282,11 +287,17 @@ defmodule SpruceGoose.Workflows.Task do
     id = Ash.Changeset.get_attribute(changeset, :sop_id)
     path = Ash.Changeset.get_attribute(changeset, :sop_path)
     digest = Ash.Changeset.get_attribute(changeset, :sop_digest)
+    version = Ash.Changeset.get_attribute(changeset, :sop_version)
     acknowledged_at = Ash.Changeset.get_attribute(changeset, :sop_acknowledged_at)
 
     cond do
       required == false ->
         :ok
+
+      # nil is the grandfathered state and stays valid; a recorded version that
+      # is not semver could never be compared, so it is refused at the door.
+      not is_nil(version) and match?(:error, Version.parse(version)) ->
+        {:error, field: :sop_version, message: "must be semantic versioning"}
 
       id != SpruceGoose.SopGate.id() ->
         {:error, field: :sop_id, message: "must identify the Systemwide SOP"}

@@ -60,4 +60,9 @@ config :spruce_goose,
        :systemwide_sop_path,
        "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
 
+# The version an acknowledgment taken before SOP versioning is treated as
+# having read. Lets the SOP declare a version for the first time without
+# invalidating every task in flight.
+config :spruce_goose, :sop_grandfather_version, "1.0.0"
+
 import_config "#{config_env()}.exs"
