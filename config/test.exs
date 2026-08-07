@@ -9,6 +9,13 @@ config :spruce_goose,
 
 config :bcrypt_elixir, log_rounds: 1
 
+# The suite acts as the system: its assertions are about orchestration
+# invariants, not about who is allowed to trigger them. `SpruceGoose.DataCase`
+# seeds this actor with a global admin grant so policy enforcement is exercised
+# on every call while the subject under test stays the behaviour, not the
+# permission. `test/actors_test.exs` names restricted actors explicitly.
+config :spruce_goose, :default_actor, "test-system"
+
 # Loopback-only test endpoint; not started unless a test asks for it.
 config :spruce_goose, SpruceGoose.Web.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],

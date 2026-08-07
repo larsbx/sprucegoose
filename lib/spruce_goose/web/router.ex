@@ -29,6 +29,11 @@ defmodule SpruceGoose.Web.Router do
       required?: true,
       scope: "mcp"
     )
+
+    # Turns the authenticated client into a registered actor, so the read tools
+    # are scoped by the same grants the CLI honours rather than seeing
+    # everything. A client with no actor is refused, not defaulted.
+    plug(SpruceGoose.Web.ActorPlug)
   end
 
   # User-facing consent step (browser pipeline, CSRF protected).

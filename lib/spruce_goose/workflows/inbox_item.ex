@@ -1,11 +1,27 @@
 defmodule SpruceGoose.Workflows.InboxItem do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("inbox_items")
     repo(SpruceGoose.Repo)
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    # Captures arrive before triage, so they belong to no project yet and
+    # resolve to global scope. Working the inbox therefore needs a fleet-wide
+    # operator grant, not a project-scoped one.
+    policy action_type([:create, :update, :destroy]) do
+      authorize_if(HasRole.operator())
+    end
   end
 
   attributes do

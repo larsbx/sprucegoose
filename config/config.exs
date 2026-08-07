@@ -6,12 +6,18 @@ config :spark,
 config :spruce_goose,
   ash_domains: [
     SpruceGoose.Accounts,
+    SpruceGoose.Actors,
     SpruceGoose.Notes,
     SpruceGoose.Workflows,
     SpruceGoose.Knowledge.Domain
   ]
 
 config :spruce_goose, ecto_repos: [SpruceGoose.Repo]
+
+# The actor a request acts as when it names none. Deliberately nil: an
+# unconfigured deployment refuses rather than assuming an identity. Set it only
+# where one known party drives the CLI.
+config :spruce_goose, :default_actor, nil
 
 config :spruce_goose, SpruceGoose.Repo,
   username: "postgres",

@@ -7,7 +7,9 @@ defmodule SpruceGoose.Web.McpAuthTest do
   the router pipeline directly rather than a live socket, so they run in CI
   without binding a port.
   """
-  use ExUnit.Case, async: true
+  # DataCase rather than ExUnit.Case: the tool surface is now actor-scoped, so
+  # asserting what it exposes means having an actor, and that means the sandbox.
+  use SpruceGoose.DataCase, async: true
 
   @opts SpruceGoose.Web.Router.init([])
 
@@ -61,8 +63,14 @@ defmodule SpruceGoose.Web.McpAuthTest do
   end
 
   describe "tool surface" do
-    test "exposes only read actions" do
-      tools = AshAi.exposed_tools(otp_app: :spruce_goose)
+    test "exposes only read actions, and only to an actor" do
+      # `AshAi.exposed_tools/1` ends in a `can?` filter, so with the Workflows
+      # resources policy-protected an actor-less caller sees nothing at all.
+      # That is the surface `SpruceGoose.Web.ActorPlug` exists to prevent
+      # reaching: an unregistered client is refused, never treated as anonymous.
+      assert AshAi.exposed_tools(otp_app: :spruce_goose) == []
+
+      tools = AshAi.exposed_tools(otp_app: :spruce_goose, actor: mcp_actor())
 
       assert tools != []
 
@@ -72,5 +80,23 @@ defmodule SpruceGoose.Web.McpAuthTest do
                  "the MCP surface is intentionally read-only"
       end
     end
+  end
+
+  defp mcp_actor do
+    {:ok, actor} =
+      Ash.create(
+        SpruceGoose.Actors.Actor,
+        %{name: "mcp-reader", kind: :agent, created_by: "mcp-auth-test"},
+        authorize?: false
+      )
+
+    {:ok, _grant} =
+      Ash.create(
+        SpruceGoose.Actors.Grant,
+        %{actor_id: actor.id, role: :reader, scope: "*", granted_by: "mcp-auth-test"},
+        authorize?: false
+      )
+
+    actor
   end
 end

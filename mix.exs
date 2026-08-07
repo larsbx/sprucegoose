@@ -33,6 +33,9 @@ defmodule SpruceGoose.MixProject do
       {:phoenix, "~> 1.8"},
       {:bandit, "~> 1.12"},
       {:jason, "~> 1.4"},
+      # Present transitively via llm_db; named directly because the revise
+      # verb parses TOML and must not depend on another package's dep tree.
+      {:toml, "~> 0.7"},
       {:b3, "~> 0.2.0"},
       {:oban, "~> 2.19"},
       {:igniter, "~> 0.6", only: [:dev, :test]}

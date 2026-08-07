@@ -1,11 +1,35 @@
 defmodule SpruceGoose.Workflows.Task do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("workflow_tasks")
     repo(SpruceGoose.Repo)
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    # Admitting and driving work is the operator's whole job — this is the bulk
+    # of what an agent does, and is deliberately distinct from being allowed to
+    # revise what the work says.
+    policy action_type([:create, :destroy]) do
+      authorize_if(HasRole.operator())
+    end
+
+    policy action([:transition, :move, :update_board_metadata, :acknowledge_sop]) do
+      authorize_if(HasRole.operator())
+    end
+
+    policy action(:revise) do
+      authorize_if(HasRole.approver())
+    end
   end
 
   attributes do

@@ -45,10 +45,30 @@ versioned bridge, backup, restart, and rollback procedure and
 [`ops/mama-authority/MIGRATION_PROGRESS.md`](ops/mama-authority/MIGRATION_PROGRESS.md)
 for the cutover evidence.
 
+Every command acts as a named actor and is authorized against that actor's
+scoped grants. A store with an empty actor registry bootstraps its first
+operator through genesis; after that, `--as NAME` (or `SPRUCE_GOOSE_ACTOR`)
+identifies the caller and an unnamed request is refused. See
+[`docs/authorization.md`](docs/authorization.md) for the model, the roles, and
+an honest account of what a declared actor does and does not prove.
+
+Changing what an entity *says* — a roadmap's name, a workflow's DAG, a task's
+Definition of Done — goes through `revise`: a TOML sparse patch proposed once
+and applied only after an explicit sign-off bound to the digest of the reviewed
+bytes. See [`docs/revisions.md`](docs/revisions.md).
+
 ```sh
 mix escript.build
 ./sprucegoose id
 ./sprucegoose validate-id tsk-20260727T012351Z-ea5ba1b1
+
+# One-time, on an empty registry: genesis creates the first human as a
+# full-scope actor. Every later actor needs an admin to create it.
+./sprucegoose actor add lars --kind human --description operator
+./sprucegoose actor add openclaw --kind agent --as lars
+./sprucegoose grant add openclaw --role operator --scope project:my-project --as lars
+./sprucegoose whoami --as openclaw
+
 ./sprucegoose project add my-project "My project"
 ./sprucegoose roadmap add my-project delivery "Delivery roadmap"
 ./sprucegoose workflow add \
@@ -80,6 +100,11 @@ mix escript.build
 ./sprucegoose todo done tsk-... todo-...
 ./sprucegoose inbox add "Unclassified operator note"
 ./sprucegoose inbox list
+
+# Governed revision: propose, review, then sign off on the exact bytes.
+./sprucegoose revise propose --file /abs/path/rev.toml --as openclaw
+./sprucegoose revise show rev-... --as lars
+./sprucegoose revise approve rev-... --task tsk-... --digest <sha256> --as lars
 ```
 
 Inbox captures are content-addressed and idempotent. They remain pending and

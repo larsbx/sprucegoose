@@ -1,17 +1,41 @@
 defmodule SpruceGoose.Workflows.Roadmap do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("roadmaps")
     repo(SpruceGoose.Repo)
   end
 
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    policy action_type([:create, :destroy]) do
+      authorize_if(HasRole.author())
+    end
+
+    policy action(:rename) do
+      authorize_if(HasRole.author())
+    end
+
+    # `:revise` is only ever reached through an approved revision, so it carries
+    # the approver role rather than author's.
+    policy action(:revise) do
+      authorize_if(HasRole.approver())
+    end
+  end
+
   attributes do
     uuid_primary_key(:id)
     attribute(:key, :string, allow_nil?: false, public?: true)
     attribute(:name, :string, allow_nil?: false, public?: true)
+    attribute(:lock_version, :integer, allow_nil?: false, default: 1, public?: true)
     timestamps()
   end
 
@@ -30,6 +54,17 @@ defmodule SpruceGoose.Workflows.Roadmap do
 
     update :rename do
       accept([:name])
+      change(optimistic_lock(:lock_version))
+    end
+
+    # Identical to :rename today, because the row is only key + name — a
+    # roadmap's substance lives in the vault Markdown. It exists separately so
+    # every governed revision applies through one uniformly named action, and
+    # so the audit trail distinguishes a signed-off revision from a rename.
+    # `key` is excluded on purpose: the vault references roadmaps by key.
+    update :revise do
+      accept([:name])
+      change(optimistic_lock(:lock_version))
     end
 
     destroy :destroy do
