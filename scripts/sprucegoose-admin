@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -u
+
+SG=/home/admin-papa/sprucegoose/sprucegoose
+FZF=${FZF:-/home/admin-papa/.local/bin/fzf}
+
+catalog() {
+  "$SG" help | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for resource, usages in data["commands"].items():
+    for usage in usages:
+        print(f"{resource}\t{resource} {usage}")
+'
+}
+
+if [[ ${1:-} == --catalog ]]; then
+  catalog
+  exit 0
+fi
+
+if [[ ! -x $SG ]]; then
+  printf 'SpruceGoose CLI is unavailable: %s\n' "$SG" >&2
+  exit 1
+fi
+
+if [[ ! -x $FZF ]]; then
+  printf 'fzf is unavailable: %s\n' "$FZF" >&2
+  exit 1
+fi
+
+while true; do
+  selected="$(catalog | "$FZF" \
+    --delimiter=$'\t' \
+    --with-nth=1,2 \
+    --prompt='SpruceGoose admin › ' \
+    --header='Search every top-level admin action · Esc exits' \
+    --height=100% \
+    --layout=reverse \
+    --border \
+    --preview-window='down,60%,wrap' \
+    --preview='printf "Command template\n\n%s\n" {2}'
+  )" || exit 0
+
+  usage=${selected#*$'\t'}
+  command="$SG $usage"
+
+  printf '\nEdit identifiers, names, JSON, reasons, and paths before execution.\n'
+  read -r -e -i "$command" -p '$ ' command || exit 0
+  [[ -z $command ]] && continue
+
+  read -r -p 'Execute this command? [y/N] ' confirmed
+  if [[ $confirmed == y || $confirmed == Y ]]; then
+    /bin/bash -lc "$command"
+  else
+    printf 'Cancelled.\n'
+  fi
+
+  printf '\n'
+  read -r -p 'Press Enter to return to the action index.' _
+done
