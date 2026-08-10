@@ -188,6 +188,9 @@ defmodule SpruceGoose.ActorsTest do
                Executor.run({:task_blockers, beta_successor.task_id}, "graph-reader")
 
       assert {:error, _refused} =
+               Executor.run({:task_impact, beta.task.task_id}, "graph-reader")
+
+      assert {:error, _refused} =
                Executor.run(
                  {:workflow_critical_path, "beta", "r-beta", "w-beta"},
                  "graph-reader"
