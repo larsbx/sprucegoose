@@ -1105,6 +1105,24 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:list_tasks, %{state: "waiting,bogus"}})
   end
 
+  test "leaving waiting clears its stale reason" do
+    list_fixture()
+    task = admit("Resume cleanly", 1)
+
+    task =
+      Enum.reduce([:proposed, :queued, :ready, :in_progress], task, fn target, current ->
+        {:ok, transitioned} = Executor.run({:transition_task, current.id, target, nil})
+        transitioned
+      end)
+
+    assert {:ok, waiting} = Executor.run({:transition_task, task.id, :waiting, "holding"})
+    assert waiting.wait_reason == "holding"
+
+    assert {:ok, resumed} = Executor.run({:transition_task, task.id, :ready, nil})
+    assert resumed.wait_reason == nil
+    assert resumed.cancel_reason == nil
+  end
+
   test "task list sorts by priority and most recent" do
     list_fixture()
     low = admit("Low priority", 5)

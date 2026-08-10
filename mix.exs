@@ -7,7 +7,11 @@ defmodule SpruceGoose.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
-      escript: [main_module: SpruceGoose.CLI, name: "sprucegoose"],
+      escript: [
+        main_module: SpruceGoose.CLI,
+        name: "sprucegoose",
+        path: System.get_env("SPRUCE_GOOSE_ESCRIPT_PATH", "sprucegoose")
+      ],
       test_ignore_filters: [~r|^test/fixtures/|],
       deps: deps()
     ]

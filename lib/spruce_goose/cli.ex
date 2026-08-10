@@ -20,7 +20,9 @@ defmodule SpruceGoose.CLI do
   def run(args) do
     {actor_name, args} = Command.extract_actor(args)
 
-    with {:ok, command} <- Command.parse(args), do: Executor.run(command, actor_name)
+    with :ok <- SpruceGoose.AuthorityRuntime.ensure_local_execution_allowed(),
+         {:ok, command} <- Command.parse(args),
+         do: Executor.run(command, actor_name)
   end
 
   defp inspect_error(:usage), do: "usage: " <> Command.usage()

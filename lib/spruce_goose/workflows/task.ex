@@ -577,8 +577,18 @@ defmodule SpruceGoose.Workflows.Task do
   defp maybe_store_reason(changeset, target, reason)
        when target in [:waiting, :cancelled] and is_binary(reason) do
     key = if(target == :waiting, do: "wait_reason", else: "cancel_reason")
-    Ash.Changeset.change_attribute(changeset, :input, Map.put(changeset.data.input, key, reason))
+    stale = if(target == :waiting, do: "cancel_reason", else: "wait_reason")
+
+    input =
+      changeset.data.input
+      |> Map.delete(stale)
+      |> Map.put(key, reason)
+
+    Ash.Changeset.change_attribute(changeset, :input, input)
   end
 
-  defp maybe_store_reason(changeset, _target, _reason), do: changeset
+  defp maybe_store_reason(changeset, _target, _reason) do
+    input = changeset.data.input |> Map.delete("wait_reason") |> Map.delete("cancel_reason")
+    Ash.Changeset.change_attribute(changeset, :input, input)
+  end
 end

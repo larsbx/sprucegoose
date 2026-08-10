@@ -15,6 +15,7 @@ config :bcrypt_elixir, log_rounds: 1
 # on every call while the subject under test stays the behaviour, not the
 # permission. `test/actors_test.exs` names restricted actors explicitly.
 config :spruce_goose, :default_actor, "test-system"
+config :spruce_goose, :authority_host_marker, "/nonexistent/sprucegoose-test-authority-marker"
 
 # Loopback-only test endpoint; not started unless a test asks for it.
 config :spruce_goose, SpruceGoose.Web.Endpoint,

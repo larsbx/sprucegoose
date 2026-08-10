@@ -1,5 +1,15 @@
 import Config
 
+if config_env() == :test do
+  if marker = System.get_env("SPRUCE_GOOSE_TEST_AUTHORITY_MARKER") do
+    config :spruce_goose, :authority_host_marker, marker
+  end
+
+  if System.get_env("SPRUCE_GOOSE_TEST_DOGFOOD") == "true" do
+    config :spruce_goose, SpruceGoose.Repo, pool: DBConnection.ConnectionPool
+  end
+end
+
 config :spruce_goose,
        :systemwide_sop_path,
        System.get_env(
