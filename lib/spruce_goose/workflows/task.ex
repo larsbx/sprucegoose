@@ -349,6 +349,7 @@ defmodule SpruceGoose.Workflows.Task do
       LIMIT 1
       """
 
+      # AUTHORIZATION: Ash change validation; the enclosing action carries the actor.
       case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [changeset.data.id]).rows do
         [] -> :ok
         _ -> {:error, field: :state, message: "task has incomplete predecessors"}
@@ -410,6 +411,7 @@ defmodule SpruceGoose.Workflows.Task do
       AND bc.task_state = $4
     """
 
+    # AUTHORIZATION: Ash change validation; the enclosing action carries the actor.
     case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [
            column_id,
            board_id,
@@ -429,6 +431,7 @@ defmodule SpruceGoose.Workflows.Task do
   defp align_board_column(changeset, state) do
     sql = "SELECT id FROM board_columns WHERE board_id = $1::text::uuid AND task_state = $2"
 
+    # AUTHORIZATION: Ash transition hook; the enclosing action carries the actor.
     case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [
            changeset.data.board_id,
            to_string(state)

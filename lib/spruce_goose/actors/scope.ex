@@ -194,6 +194,7 @@ defmodule SpruceGoose.Actors.Scope do
   end
 
   defp query_key(sql, id, module) do
+    # AUTHORIZATION: internal grant-scope lookup used by the authorization check itself.
     case Ecto.Adapters.SQL.query!(Repo, sql, [Ecto.UUID.dump!(id)]).rows do
       [[key]] -> {:ok, {:project, key}}
       _ -> {:error, "#{inspect(module)} #{id} has no owning project"}

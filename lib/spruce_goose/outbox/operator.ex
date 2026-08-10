@@ -14,6 +14,7 @@ defmodule SpruceGoose.Outbox.Operator do
         Event
         |> where([event], event.status == :failed)
         |> order_by([event], asc: event.inserted_at)
+        # AUTHORIZATION: public entrypoint requires global admin immediately above.
         |> Repo.all()
 
       {:ok, %{events: Enum.map(events, &event_json/1)}}
@@ -22,11 +23,13 @@ defmodule SpruceGoose.Outbox.Operator do
 
   def replay(event_id) do
     with :ok <- authorize_admin() do
+      # AUTHORIZATION: public entrypoint requires global admin immediately above.
       Repo.transaction(fn ->
         event =
           Event
           |> where([event], event.id == ^event_id)
           |> lock("FOR UPDATE")
+          # AUTHORIZATION: transaction is behind the global-admin entrypoint.
           |> Repo.one()
 
         case event do

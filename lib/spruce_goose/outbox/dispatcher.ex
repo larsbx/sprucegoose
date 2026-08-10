@@ -108,6 +108,7 @@ defmodule SpruceGoose.Outbox.Dispatcher do
   end
 
   defp claim_one do
+    # AUTHORIZATION: internal Oban worker; claims only already-persisted outbox events.
     Repo.transaction(fn ->
       now = DateTime.utc_now()
       lease_until = DateTime.add(now, claim_lease_seconds(), :second)
@@ -118,6 +119,7 @@ defmodule SpruceGoose.Outbox.Dispatcher do
         |> order_by([event], asc: event.inserted_at)
         |> limit(1)
         |> lock("FOR UPDATE SKIP LOCKED")
+        # AUTHORIZATION: bounded by the worker's claimed event identifier.
         |> Repo.one()
 
       if event do

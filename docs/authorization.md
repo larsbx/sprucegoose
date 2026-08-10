@@ -78,6 +78,12 @@ Two things resolve to **global** scope and so need a `*` grant:
 - **Creating a project.** It cannot be scoped to itself before it exists.
 - **The inbox.** Captures arrive before triage, so they belong to no project yet.
 
+Ledger parity and recovery import are a narrower exception. Both require
+`admin` at global scope because they read fleet-wide historical state through
+raw SQL. The check runs before path inspection, file access, or parity queries,
+so an unauthorized caller cannot use the response as a file-existence oracle.
+A project-scoped role is not sufficient.
+
 ## Enforcement
 
 Policies live on the resources, so every surface inherits them — the CLI, the

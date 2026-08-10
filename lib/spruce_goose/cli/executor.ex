@@ -1325,7 +1325,10 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   defp create_todo(task, todo_id, body) do
+    # AUTHORIZATION: this CLI path resolves the request actor and all reads and
+    # writes in the transaction use Authz; the query only serializes task intake.
     Repo.transaction(fn ->
+      # AUTHORIZATION: covered by the actor-bound create_todo entrypoint above.
       Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [task.id])
 
       with {:ok, fresh_task} <- read_one(Task, id: task.id),

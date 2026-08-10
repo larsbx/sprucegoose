@@ -11,7 +11,9 @@ defmodule SpruceGoose.Knowledge do
   def import_historical_graph(%{complete?: false}), do: {:error, :incomplete_generation}
 
   def import_historical_graph(fixture) do
+    # AUTHORIZATION: non-CLI historical fixture importer used only by governed intake.
     Repo.transaction(fn ->
+      # AUTHORIZATION: serialized within the governed historical import transaction.
       Repo.query!("SELECT pg_advisory_xact_lock(hashtext('spruce_goose_knowledge_import'))")
 
       case {generation_by_digest(fixture.source_digest), active_record()} do

@@ -36,6 +36,14 @@ config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler
 
+config :spruce_goose,
+  ledger_import_root: System.get_env("LEDGER_IMPORT_ROOT"),
+  ledger_max_bytes: String.to_integer(System.get_env("LEDGER_MAX_BYTES", "1048576")),
+  ledger_max_lines: String.to_integer(System.get_env("LEDGER_MAX_LINES", "10000")),
+  ledger_open_timeout_ms: String.to_integer(System.get_env("LEDGER_OPEN_TIMEOUT_MS", "1000")),
+  ledger_recovery_mode: System.get_env("LEDGER_RECOVERY_MODE", "false") in ["1", "true"],
+  ledger_recovery_database: System.get_env("LEDGER_RECOVERY_DATABASE")
+
 if outbox_enabled? do
   config :spruce_goose, Oban,
     plugins: [

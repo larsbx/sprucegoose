@@ -115,8 +115,11 @@ SpruceGoose/Ash has been authoritative since
 `2026-07-27 12:00:27.831082 UTC`. The database cutover is irreversible:
 PostgreSQL rejects authority reversal and cutover-timestamp mutation. Tuxedo,
 `taskctl`, and the legacy ledger are retired, read-only recovery evidence.
-Ledger import remains compiled only for pre-cutover recovery rehearsal and is
-rejected while Ash is authoritative; it is not an operator workflow.
+Ledger import remains compiled only for explicit offline recovery rehearsal
+against a separately named recovery database. It requires global `admin`, a
+configured intake root, `LEDGER_RECOVERY_MODE=true`, a matching
+`LEDGER_RECOVERY_DATABASE`, and legacy authority mode in that isolated store.
+It is rejected on the live authority database and is not an operator workflow.
 
 The repository pins Erlang/OTP 28.3.1 and Elixir 1.19.5-otp-28 in
 `.tool-versions`. Import is transactional and idempotent. Refreshes preserve
@@ -124,9 +127,9 @@ Ash-native metadata, advance optimistic-lock versions, and reconcile only
 dependency edges carrying Tuxedo provenance. Import never changes authority or
 writes to the source ledger:
 
-Historical parity evidence may be inspected against the protected ledger with
-`./sprucegoose ledger parity /home/admin-papa/tasks/todo.txt`; never edit or
-re-import that ledger after cutover.
+Historical parity evidence may be inspected by a global admin after the
+protected ledger is copied into the configured intake root. Never edit or
+re-import the authoritative historical ledger after cutover.
 
 Parity covers stable IDs, project/roadmap/workflow membership, titles, task
 types, states, recorded DoDs, raw source records, and dependency edges.

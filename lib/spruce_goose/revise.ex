@@ -598,6 +598,8 @@ defmodule SpruceGoose.Revise do
   end
 
   defp transaction(fun) do
+    # AUTHORIZATION: callers perform actor-bound Authz operations inside this
+    # transaction; this wrapper does not expose data independently.
     Repo.transaction(fn ->
       case fun.() do
         {:ok, value} -> value
