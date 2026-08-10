@@ -34,7 +34,7 @@ defmodule SpruceGoose.CLI.Command do
        "link ID KIND VALUE",
        "link ID --remove KIND VALUE",
        "acknowledge-sop ID PATH",
-       "artifact-receipt ID JSON",
+       "artifact-receipt ID NAME SOURCE_PATH SOURCE_IDENTITY",
        "move ID BOARD COLUMN RANK",
        "metadata ID JSON"
      ]},
@@ -262,8 +262,8 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["task", "acknowledge-sop", id, sop_path]),
     do: {:ok, {:acknowledge_sop, id, sop_path}}
 
-  def parse(["task", "artifact-receipt", id, json]),
-    do: {:ok, {:record_artifact_receipt, id, json}}
+  def parse(["task", "artifact-receipt", id, name, source_path, source_identity]),
+    do: {:ok, {:record_artifact_receipt, id, name, source_path, source_identity}}
 
   def parse(["dep", "list", task_id]), do: {:ok, {:list_dependencies, task_id}}
 

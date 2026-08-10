@@ -44,6 +44,17 @@ config :spruce_goose,
   ledger_recovery_mode: System.get_env("LEDGER_RECOVERY_MODE", "false") in ["1", "true"],
   ledger_recovery_database: System.get_env("LEDGER_RECOVERY_DATABASE")
 
+config :spruce_goose,
+  artifact_store_root:
+    System.get_env(
+      "ARTIFACT_STORE_ROOT",
+      if(config_env() == :prod,
+        do: "/var/lib/sprucegoose/artifacts",
+        else: Path.join(System.tmp_dir!(), "sprucegoose-artifacts")
+      )
+    ),
+  artifact_max_bytes: String.to_integer(System.get_env("ARTIFACT_MAX_BYTES", "67108864"))
+
 if outbox_enabled? do
   config :spruce_goose, Oban,
     plugins: [

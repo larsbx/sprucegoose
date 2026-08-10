@@ -286,10 +286,15 @@ defmodule SpruceGoose.CLITest do
 
     assert sop_path == SopGate.path()
 
-    receipt = ~s({"name":"prototype","sha256":"#{String.duplicate("a", 64)}"})
-
-    assert {:ok, {:record_artifact_receipt, ^id, ^receipt}} =
-             Command.parse(["task", "artifact-receipt", id, receipt])
+    assert {:ok, {:record_artifact_receipt, ^id, "prototype", "/tmp/prototype", "telegram:6680"}} =
+             Command.parse([
+               "task",
+               "artifact-receipt",
+               id,
+               "prototype",
+               "/tmp/prototype",
+               "telegram:6680"
+             ])
 
     assert {:ok, {:transition_task, ^id, :completed, nil}} = Command.parse(["task", "done", id])
 

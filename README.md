@@ -86,7 +86,7 @@ mix escript.build
   --sop "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" \
   "Implement the next slice"
 ./sprucegoose task artifact-receipt tsk-... \
-  '{"name":"prototype","sha256":"LOWERCASE_SHA256","size_bytes":123,"storage_locator":"cas:sha256:LOWERCASE_SHA256","source_identity":"telegram:message:6680","retrieval_verifier":"agent:ada","retrieval_verified_at":"2026-08-10T12:19:00Z"}'
+  prototype /absolute/path/to/prototype telegram:message:6680 --as artifact-verifier
 ./sprucegoose task list --state waiting
 ./sprucegoose task propose tsk-...
 ./sprucegoose task queue tsk-...

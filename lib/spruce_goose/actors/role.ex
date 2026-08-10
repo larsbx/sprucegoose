@@ -8,5 +8,6 @@ defmodule SpruceGoose.Actors.Role do
   not a coherent grant.
   """
 
-  use Ash.Type.Enum, values: [:reader, :operator, :proposer, :approver, :author, :admin]
+  use Ash.Type.Enum,
+    values: [:reader, :operator, :artifact_verifier, :proposer, :approver, :author, :admin]
 end

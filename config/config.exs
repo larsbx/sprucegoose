@@ -60,6 +60,8 @@ config :spruce_goose, :ledger_live_database, "spruce_goose_dev"
 config :spruce_goose, :start_cli_service, false
 config :spruce_goose, :cli_socket_path, nil
 config :spruce_goose, :cli_request_timeout, 30_000
+config :spruce_goose, :artifact_store_root, "/tmp/sprucegoose-artifacts"
+config :spruce_goose, :artifact_max_bytes, 67_108_864
 
 # Delivery is deliberately opt-in. Runtime configuration must name a module
 # implementing deliver/1; enabling without one fails closed in runtime.exs.

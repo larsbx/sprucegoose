@@ -49,7 +49,7 @@ defmodule SpruceGoose.DataCase do
 
     # Admin manages the registry; it is not a superuser over the work itself.
     # The suite acts across every role, so grant each one globally.
-    for role <- [:reader, :operator, :proposer, :approver, :author] do
+    for role <- [:reader, :operator, :artifact_verifier, :proposer, :approver, :author] do
       {:ok, _} =
         Ash.create(
           SpruceGoose.Actors.Grant,

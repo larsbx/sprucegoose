@@ -518,10 +518,17 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  defp dispatch({:record_artifact_receipt, id, json}) do
+  defp dispatch({:record_artifact_receipt, id, name, source_path, source_identity}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
-         {:ok, receipt} <- decode_json_object(json),
+         :ok <- require_distinct_artifact_verifier(task),
+         {:ok, receipt} <-
+           SpruceGoose.Artifacts.Store.retrieve(
+             name,
+             source_path,
+             source_identity,
+             Authz.actor!().name
+           ),
          receipts = (task.artifact_receipts || []) ++ [receipt],
          {:ok, task} <-
            task
@@ -1515,6 +1522,14 @@ defmodule SpruceGoose.CLI.Executor do
     case Jason.decode(json) do
       {:ok, value} when is_map(value) -> {:ok, value}
       _ -> {:error, "expected a JSON object"}
+    end
+  end
+
+  defp require_distinct_artifact_verifier(task) do
+    with {:ok, scope} <- SpruceGoose.Actors.Scope.of(task) do
+      if SpruceGoose.Actors.Scope.holds?(Authz.actor!(), :operator, scope),
+        do: {:error, "artifact verifier must not also hold operator over the task"},
+        else: :ok
     end
   end
 

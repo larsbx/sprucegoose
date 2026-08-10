@@ -23,14 +23,12 @@ defmodule SpruceGoose.Workflows.Task do
       authorize_if(HasRole.operator())
     end
 
-    policy action([
-             :transition,
-             :move,
-             :update_board_metadata,
-             :acknowledge_sop,
-             :record_artifact_receipt
-           ]) do
+    policy action([:transition, :move, :update_board_metadata, :acknowledge_sop]) do
       authorize_if(HasRole.operator())
+    end
+
+    policy action(:record_artifact_receipt) do
+      authorize_if(HasRole.artifact_verifier())
     end
 
     policy action(:revise) do
@@ -413,17 +411,21 @@ defmodule SpruceGoose.Workflows.Task do
   defp valid_artifact_receipt?(receipt) when is_map(receipt) do
     with name when is_binary(name) <- Map.get(receipt, "name"),
          digest when is_binary(digest) <- Map.get(receipt, "sha256"),
-         size when is_integer(size) and size >= 0 <- Map.get(receipt, "size_bytes"),
+         size when is_integer(size) and size > 0 <- Map.get(receipt, "size_bytes"),
          locator when is_binary(locator) <- Map.get(receipt, "storage_locator"),
          source when is_binary(source) <- Map.get(receipt, "source_identity"),
          verifier when is_binary(verifier) <- Map.get(receipt, "retrieval_verifier"),
          verified_at when is_binary(verified_at) <- Map.get(receipt, "retrieval_verified_at"),
          true <- bounded_name?(name),
          true <- Regex.match?(~r/^[0-9a-f]{64}$/, digest),
-         true <- String.trim(locator) != "",
+         true <- locator == "cas:sha256:" <> digest,
          true <- String.trim(source) != "",
          true <- String.trim(verifier) != "",
-         {:ok, _date, 0} <- DateTime.from_iso8601(verified_at) do
+         true <-
+           Map.keys(receipt) |> Enum.sort() ==
+             ~w(name retrieval_verified_at retrieval_verifier sha256 size_bytes source_identity storage_locator),
+         {:ok, date, 0} <- DateTime.from_iso8601(verified_at),
+         true <- DateTime.compare(date, DateTime.utc_now()) != :gt do
       true
     else
       _ -> false
