@@ -25,7 +25,7 @@ defmodule SpruceGoose.CLI.Command do
      ]},
     {"task",
      [
-       "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] TITLE",
+       "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
        "propose|queue|ready|start|done ID",
@@ -34,6 +34,7 @@ defmodule SpruceGoose.CLI.Command do
        "link ID KIND VALUE",
        "link ID --remove KIND VALUE",
        "acknowledge-sop ID PATH",
+       "artifact-receipt ID JSON",
        "move ID BOARD COLUMN RANK",
        "metadata ID JSON"
      ]},
@@ -260,6 +261,9 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["task", "acknowledge-sop", id, sop_path]),
     do: {:ok, {:acknowledge_sop, id, sop_path}}
+
+  def parse(["task", "artifact-receipt", id, json]),
+    do: {:ok, {:record_artifact_receipt, id, json}}
 
   def parse(["dep", "list", task_id]), do: {:ok, {:list_dependencies, task_id}}
 
@@ -505,7 +509,8 @@ defmodule SpruceGoose.CLI.Command do
           priority: :integer,
           dod: :string,
           sop: :string,
-          type: :string
+          type: :string,
+          artifact: :keep
         ]
       )
 
@@ -530,6 +535,7 @@ defmodule SpruceGoose.CLI.Command do
           definition_of_done: dod,
           sop_path: sop_path,
           task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
+          artifact_requirements: Keyword.get_values(opts, :artifact),
           title: title
         }}}
     else

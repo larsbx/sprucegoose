@@ -19,7 +19,7 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, task_help} = CLI.run(["task", "--help"])
 
-    assert "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] TITLE" in task_help.forms
+    assert "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE" in task_help.forms
 
     assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
 
@@ -285,6 +285,11 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["task", "acknowledge-sop", id, SopGate.path()])
 
     assert sop_path == SopGate.path()
+
+    receipt = ~s({"name":"prototype","sha256":"#{String.duplicate("a", 64)}"})
+
+    assert {:ok, {:record_artifact_receipt, ^id, ^receipt}} =
+             Command.parse(["task", "artifact-receipt", id, receipt])
 
     assert {:ok, {:transition_task, ^id, :completed, nil}} = Command.parse(["task", "done", id])
 

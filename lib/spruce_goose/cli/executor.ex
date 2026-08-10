@@ -518,6 +518,19 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  defp dispatch({:record_artifact_receipt, id, json}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         {:ok, receipt} <- decode_json_object(json),
+         receipts = (task.artifact_receipts || []) ++ [receipt],
+         {:ok, task} <-
+           task
+           |> Ash.Changeset.for_update(:record_artifact_receipt, %{artifact_receipts: receipts})
+           |> Authz.update_changeset() do
+      {:ok, task_json(task)}
+    end
+  end
+
   defp dispatch({:list_dependencies, task_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
@@ -760,6 +773,7 @@ defmodule SpruceGoose.CLI.Executor do
                title: input.title,
                definition_of_done: input.definition_of_done,
                priority: priority,
+               artifact_requirements: Map.get(input, :artifact_requirements, []),
                runner: :oban
              }
            ) do
@@ -1393,6 +1407,8 @@ defmodule SpruceGoose.CLI.Executor do
       workflow: membership && membership.workflow,
       workflow_name: membership && membership.workflow_name,
       definition_of_done: task.definition_of_done,
+      artifact_requirements: task.artifact_requirements,
+      artifact_receipts: task.artifact_receipts,
       sop_gate_required: task.sop_gate_required,
       sop_id: task.sop_id,
       sop_path: task.sop_path,

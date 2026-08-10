@@ -23,7 +23,13 @@ defmodule SpruceGoose.Workflows.Task do
       authorize_if(HasRole.operator())
     end
 
-    policy action([:transition, :move, :update_board_metadata, :acknowledge_sop]) do
+    policy action([
+             :transition,
+             :move,
+             :update_board_metadata,
+             :acknowledge_sop,
+             :record_artifact_receipt
+           ]) do
       authorize_if(HasRole.operator())
     end
 
@@ -63,6 +69,14 @@ defmodule SpruceGoose.Workflows.Task do
 
     attribute(:runner, SpruceGoose.Workflows.TaskKind, allow_nil?: false, public?: true)
     attribute(:input, :map, allow_nil?: false, default: %{}, public?: true)
+
+    attribute(:artifact_requirements, {:array, :string},
+      allow_nil?: false,
+      default: [],
+      public?: true
+    )
+
+    attribute(:artifact_receipts, {:array, :map}, allow_nil?: false, default: [], public?: true)
     attribute(:origin_event_id, :string, public?: true)
     attribute(:lock_version, :integer, allow_nil?: false, default: 1, public?: true)
     attribute(:description, :string, public?: true)
@@ -120,6 +134,7 @@ defmodule SpruceGoose.Workflows.Task do
         :definition_of_done,
         :runner,
         :input,
+        :artifact_requirements,
         :origin_event_id,
         :description,
         :board_id,
@@ -138,6 +153,19 @@ defmodule SpruceGoose.Workflows.Task do
     update :revise do
       require_atomic?(false)
       accept([:title, :description, :definition_of_done, :runner, :input])
+      change(optimistic_lock(:lock_version))
+    end
+
+    update :record_artifact_receipt do
+      require_atomic?(false)
+      accept([:artifact_receipts])
+
+      validate(fn changeset, _context ->
+        if changeset.data.state in [:inbox, :proposed, :queued],
+          do: :ok,
+          else: {:error, field: :artifact_receipts, message: "are immutable after readiness"}
+      end)
+
       change(optimistic_lock(:lock_version))
     end
 
@@ -180,6 +208,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_artifact_readiness(changeset) end)
       validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
@@ -230,6 +259,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_artifact_readiness(changeset) end)
       validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
@@ -263,6 +293,7 @@ defmodule SpruceGoose.Workflows.Task do
     end)
 
     validate(fn changeset, _context -> valid_board_metadata(changeset) end)
+    validate(fn changeset, _context -> valid_artifacts(changeset) end)
   end
 
   defp valid_custom_fields(fields) when fields in [nil, %{}], do: :ok
@@ -337,6 +368,69 @@ defmodule SpruceGoose.Workflows.Task do
        do: SpruceGoose.SopGate.verify(changeset.data),
        else: :ok
   end
+
+  defp validate_artifact_readiness(changeset) do
+    if Ash.Changeset.get_argument(changeset, :to_state) == :ready do
+      requirements = changeset.data.artifact_requirements || []
+      receipts = changeset.data.artifact_receipts || []
+      received = MapSet.new(receipts, &Map.get(&1, "name"))
+      missing = Enum.reject(requirements, &MapSet.member?(received, &1))
+
+      if missing == [],
+        do: :ok,
+        else:
+          {:error,
+           field: :artifact_receipts,
+           message: "missing verified receipts for: #{Enum.join(missing, ", ")}"}
+    else
+      :ok
+    end
+  end
+
+  defp valid_artifacts(changeset) do
+    requirements = Ash.Changeset.get_attribute(changeset, :artifact_requirements) || []
+    receipts = Ash.Changeset.get_attribute(changeset, :artifact_receipts) || []
+
+    cond do
+      requirements != Enum.uniq(requirements) or not Enum.all?(requirements, &bounded_name?/1) ->
+        {:error, field: :artifact_requirements, message: "must be unique bounded names"}
+
+      not Enum.all?(receipts, &valid_artifact_receipt?/1) ->
+        {:error,
+         field: :artifact_receipts, message: "must contain verified immutable receipt fields"}
+
+      Enum.any?(receipts, &(Map.get(&1, "name") not in requirements)) ->
+        {:error, field: :artifact_receipts, message: "must match a declared artifact requirement"}
+
+      receipts |> Enum.map(&Map.get(&1, "name")) |> Enum.uniq() |> length() != length(receipts) ->
+        {:error, field: :artifact_receipts, message: "must contain one receipt per artifact"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valid_artifact_receipt?(receipt) when is_map(receipt) do
+    with name when is_binary(name) <- Map.get(receipt, "name"),
+         digest when is_binary(digest) <- Map.get(receipt, "sha256"),
+         size when is_integer(size) and size >= 0 <- Map.get(receipt, "size_bytes"),
+         locator when is_binary(locator) <- Map.get(receipt, "storage_locator"),
+         source when is_binary(source) <- Map.get(receipt, "source_identity"),
+         verifier when is_binary(verifier) <- Map.get(receipt, "retrieval_verifier"),
+         verified_at when is_binary(verified_at) <- Map.get(receipt, "retrieval_verified_at"),
+         true <- bounded_name?(name),
+         true <- Regex.match?(~r/^[0-9a-f]{64}$/, digest),
+         true <- String.trim(locator) != "",
+         true <- String.trim(source) != "",
+         true <- String.trim(verifier) != "",
+         {:ok, _date, 0} <- DateTime.from_iso8601(verified_at) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp valid_artifact_receipt?(_), do: false
 
   defp validate_predecessors(changeset) do
     if Ash.Changeset.get_argument(changeset, :to_state) == :in_progress do

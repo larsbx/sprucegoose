@@ -309,6 +309,51 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
   end
 
+  test "artifact-dependent tasks fail closed at ready until a verified receipt is recorded" do
+    workflow = workflow("artifact-receipt")
+
+    {:ok, task} =
+      Ash.create(Task, %{
+        workflow_id: workflow.id,
+        task_id: "tsk-20260810T121900Z-acde1234",
+        title: "Consume prototype",
+        definition_of_done: "Prototype is processed",
+        runner: :openclaw,
+        artifact_requirements: ["prototype"]
+      })
+
+    task =
+      Enum.reduce([:proposed, :queued], task, fn target, current ->
+        assert {:ok, updated} = Ash.update(current, %{to_state: target}, action: :transition)
+        updated
+      end)
+
+    assert {:error, error} = Ash.update(task, %{to_state: :ready}, action: :transition)
+    assert Exception.message(error) =~ "missing verified receipts for: prototype"
+
+    receipt = %{
+      "name" => "prototype",
+      "sha256" => String.duplicate("a", 64),
+      "size_bytes" => 42,
+      "storage_locator" => "cas:sha256:" <> String.duplicate("a", 64),
+      "source_identity" => "telegram:message:6680",
+      "retrieval_verifier" => "agent:ada",
+      "retrieval_verified_at" => "2026-08-10T12:19:00Z"
+    }
+
+    assert {:ok, received} =
+             Executor.run({:record_artifact_receipt, task.task_id, Jason.encode!(receipt)})
+
+    assert [^receipt] = received.artifact_receipts
+    task = Ash.get!(Task, task.id)
+    assert {:ok, ready} = Ash.update(task, %{to_state: :ready}, action: :transition)
+
+    assert {:error, error} =
+             Ash.update(ready, %{artifact_receipts: [receipt]}, action: :record_artifact_receipt)
+
+    assert Exception.message(error) =~ "immutable after readiness"
+  end
+
   test "ordinary Task callers cannot choose exemptions or manufacture SOP evidence" do
     workflow = workflow("caller-evidence")
 
