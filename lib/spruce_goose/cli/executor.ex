@@ -6,6 +6,7 @@ defmodule SpruceGoose.CLI.Executor do
 
   alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
   alias SpruceGoose.CLI.Command
+  alias SpruceGoose.Outbox.Operator, as: OutboxOperator
   alias SpruceGoose.{Authz, Ledger, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
@@ -120,6 +121,8 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch(:version), do: {:ok, %{version: Command.version()}}
 
   defp dispatch(:generate_id), do: {:ok, %{id: TaskId.generate()}}
+  defp dispatch(:list_failed_outbox), do: OutboxOperator.list_failed()
+  defp dispatch({:replay_outbox, event_id}), do: OutboxOperator.replay(event_id)
 
   defp dispatch({:validate_id, id}) do
     if TaskId.valid?(id), do: {:ok, %{id: id, valid: true}}, else: {:error, "invalid task ID"}

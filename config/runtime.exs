@@ -25,9 +25,23 @@ outbox_handler =
 if outbox_enabled? and is_nil(outbox_handler),
   do: raise("OUTBOX_HANDLER is required when OUTBOX_DISPATCHER_ENABLED is true")
 
+if outbox_enabled? do
+  case SpruceGoose.Outbox.Dispatcher.validate_handler(outbox_handler) do
+    :ok -> :ok
+    {:error, message} -> raise message
+  end
+end
+
 config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler
+
+if outbox_enabled? do
+  config :spruce_goose, Oban,
+    plugins: [
+      {Oban.Plugins.Cron, crontab: SpruceGoose.Outbox.Dispatcher.cron_config()}
+    ]
+end
 
 cli_service_enabled? =
   System.get_env("SPRUCE_GOOSE_CLI_SERVICE_ENABLED", "false") in ["1", "true"]

@@ -11,10 +11,6 @@ defmodule SpruceGoose.Application do
         {Oban, Application.fetch_env!(:spruce_goose, Oban)},
         {AshAuthentication.Supervisor, [otp_app: :spruce_goose]}
       ] ++
-        if(Application.fetch_env!(:spruce_goose, :start_outbox_dispatcher),
-          do: [SpruceGoose.Outbox.Dispatcher],
-          else: []
-        ) ++
         cli_service_children() ++
         if(Application.get_env(:spruce_goose, :start_web_endpoint, false),
           do: [SpruceGoose.Web.Endpoint],

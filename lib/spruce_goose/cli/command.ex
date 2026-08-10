@@ -94,6 +94,7 @@ defmodule SpruceGoose.CLI.Command do
        "remove NAME --role ROLE --scope SCOPE"
      ]},
     {"ledger", ["import PATH", "parity PATH"]},
+    {"outbox", ["failed", "replay EVENT_ID"]},
     # Nounless verbs. `whoami` sits here rather than under its own noun because
     # it takes no subcommand, and because it answers a question about the caller
     # rather than about the work.
@@ -491,6 +492,8 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["ledger", "import", path]), do: {:ok, {:import_ledger, path}}
   def parse(["ledger", "parity", path]), do: {:ok, {:parity_ledger, path}}
+  def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
+  def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 
   def parse(["task", "add" | args]) do
     {opts, title, invalid} =

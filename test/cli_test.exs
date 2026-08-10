@@ -7,7 +7,8 @@ defmodule SpruceGoose.CLITest do
   alias SpruceGoose.TaskId
 
   test "returns scoped help for every command family and rejects unknown families" do
-    families = ~w(id project roadmap workflow task dep todo board column filter inbox ledger)
+    families =
+      ~w(id project roadmap workflow task dep todo board column filter inbox ledger outbox)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -37,6 +38,15 @@ defmodule SpruceGoose.CLITest do
     refute TaskId.valid?("tsk-20260231T012351Z-ea5ba1b1")
     refute TaskId.valid?("tsk-20260727T012351Z-EA5BA1B1")
     refute TaskId.valid?("114")
+  end
+
+  test "parses failed-event inspection and replay commands" do
+    assert {:ok, :list_failed_outbox} = Command.parse(["outbox", "failed"])
+
+    assert {:ok, {:replay_outbox, "ad6cb708-3d90-47de-a701-19a45689f7ee"}} =
+             Command.parse(["outbox", "replay", "ad6cb708-3d90-47de-a701-19a45689f7ee"])
+
+    assert {:error, :usage} = Command.parse(["outbox", "replay"])
   end
 
   test "task admission requires typed membership, DoD, type, and title" do

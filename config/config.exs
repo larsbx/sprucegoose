@@ -49,6 +49,7 @@ config :spruce_goose, Oban,
 
 config :spruce_goose, :start_outbox_dispatcher, false
 config :spruce_goose, :outbox_handler, nil
+config :spruce_goose, :outbox_delivery_timeout_ms, 30_000
 config :spruce_goose, :start_cli_service, false
 config :spruce_goose, :cli_socket_path, nil
 config :spruce_goose, :cli_request_timeout, 30_000
