@@ -1,11 +1,31 @@
 import Config
 
+systemwide_sop_path =
+  System.get_env(
+    "SYSTEMWIDE_SOP_PATH",
+    "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
+  )
+
+systemwide_sop_expected_sha256 = System.get_env("SYSTEMWIDE_SOP_EXPECTED_SHA256")
+
+systemwide_sop_expected_sha256 =
+  case systemwide_sop_expected_sha256 do
+    nil ->
+      if config_env() == :prod,
+        do: raise("SYSTEMWIDE_SOP_EXPECTED_SHA256 is required in production"),
+        else: nil
+
+    digest when is_binary(digest) ->
+      digest = String.downcase(digest)
+
+      if Regex.match?(~r/\A[0-9a-f]{64}\z/, digest),
+        do: digest,
+        else: raise("SYSTEMWIDE_SOP_EXPECTED_SHA256 must be exactly 64 hexadecimal characters")
+  end
+
 config :spruce_goose,
-       :systemwide_sop_path,
-       System.get_env(
-         "SYSTEMWIDE_SOP_PATH",
-         "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
-       )
+  systemwide_sop_path: systemwide_sop_path,
+  systemwide_sop_expected_sha256: systemwide_sop_expected_sha256
 
 outbox_flag = System.get_env("OUTBOX_DISPATCHER_ENABLED", "false")
 outbox_enabled? = outbox_flag == "1" or outbox_flag == "true"

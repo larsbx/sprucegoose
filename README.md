@@ -146,7 +146,10 @@ ready task with a current Systemwide SOP acknowledgment. Admission reads the
 configured SOP and stores its stable identifier, path, SHA-256 digest, and
 acknowledgment time; transition re-reads it and rejects a stale digest.
 `SYSTEMWIDE_SOP_PATH` selects the deployment path without changing the stable
-`systemwide-sop` evidence identifier.
+`systemwide-sop` evidence identifier. Production additionally requires
+`SYSTEMWIDE_SOP_EXPECTED_SHA256`; Mama hashes its own configured bytes and
+refuses acknowledgment or verification when they differ from that deployment
+pin. A caller-supplied path or digest is never the trust anchor.
 `task acknowledge-sop` refreshes a nonterminal task after an SOP change.
 Ordinary Ash callers cannot set acknowledgment fields or choose the exemption;
 only the retired SQL import path can create explicitly grandfathered records.

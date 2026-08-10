@@ -18,10 +18,19 @@ defmodule SpruceGoose.SopVersionTest do
     path = Path.join(dir, "Systemwide SOP.md")
 
     original = Application.fetch_env!(:spruce_goose, :systemwide_sop_path)
+    original_pin = Application.get_env(:spruce_goose, :systemwide_sop_expected_sha256)
     Application.put_env(:spruce_goose, :systemwide_sop_path, path)
+    Application.delete_env(:spruce_goose, :systemwide_sop_expected_sha256)
 
     on_exit(fn ->
       Application.put_env(:spruce_goose, :systemwide_sop_path, original)
+
+      if original_pin do
+        Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, original_pin)
+      else
+        Application.delete_env(:spruce_goose, :systemwide_sop_expected_sha256)
+      end
+
       File.rm_rf(dir)
     end)
 
@@ -132,6 +141,37 @@ defmodule SpruceGoose.SopVersionTest do
     end
   end
 
+  describe "fail-closed authority pin" do
+    test "acknowledgment refuses locally valid bytes with the wrong deployment pin", %{path: path} do
+      write(path, "2.1.0", "# Systemwide SOP\n")
+
+      Application.put_env(
+        :spruce_goose,
+        :systemwide_sop_expected_sha256,
+        String.duplicate("0", 64)
+      )
+
+      assert {:error, message} = SopGate.acknowledge(path)
+      assert message =~ "does not match the deployment-pinned digest"
+    end
+
+    test "verification refuses after the authority pin diverges", %{path: path} do
+      write(path, "2.1.0", "# Systemwide SOP\n")
+      body = File.read!(path)
+      Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, digest(body))
+      {:ok, ack} = SopGate.acknowledge(path)
+
+      Application.put_env(
+        :spruce_goose,
+        :systemwide_sop_expected_sha256,
+        String.duplicate("f", 64)
+      )
+
+      assert {:error, message} = SopGate.verify(gate(ack))
+      assert message =~ "does not match the deployment-pinned digest"
+    end
+  end
+
   describe "fail-closed edges" do
     test "removing the version while a task holds one refuses", %{path: path} do
       write(path, "2.1.0", "# Systemwide SOP\n")
@@ -193,8 +233,10 @@ defmodule SpruceGoose.SopVersionTest do
 
   defp frontmatter(version), do: "---\nsop_id: systemwide-sop\nversion: #{version}\n---\n\n"
 
-  defp sha256(version, body),
-    do: :crypto.hash(:sha256, frontmatter(version) <> body) |> Base.encode16(case: :lower)
+  defp sha256(version, body), do: digest(frontmatter(version) <> body)
+
+  defp digest(body),
+    do: :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
 
   # The shape `verify/1` reads off a task row.
   defp gate(ack), do: Map.put(ack, :sop_gate_required, true)

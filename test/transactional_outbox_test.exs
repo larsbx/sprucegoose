@@ -139,7 +139,8 @@ defmodule SpruceGoose.TransactionalOutboxTest do
       "OUTBOX_DISPATCHER_ENABLED" => "true",
       "OUTBOX_HANDLER" => inspect(HandlerStub),
       "DATABASE_URL" => "ecto://postgres:postgres@localhost/spruce_goose_test",
-      "TOKEN_SIGNING_SECRET" => "runtime-config-test-only"
+      "TOKEN_SIGNING_SECRET" => "runtime-config-test-only",
+      "SYSTEMWIDE_SOP_EXPECTED_SHA256" => String.duplicate("a", 64)
     }
 
     previous = Map.new(env, fn {key, _value} -> {key, System.get_env(key)} end)

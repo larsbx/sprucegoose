@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch Papa canonical Systemwide SOP for authority publication
+
+[Path]
+PathChanged=/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md
+PathModified=/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md
+Unit=sprucegoose-sop-authority-sync.service
+
+[Install]
+WantedBy=default.target

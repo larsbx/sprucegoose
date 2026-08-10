@@ -62,7 +62,7 @@ defmodule SpruceGoose.SopGate do
 
   def acknowledge(candidate_path) do
     with :ok <- require_configured_path(candidate_path),
-         {:ok, body} <- read(candidate_path),
+         {:ok, body} <- trusted_read(candidate_path),
          {:ok, version} <- declared_version(body) do
       {:ok,
        %{
@@ -82,7 +82,7 @@ defmodule SpruceGoose.SopGate do
     configured = path()
 
     with :ok <- require_same_path(acknowledged_path, configured),
-         {:ok, body} <- read(configured),
+         {:ok, body} <- trusted_read(configured),
          {:ok, current} <- declared_version(body) do
       compare(Map.get(task, :sop_version), current, Map.get(task, :sop_digest), body)
     end
@@ -235,10 +235,32 @@ defmodule SpruceGoose.SopGate do
       else: {:error, "Systemwide SOP acknowledgment uses the prior configured path"}
   end
 
+  defp trusted_read(path) do
+    with {:ok, body} <- read(path),
+         :ok <- verify_deployment_pin(body) do
+      {:ok, body}
+    end
+  end
+
   defp read(path) do
     case File.read(path) do
       {:ok, body} -> {:ok, body}
       {:error, reason} -> {:error, "cannot read configured Systemwide SOP: #{reason}"}
+    end
+  end
+
+  defp verify_deployment_pin(body) do
+    case Application.get_env(:spruce_goose, :systemwide_sop_expected_sha256) do
+      nil ->
+        :ok
+
+      expected when is_binary(expected) ->
+        if digest(body) == expected,
+          do: :ok,
+          else: {:error, "configured Systemwide SOP does not match the deployment-pinned digest"}
+
+      _invalid ->
+        {:error, "configured Systemwide SOP deployment pin is invalid"}
     end
   end
 

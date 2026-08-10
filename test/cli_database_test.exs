@@ -286,6 +286,61 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:transition_task, task.id, :in_progress, nil})
   end
 
+  test "deployment pin refuses task create, re-acknowledgment, and start" do
+    original_pin = Application.get_env(:spruce_goose, :systemwide_sop_expected_sha256)
+
+    on_exit(fn ->
+      if original_pin do
+        Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, original_pin)
+      else
+        Application.delete_env(:spruce_goose, :systemwide_sop_expected_sha256)
+      end
+    end)
+
+    wrong_pin = String.duplicate("0", 64)
+
+    current_pin =
+      SopGate.path()
+      |> File.read!()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+    workflow = workflow("pin-create")
+    Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, wrong_pin)
+
+    assert {:error, create_error} =
+             Ash.create(Task, %{
+               workflow_id: workflow.id,
+               task_id: "tsk-20260810T174100Z-acde1234",
+               title: "Refuse stale authority create",
+               definition_of_done: "The deployment pin is enforced",
+               runner: :oban
+             })
+
+    assert Exception.message(create_error) =~ "does not match the deployment-pinned digest"
+
+    Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, current_pin)
+    task = gated_task("pin-lifecycle")
+
+    task =
+      Enum.reduce([:proposed, :queued, :ready], task, fn state, current ->
+        assert {:ok, updated} = Ash.update(current, %{to_state: state}, action: :transition)
+        updated
+      end)
+
+    Application.put_env(:spruce_goose, :systemwide_sop_expected_sha256, wrong_pin)
+
+    assert {:error, reack_error} =
+             Executor.run({:acknowledge_sop, task.task_id, SopGate.path()})
+
+    assert Exception.message(reack_error) =~ "does not match the deployment-pinned digest"
+
+    assert {:error, start_error} =
+             Ash.update(task, %{to_state: :in_progress}, action: :transition)
+
+    assert Exception.message(start_error) =~ "does not match the deployment-pinned digest"
+  end
+
   test "direct Ash start enforces the current SOP acknowledgment" do
     task = gated_task("direct-start")
 

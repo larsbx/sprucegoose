@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish canonical Systemwide SOP bytes to Mama authority
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /home/admin-papa/.local/libexec/sprucegoose-sop-publish.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=~@mount @swap @reboot @module @raw-io @cpu-emulation @obsolete
