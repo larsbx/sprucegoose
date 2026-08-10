@@ -47,9 +47,7 @@ def authority_preflight():
         str(Path.home() / ".config/sprucegoose/sop-authority.json"),
     )
     if not os.path.exists(configured):
-        if "SPRUCE_GOOSE_SOP_AUTHORITY_CONFIG" in os.environ:
-            fail("configured Systemwide SOP authority policy is unavailable")
-        return
+        fail("configured Systemwide SOP authority policy is unavailable")
 
     try:
         if os.lstat(configured).st_size > 4096:

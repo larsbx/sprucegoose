@@ -23,13 +23,13 @@ Papa is the canonical policy source while the authoritative SpruceGoose service
 runs on mama. The two identical absolute paths are different filesystems; path
 identity is therefore never accepted as content identity.
 
-The installed thin client reads
+The installed thin client requires
 `~/.config/sprucegoose/sop-authority.json` before opening the forwarded Unix
-socket. When that policy exists, every command hashes Papa's canonical SOP and
-retrieves mama's digest over batch-mode SSH. A missing source, failed SSH check,
-invalid policy, or digest mismatch refuses before socket access. This is a
-secondary consistency control, not the trust anchor: direct authority calls do
-not pass through Papa's client.
+socket. Every command hashes Papa's canonical SOP and retrieves mama's digest
+over batch-mode SSH. A missing policy or source, failed SSH check, invalid
+policy, or digest mismatch refuses before socket access. This is a secondary
+consistency control, not the trust anchor: direct authority calls do not pass
+through Papa's client.
 
 Mama's production release must set `SYSTEMWIDE_SOP_EXPECTED_SHA256` in its
 mode-`0600` service environment. `SopGate` reads and hashes Mama's configured
@@ -71,7 +71,7 @@ publication succeeds:
 ```sh
 systemctl --user start sprucegoose-sop-authority-sync.service
 digest="$(sha256sum "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" | cut -d' ' -f1)"
-test "$digest" = "$(ssh mama sha256sum "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" | cut -d' ' -f1)"
+test "$digest" = "$(ssh mama 'sha256sum -- "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"' | cut -d' ' -f1)"
 # Through the governed mode-0600 service-environment deployment mechanism, set:
 # SYSTEMWIDE_SOP_EXPECTED_SHA256=$digest
 ssh mama systemctl --user restart sprucegoose.service

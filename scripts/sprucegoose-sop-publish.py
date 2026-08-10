@@ -54,17 +54,47 @@ def load_policy() -> dict[str, str]:
 
 
 def canonical_bytes(path: str) -> bytes:
+    descriptor = None
     try:
-        metadata = os.lstat(path)
-        if not stat.S_ISREG(metadata.st_mode):
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
             fail("canonical Systemwide SOP must be a regular file")
-        if metadata.st_size <= 0 or metadata.st_size > _MAX_SOP_BYTES:
+        if before.st_size <= 0 or before.st_size > _MAX_SOP_BYTES:
             fail("canonical Systemwide SOP has an invalid size")
-        with open(path, "rb") as source:
-            body = source.read(_MAX_SOP_BYTES + 1)
+
+        chunks = []
+        total = 0
+        while total <= _MAX_SOP_BYTES:
+            chunk = os.read(descriptor, min(65_536, _MAX_SOP_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+
+        after = os.fstat(descriptor)
+        pathname = os.lstat(path)
     except OSError as error:
         fail(f"cannot read canonical Systemwide SOP: {error}")
-    if len(body) != metadata.st_size:
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+    identity = lambda metadata: (metadata.st_dev, metadata.st_ino, stat.S_IFMT(metadata.st_mode))
+    version = lambda metadata: (
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+    body = b"".join(chunks)
+    if (
+        identity(before) != identity(after)
+        or identity(before) != identity(pathname)
+        or version(before) != version(after)
+        or version(before) != version(pathname)
+        or len(body) != before.st_size
+    ):
         fail("canonical Systemwide SOP changed during publication")
     return body
 
