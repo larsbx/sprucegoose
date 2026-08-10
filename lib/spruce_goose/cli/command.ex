@@ -20,6 +20,7 @@ defmodule SpruceGoose.CLI.Command do
        "add --project KEY --roadmap KEY --definition JSON ID NAME",
        "list [--project KEY] [--roadmap KEY]",
        "show PROJECT ROADMAP ID",
+       "critical-path PROJECT ROADMAP ID",
        "rename PROJECT ROADMAP ID NAME",
        "remove PROJECT ROADMAP ID"
      ]},
@@ -28,6 +29,8 @@ defmodule SpruceGoose.CLI.Command do
        "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
+       "blockers ID",
+       "impact ID",
        "propose|queue|ready|start|done ID",
        "wait ID REASON",
        "cancel ID REASON",
@@ -193,6 +196,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["workflow", "show", project, roadmap, workflow_id]),
     do: {:ok, {:show_workflow, project, roadmap, workflow_id}}
 
+  def parse(["workflow", "critical-path", project, roadmap, workflow_id]),
+    do: {:ok, {:workflow_critical_path, project, roadmap, workflow_id}}
+
   def parse(["workflow", "rename", project, roadmap, workflow_id | name]) when name != [],
     do: {:ok, {:rename_workflow, project, roadmap, workflow_id, Enum.join(name, " ")}}
 
@@ -218,6 +224,8 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
+  def parse(["task", "blockers", id]), do: {:ok, {:task_blockers, id}}
+  def parse(["task", "impact", id]), do: {:ok, {:task_impact, id}}
 
   def parse(["task", "list" | args]) do
     case OptionParser.parse(args,

@@ -224,6 +224,25 @@ defmodule SpruceGoose.CLITest do
              ])
   end
 
+  test "parses dependency graph query commands" do
+    task_id = "tsk-20260810T142243Z-66915779"
+
+    assert {:ok, {:task_blockers, ^task_id}} =
+             Command.parse(["task", "blockers", task_id])
+
+    assert {:ok, {:task_impact, ^task_id}} =
+             Command.parse(["task", "impact", task_id])
+
+    assert {:ok, {:workflow_critical_path, "openclaw-system", "convergence", "v1"}} =
+             Command.parse([
+               "workflow",
+               "critical-path",
+               "openclaw-system",
+               "convergence",
+               "v1"
+             ])
+  end
+
   test "hierarchy read commands reject stray arguments and unknown options" do
     assert {:error, :usage} = Command.parse(["project", "list", "extra"])
     assert {:error, :usage} = Command.parse(["project", "show"])

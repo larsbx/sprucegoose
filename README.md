@@ -88,6 +88,9 @@ mix escript.build
 ./sprucegoose task artifact-receipt tsk-... \
   prototype /absolute/path/to/prototype telegram:message:6680 --as artifact-verifier
 ./sprucegoose task list --state waiting
+./sprucegoose task blockers tsk-...
+./sprucegoose task impact tsk-...
+./sprucegoose workflow critical-path my-project delivery release
 ./sprucegoose task propose tsk-...
 ./sprucegoose task queue tsk-...
 ./sprucegoose task ready tsk-...
@@ -109,6 +112,13 @@ mix escript.build
 ./sprucegoose revise show rev-... --as lars
 ./sprucegoose revise approve rev-... --task tsk-... --digest <sha256> --as lars
 ```
+
+PostgreSQL 19 exposes task dependencies as the read-only property graph
+`sprucegoose_task_dependency_graph`. The three graph commands authorize the
+named task or workflow through Ash before executing workflow-scoped SQL. The
+relational task and dependency tables remain authoritative; graph queries do
+not transition tasks or change edges. See
+[`docs/property-graph-queries.md`](docs/property-graph-queries.md).
 
 Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still

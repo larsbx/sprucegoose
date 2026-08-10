@@ -12,7 +12,7 @@ defmodule SpruceGoose.ActorsTest do
 
   alias SpruceGoose.Actors.{Actor, Grant, Resolver, Scope}
   alias SpruceGoose.CLI.Executor
-  alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
+  alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
   describe "genesis" do
     test "an empty registry creates its first actor as a global admin" do
@@ -161,6 +161,37 @@ defmodule SpruceGoose.ActorsTest do
       assert message =~ "actor blind is not authorized to Project.read"
       assert message =~ "holds no grants at all"
       assert message =~ "sprucegoose grant add blind --role ROLE --scope SCOPE"
+    end
+
+    test "dependency graph queries stay inside the actor's readable project and workflow" do
+      alpha = fixtures("alpha")
+      beta = fixtures("beta")
+      alpha_successor = successor(alpha, "Alpha successor")
+      beta_successor = successor(beta, "Beta successor")
+      actor("graph-reader", :agent, reader: "project:alpha")
+
+      assert {:ok, %{impacted: [%{id: alpha_id}]}} =
+               Executor.run({:task_impact, alpha.task.task_id}, "graph-reader")
+
+      assert alpha_id == alpha_successor.task_id
+      refute alpha_id == beta_successor.task_id
+
+      assert {:ok, %{path: alpha_path}} =
+               Executor.run(
+                 {:workflow_critical_path, "alpha", "r-alpha", "w-alpha"},
+                 "graph-reader"
+               )
+
+      assert Enum.map(alpha_path, & &1.id) == [alpha.task.task_id, alpha_successor.task_id]
+
+      assert {:error, _refused} =
+               Executor.run({:task_blockers, beta_successor.task_id}, "graph-reader")
+
+      assert {:error, _refused} =
+               Executor.run(
+                 {:workflow_critical_path, "beta", "r-beta", "w-beta"},
+                 "graph-reader"
+               )
     end
   end
 
@@ -331,6 +362,30 @@ defmodule SpruceGoose.ActorsTest do
       )
 
     %{project: project, roadmap: roadmap, workflow: workflow, task: task}
+  end
+
+  defp successor(fixture, title) do
+    {:ok, task} =
+      Ash.create(
+        Task,
+        %{
+          workflow_id: fixture.workflow.id,
+          task_id: SpruceGoose.TaskId.generate(),
+          title: title,
+          definition_of_done: "graph scope holds",
+          runner: :oban
+        },
+        authorize?: false
+      )
+
+    {:ok, _edge} =
+      Ash.create(
+        Dependency,
+        %{predecessor_id: fixture.task.id, successor_id: task.id, source: "native"},
+        authorize?: false
+      )
+
+    task
   end
 
   defp in_progress_task(suffix) do
