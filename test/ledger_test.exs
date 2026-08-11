@@ -1,11 +1,26 @@
 defmodule SpruceGoose.LedgerTest do
   use SpruceGoose.DataCase, async: false
 
+  alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Ledger
 
   @id "tsk-20260727T041500Z-1234abcd"
 
   test "imports a typed Tuxedo ledger idempotently and proves exact parity" do
+    previous_root = Application.get_env(:spruce_goose, :ledger_import_root)
+    previous_recovery = Application.get_env(:spruce_goose, :ledger_recovery_mode)
+    previous_recovery_database = Application.get_env(:spruce_goose, :ledger_recovery_database)
+    Application.put_env(:spruce_goose, :ledger_import_root, System.tmp_dir!())
+    Application.put_env(:spruce_goose, :ledger_recovery_mode, true)
+    Application.put_env(:spruce_goose, :ledger_recovery_database, Repo.config()[:database])
+    Repo.query!("UPDATE authority_instance_identity SET purpose = 'recovery' WHERE singleton")
+
+    on_exit(fn ->
+      restore(:ledger_import_root, previous_root)
+      restore(:ledger_recovery_mode, previous_recovery)
+      restore(:ledger_recovery_database, previous_recovery_database)
+    end)
+
     path =
       Path.join(System.tmp_dir!(), "sprucegoose-ledger-#{System.unique_integer([:positive])}")
 
@@ -17,13 +32,18 @@ defmodule SpruceGoose.LedgerTest do
     File.write!(path, line <> "\n")
     on_exit(fn -> File.rm(path) end)
 
-    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} = Ledger.import(path)
-    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} = Ledger.import(path)
-    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} = Ledger.parity(path)
+    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} =
+             Executor.run({:import_ledger, path})
+
+    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} =
+             Executor.run({:import_ledger, path})
+
+    assert {:ok, %{tasks: 1, dependencies: 0, parity: true}} =
+             Executor.run({:parity_ledger, path})
 
     File.write!(path, String.replace(line, "Every_record_matches", "Changed") <> "\n")
-    assert {:error, "ledger parity failed:" <> _} = Ledger.parity(path)
-    assert {:ok, %{tasks: 1, parity: true}} = Ledger.import(path)
+    assert {:error, "ledger parity failed:" <> _} = Executor.run({:parity_ledger, path})
+    assert {:ok, %{tasks: 1, parity: true}} = Executor.run({:import_ledger, path})
   end
 
   test "preserves grandfathered missing DoD as explicit import metadata" do
@@ -51,4 +71,7 @@ defmodule SpruceGoose.LedgerTest do
       assert error =~ message
     end
   end
+
+  defp restore(key, nil), do: Application.delete_env(:spruce_goose, key)
+  defp restore(key, value), do: Application.put_env(:spruce_goose, key, value)
 end

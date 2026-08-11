@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -u
+
+SG=/home/admin-papa/sprucegoose/sprucegoose
+FZF=${FZF:-/home/admin-papa/.local/bin/fzf}
+scope_kind=""
+scope_ref=""
+
+if [[ ${1:-} == --scope ]]; then
+  scope_kind=${2:-}
+  scope_ref=${3:-}
+
+  case "$scope_kind" in
+    roadmap|workflow|task|todo) ;;
+    *) printf 'Invalid scope kind: %s\n' "$scope_kind" >&2; exit 2 ;;
+  esac
+
+  [[ $scope_ref =~ ^[A-Za-z0-9._:/-]+$ ]] || {
+    printf 'Invalid scope reference.\n' >&2
+    exit 2
+  }
+fi
+
+catalog() {
+  "$SG" help | python3 -c '
+import json, re, sys
+data = json.load(sys.stdin)
+kind, ref = sys.argv[1:]
+parts = ref.split("/") if ref else []
+
+def scoped(resource, usage):
+    if not kind:
+        return usage
+    if resource != kind:
+        return None
+    if usage.startswith("add ") or usage.startswith("list"):
+        return None
+    replacements = {
+        "roadmap": dict(zip(("PROJECT", "KEY"), parts)),
+        "workflow": dict(zip(("PROJECT", "ROADMAP", "ID"), parts)),
+        "task": {"TASK_ID": ref, "ID": ref},
+        "todo": dict(zip(("TASK_ID", "TODO_ID"), parts)),
+    }[kind]
+    for token, value in replacements.items():
+        usage = re.sub(rf"\b{token}\b", value, usage)
+    return usage
+
+for resource, usages in data["commands"].items():
+    for usage in usages:
+        expanded = [usage]
+        if usage == "propose|queue|ready|start|done ID":
+            expanded = [f"{action} ID" for action in ("propose", "queue", "ready", "start", "done")]
+        for item in expanded:
+            item = scoped(resource, item)
+            if item is not None:
+                print(f"{resource}\t{resource} {item}")
+' "$scope_kind" "$scope_ref"
+}
+
+if [[ ${1:-} == --catalog || ${4:-} == --catalog ]]; then
+  catalog
+  exit 0
+fi
+
+if [[ ! -x $SG ]]; then
+  printf 'SpruceGoose CLI is unavailable: %s\n' "$SG" >&2
+  exit 1
+fi
+
+if [[ ! -x $FZF ]]; then
+  printf 'fzf is unavailable: %s\n' "$FZF" >&2
+  exit 1
+fi
+
+while true; do
+  selected="$(catalog | "$FZF" \
+    --delimiter=$'\t' \
+    --with-nth=1,2 \
+    --prompt='SpruceGoose admin › ' \
+    --header="Search top-level admin actions${scope_kind:+ · scoped to $scope_kind $scope_ref} · Esc exits" \
+    --height=100% \
+    --layout=reverse \
+    --border \
+    --preview-window='down,60%,wrap' \
+    --preview='printf "Command template\n\n%s\n" {2}'
+  )" || exit 0
+
+  usage=${selected#*$'\t'}
+  command="$SG $usage"
+
+  printf '\nEdit identifiers, names, JSON, reasons, and paths before execution.\n'
+  read -r -e -i "$command" -p '$ ' command || exit 0
+  [[ -z $command ]] && continue
+
+  read -r -p 'Execute this command? [y/N] ' confirmed
+  if [[ $confirmed == y || $confirmed == Y ]]; then
+    /bin/bash -lc "$command"
+  else
+    printf 'Cancelled.\n'
+  fi
+
+  printf '\n'
+  read -r -p 'Press Enter to return to the action index.' _
+done

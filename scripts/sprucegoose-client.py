@@ -2,9 +2,14 @@
 """Thin SpruceGoose CLI client for the persistent local Unix-socket service."""
 
 import json
+import hashlib
 import os
+import shlex
 import socket
+import subprocess
 import sys
+
+SOP_PATH = "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
 
 
 def fail(message):
@@ -12,9 +17,43 @@ def fail(message):
     raise SystemExit(2)
 
 
+def sop_preflight(args):
+    gated = (
+        args[:2] == ["task", "add"]
+        or args[:2] == ["task", "start"]
+        or args[:2] == ["task", "acknowledge-sop"]
+    )
+    if not gated:
+        return
+    try:
+        local = hashlib.sha256(open(SOP_PATH, "rb").read()).hexdigest()
+        remote = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "mama",
+                f"sha256sum -- {shlex.quote(SOP_PATH)}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        ).stdout.split()[0]
+    except (OSError, subprocess.SubprocessError, IndexError) as error:
+        fail(f"cannot verify Mama Systemwide SOP parity: {error}")
+    if local != remote:
+        fail(
+            "Systemwide SOP drift between Evergreen and Mama; "
+            "run scripts/sync-systemwide-sop.py --apply"
+        )
+
+
 def main():
     if len(sys.argv) > 129 or any(len(arg.encode()) > 4096 for arg in sys.argv[1:]):
         fail("invalid arguments")
+
+    sop_preflight(sys.argv[1:])
 
     socket_path = os.environ.get(
         "SPRUCE_GOOSE_CLI_SOCKET", f"/run/user/{os.getuid()}/sprucegoose/cli.sock"

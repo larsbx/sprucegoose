@@ -4,13 +4,16 @@ defmodule SpruceGoose.CLI.Executor do
   require Ash.Query
   import Ash.Expr
 
+  alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
   alias SpruceGoose.CLI.Command
-  alias SpruceGoose.{Ledger, Repo, SopGate, TaskId}
+  alias SpruceGoose.Outbox.Operator, as: OutboxOperator
+  alias SpruceGoose.{Authz, Ledger, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
     Dependency,
+    Graph,
     InboxItem,
     Project,
     Roadmap,
@@ -22,38 +25,132 @@ defmodule SpruceGoose.CLI.Executor do
     Workflow
   }
 
-  def run(:help), do: {:ok, Command.help()}
-  def run({:help, noun}), do: {:ok, Command.help(noun)}
-  def run(:version), do: {:ok, %{version: Command.version()}}
+  # Commands that touch no data and reveal nothing about it. They answer before
+  # an actor is resolved so that `help` still works on a cold registry — the
+  # same reason genesis exists.
+  @unauthenticated [:help, :version, :generate_id]
 
-  def run(:generate_id), do: {:ok, %{id: TaskId.generate()}}
+  @registry_verbs [
+    :add_actor,
+    :list_actors,
+    :show_actor,
+    :disable_actor,
+    :enable_actor,
+    :grant_role,
+    :revoke_role,
+    :list_grants
+  ]
 
-  def run({:validate_id, id}) do
+  @doc """
+  Run one parsed command as `actor_name`.
+
+  The actor is resolved once and established for the whole request via
+  `SpruceGoose.Authz.with_actor/2`; nothing downstream takes it as an argument,
+  and anything that reaches Ash without it raises rather than running
+  unauthorized.
+  """
+  def run(command, actor_name \\ nil)
+
+  def run(command, _actor_name) when command in @unauthenticated, do: dispatch(command)
+  def run({:help, _noun} = command, _actor_name), do: dispatch(command)
+  def run({:validate_id, _id} = command, _actor_name), do: dispatch(command)
+
+  # Registry commands resolve the actor *optionally*: on an empty registry there
+  # is nobody to resolve, and `Registry.add/2` is what opens the genesis path.
+  # Refusing here would make the registry unbootstrappable.
+  def run({verb, _} = command, actor_name) when verb in @registry_verbs,
+    do: registry(command, resolve_optional(actor_name))
+
+  def run({verb, _, _} = command, actor_name) when verb in @registry_verbs,
+    do: registry(command, resolve_optional(actor_name))
+
+  def run({verb, _, _, _} = command, actor_name) when verb in @registry_verbs,
+    do: registry(command, resolve_optional(actor_name))
+
+  def run(:whoami, actor_name) do
+    case Resolver.resolve(actor_name) do
+      {:ok, actor} -> Registry.whoami(actor)
+      {:error, message} -> {:error, message}
+    end
+  end
+
+  def run(command, actor_name) do
+    case Resolver.resolve(actor_name) do
+      {:ok, actor} ->
+        actor
+        |> Authz.with_actor(fn -> dispatch(command) end)
+        |> explain(actor)
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  # A refusal is only useful if it names the grant that was missing, so an Ash
+  # policy error is translated before it leaves the CLI.
+  defp explain({:error, %Ash.Error.Forbidden{} = error}, actor),
+    do: {:error, Refusal.message(error, actor)}
+
+  defp explain(result, _actor), do: result
+
+  defp registry({:add_actor, attrs}, acting), do: Registry.add(attrs, acting)
+  defp registry({:list_actors, kind}, acting), do: Registry.list(kind, acting)
+  defp registry({:show_actor, name}, acting), do: Registry.show(name, acting)
+
+  defp registry({:disable_actor, name, reason}, acting),
+    do: Registry.disable(name, reason, acting)
+
+  defp registry({:enable_actor, name}, acting), do: Registry.enable(name, acting)
+
+  defp registry({:grant_role, name, role, scope}, acting),
+    do: Registry.grant(name, role, scope, acting)
+
+  defp registry({:revoke_role, name, role, scope}, acting),
+    do: Registry.revoke(name, role, scope, acting)
+
+  defp registry({:list_grants, name, role}, acting), do: Registry.grants(name, role, acting)
+
+  defp resolve_optional(actor_name) do
+    case Resolver.resolve(actor_name) do
+      {:ok, actor} -> actor
+      {:error, _message} -> nil
+    end
+  end
+
+  defp dispatch(:help), do: {:ok, Command.help()}
+  defp dispatch({:help, noun}), do: {:ok, Command.help(noun)}
+  defp dispatch(:version), do: {:ok, %{version: Command.version()}}
+
+  defp dispatch(:generate_id), do: {:ok, %{id: TaskId.generate()}}
+  defp dispatch(:list_failed_outbox), do: OutboxOperator.list_failed()
+  defp dispatch({:replay_outbox, event_id}), do: OutboxOperator.replay(event_id)
+
+  defp dispatch({:validate_id, id}) do
     if TaskId.valid?(id), do: {:ok, %{id: id, valid: true}}, else: {:error, "invalid task ID"}
   end
 
-  def run({:add_project, key, name}) do
-    with {:ok, project} <- Ash.create(Project, %{key: key, name: name}) do
+  defp dispatch({:add_project, key, name}) do
+    with {:ok, project} <- Authz.create(Project, %{key: key, name: name}) do
       {:ok, project_json(project)}
     end
   end
 
-  def run(:list_projects) do
-    with {:ok, projects} <- Ash.read(Project) do
+  defp dispatch(:list_projects) do
+    with {:ok, projects} <- Authz.read(Project) do
       {:ok, %{projects: projects |> Enum.sort_by(& &1.key) |> Enum.map(&project_json/1)}}
     end
   end
 
-  def run({:show_project, key}) do
+  defp dispatch({:show_project, key}) do
     with {:ok, project} <- read_one(Project, key: key) do
       {:ok, project_json(project)}
     end
   end
 
-  def run({:list_roadmaps, project_key}) do
+  defp dispatch({:list_roadmaps, project_key}) do
     with {:ok, filter} <- roadmap_scope(project_key),
-         {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, filter)),
-         {:ok, projects} <- Ash.read(Project) do
+         {:ok, roadmaps} <- Authz.read(Ash.Query.filter_input(Roadmap, filter)),
+         {:ok, projects} <- Authz.read(Project) do
       keys = Map.new(projects, &{&1.id, &1.key})
 
       {:ok,
@@ -66,19 +163,19 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:show_roadmap, project_key, key}) do
+  defp dispatch({:show_roadmap, project_key, key}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key) do
       {:ok, Map.put(roadmap_json(roadmap), :project, project.key)}
     end
   end
 
-  def run({:list_workflows, project_key, roadmap_key}) do
+  defp dispatch({:list_workflows, project_key, roadmap_key}) do
     with {:ok, roadmap_ids} <- workflow_scope(project_key, roadmap_key),
          filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
-         {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)),
+         {:ok, workflows} <- Authz.read(Ash.Query.filter_input(Workflow, filter)),
          {:ok, labels} <- roadmap_labels(),
-         {:ok, tasks} <- Ash.read(Task) do
+         {:ok, tasks} <- Authz.read(Task) do
       # Live vs. done counts let an operator spot an active workflow without
       # issuing a follow-up task list per workflow.
       by_workflow = Enum.group_by(tasks, & &1.workflow_id)
@@ -108,7 +205,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:show_workflow, project_key, roadmap_key, workflow_key}) do
+  defp dispatch({:show_workflow, project_key, roadmap_key, workflow_key}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
          {:ok, workflow} <-
@@ -120,14 +217,25 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:rename_project, key, name}) do
+  defp dispatch({:workflow_critical_path, project_key, roadmap_key, workflow_key}) do
+    with {:ok, workflow} <- resolve_workflow(project_key, roadmap_key, workflow_key),
+         {:ok, path} <- Graph.critical_path(workflow) do
+      {:ok,
+       path
+       |> Map.put(:project, project_key)
+       |> Map.put(:roadmap, roadmap_key)
+       |> Map.put(:workflow, workflow_key)}
+    end
+  end
+
+  defp dispatch({:rename_project, key, name}) do
     with {:ok, project} <- read_one(Project, key: key),
-         {:ok, project} <- Ash.update(project, %{name: name}, action: :rename) do
+         {:ok, project} <- Authz.update(project, %{name: name}, action: :rename) do
       {:ok, project_json(project)}
     end
   end
 
-  def run({:remove_project, key}) do
+  defp dispatch({:remove_project, key}) do
     with {:ok, project} <- read_one(Project, key: key),
          :ok <- require_no_dependents(Roadmap, [project_id: project.id], "roadmaps"),
          :ok <- destroy(project) do
@@ -135,15 +243,15 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:rename_roadmap, project_key, key, name}) do
+  defp dispatch({:rename_roadmap, project_key, key, name}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key),
-         {:ok, roadmap} <- Ash.update(roadmap, %{name: name}, action: :rename) do
+         {:ok, roadmap} <- Authz.update(roadmap, %{name: name}, action: :rename) do
       {:ok, Map.put(roadmap_json(roadmap), :project, project.key)}
     end
   end
 
-  def run({:remove_roadmap, project_key, key}) do
+  defp dispatch({:remove_roadmap, project_key, key}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: key),
          :ok <- require_no_dependents(Workflow, [roadmap_id: roadmap.id], "workflows"),
@@ -152,14 +260,14 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:rename_workflow, project_key, roadmap_key, workflow_key, name}) do
+  defp dispatch({:rename_workflow, project_key, roadmap_key, workflow_key, name}) do
     with {:ok, workflow} <- resolve_workflow(project_key, roadmap_key, workflow_key),
-         {:ok, workflow} <- Ash.update(workflow, %{name: name}, action: :rename) do
+         {:ok, workflow} <- Authz.update(workflow, %{name: name}, action: :rename) do
       {:ok, workflow_json(workflow)}
     end
   end
 
-  def run({:remove_workflow, project_key, roadmap_key, workflow_key}) do
+  defp dispatch({:remove_workflow, project_key, roadmap_key, workflow_key}) do
     with {:ok, workflow} <- resolve_workflow(project_key, roadmap_key, workflow_key),
          :ok <- require_no_dependents(Task, [workflow_id: workflow.id], "tasks"),
          :ok <- require_no_dependents(Board, [workflow_id: workflow.id], "boards"),
@@ -168,14 +276,14 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:rename_board, board_id, name}) do
+  defp dispatch({:rename_board, board_id, name}) do
     with {:ok, board} <- read_one(Board, id: board_id),
-         {:ok, board} <- Ash.update(board, %{name: name}, action: :revise) do
+         {:ok, board} <- Authz.update(board, %{name: name}, action: :rename) do
       {:ok, board_json(board)}
     end
   end
 
-  def run({:remove_board, board_id}) do
+  defp dispatch({:remove_board, board_id}) do
     with {:ok, board} <- read_one(Board, id: board_id),
          :ok <- require_no_dependents(BoardColumn, [board_id: board.id], "columns"),
          :ok <- require_no_dependents(SavedFilter, [board_id: board.id], "filters"),
@@ -185,14 +293,14 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:rename_column, column_id, name}) do
+  defp dispatch({:rename_column, column_id, name}) do
     with {:ok, column} <- read_one(BoardColumn, id: column_id),
-         {:ok, column} <- Ash.update(column, %{name: name}, action: :revise) do
+         {:ok, column} <- Authz.update(column, %{name: name}, action: :rename) do
       {:ok, column_json(column)}
     end
   end
 
-  def run({:remove_column, column_id}) do
+  defp dispatch({:remove_column, column_id}) do
     with {:ok, column} <- read_one(BoardColumn, id: column_id),
          :ok <- require_no_dependents(Task, [column_id: column.id], "tasks"),
          :ok <- destroy(column) do
@@ -200,18 +308,18 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:remove_filter, filter_id}) do
+  defp dispatch({:remove_filter, filter_id}) do
     with {:ok, filter} <- read_one(SavedFilter, id: filter_id),
          :ok <- destroy(filter) do
       {:ok, %{removed: filter_json(filter)}}
     end
   end
 
-  def run({:list_todo_dependencies, task_id}) do
+  defp dispatch({:list_todo_dependencies, task_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
-         {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)),
-         {:ok, edges} <- Ash.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
+         {:ok, todos} <- Authz.read(Ash.Query.filter_input(Todo, task_id: task.id)),
+         {:ok, edges} <- Authz.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
       by_id = Map.new(todos, &{&1.id, &1})
       predecessors_of = Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
       successors_of = Enum.group_by(edges, & &1.predecessor_id, & &1.successor_id)
@@ -247,13 +355,13 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_todo_dependency, task_id, todo_id, predecessor_id}) do
+  defp dispatch({:add_todo_dependency, task_id, todo_id, predecessor_id}) do
     with {:ok, task, successor, predecessor} <-
            todo_dependency_pair(task_id, todo_id, predecessor_id),
          :ok <- require_new_todo_edge(successor, predecessor),
          :ok <- require_acyclic_todo(task, successor, predecessor),
          {:ok, edge} <-
-           Ash.create(TodoDependency, %{
+           Authz.create(TodoDependency, %{
              task_id: task.id,
              predecessor_id: predecessor.id,
              successor_id: successor.id
@@ -268,7 +376,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:remove_todo_dependency, task_id, todo_id, predecessor_id}) do
+  defp dispatch({:remove_todo_dependency, task_id, todo_id, predecessor_id}) do
     with {:ok, task, successor, predecessor} <-
            todo_dependency_pair(task_id, todo_id, predecessor_id),
          {:ok, edge} <-
@@ -287,7 +395,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:remove_todo, task_id, todo_id}) do
+  defp dispatch({:remove_todo, task_id, todo_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          :ok <- todo_admission_allowed(task),
@@ -297,14 +405,15 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:unlink_task, id, kind, value}) do
+  defp dispatch({:unlink_task, id, kind, value}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          references = Map.get(task.input, "references", []),
          target = %{"kind" => kind, "value" => value},
          true <- target in references,
          input = Map.put(task.input, "references", List.delete(references, target)),
-         {:ok, task} <- task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Ash.update() do
+         {:ok, task} <-
+           task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Authz.update_changeset() do
       {:ok, task_json(task)}
     else
       false -> {:error, "reference not found"}
@@ -312,21 +421,21 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_roadmap, project_key, key, name}) do
+  defp dispatch({:add_roadmap, project_key, key, name}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <-
-           Ash.create(Roadmap, %{project_id: project.id, key: key, name: name}) do
+           Authz.create(Roadmap, %{project_id: project.id, key: key, name: name}) do
       {:ok, roadmap_json(roadmap)}
     end
   end
 
-  def run({:add_workflow, project_key, roadmap_key, workflow_id, name, definition_json}) do
+  defp dispatch({:add_workflow, project_key, roadmap_key, workflow_id, name, definition_json}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
          {:ok, definition_input} <- decode_json_object(definition_json),
          {:ok, definition} <- SpruceGoose.Workflows.Definition.parse(definition_input),
          {:ok, workflow} <-
-           Ash.create(Workflow, %{
+           Authz.create(Workflow, %{
              roadmap_id: roadmap.id,
              workflow_id: workflow_id,
              name: name,
@@ -336,17 +445,43 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:import_ledger, path}), do: Ledger.import(path)
-  def run({:parity_ledger, path}), do: Ledger.parity(path)
+  defp dispatch({:propose_revision, path}), do: Revise.propose(path)
+  defp dispatch({:list_revisions, state, target}), do: Revise.list(state, target)
+  defp dispatch({:show_revision, revision_id}), do: Revise.show(revision_id)
 
-  def run({:show_task, id}) do
+  defp dispatch({:approve_revision, revision_id, task_id, digest, self?}),
+    do: Revise.approve(revision_id, task_id, digest, self?)
+
+  defp dispatch({:withdraw_revision, revision_id, reason}),
+    do: Revise.withdraw(revision_id, reason)
+
+  defp dispatch({:import_ledger, path}), do: Ledger.import(path)
+  defp dispatch({:parity_ledger, path}), do: Ledger.parity(path)
+
+  defp dispatch({:show_task, id}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id) do
       {:ok, task_json(task)}
     end
   end
 
-  def run({:list_tasks, filters}) do
+  defp dispatch({:task_blockers, id}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         {:ok, blockers} <- Graph.blockers(task) do
+      {:ok, %{task: task.task_id, blockers: blockers}}
+    end
+  end
+
+  defp dispatch({:task_impact, id}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         {:ok, impacted} <- Graph.impact(task) do
+      {:ok, %{task: task.task_id, impacted: impacted}}
+    end
+  end
+
+  defp dispatch({:list_tasks, filters}) do
     with {:ok, states} <- optional_states(Map.get(filters, :state)),
          {:ok, task_type} <- optional_task_type(Map.get(filters, :type)),
          {:ok, priority} <- optional_priority(Map.get(filters, :priority)),
@@ -360,8 +495,8 @@ defmodule SpruceGoose.CLI.Executor do
            |> task_sort_query(sort),
          # Count in SQL against the same filters, so `total` describes the
          # whole match while only the requested window is materialised.
-         {:ok, total} <- Ash.count(query),
-         {:ok, tasks} <- Ash.read(paginate_query(query, limit, offset)),
+         {:ok, total} <- Authz.count(query),
+         {:ok, tasks} <- Authz.read(paginate_query(query, limit, offset)),
          {:ok, memberships} <- workflow_memberships() do
       {:ok,
        %{
@@ -374,7 +509,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:transition_task, id, target, reason}) do
+  defp dispatch({:transition_task, id, target, reason}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          :ok <- require_transition_preconditions(task, target),
@@ -383,18 +518,19 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:link_task, id, kind, value}) do
+  defp dispatch({:link_task, id, kind, value}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          references = Map.get(task.input, "references", []),
          input =
            Map.put(task.input, "references", references ++ [%{"kind" => kind, "value" => value}]),
-         {:ok, task} <- task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Ash.update() do
+         {:ok, task} <-
+           task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Authz.update_changeset() do
       {:ok, task_json(task)}
     end
   end
 
-  def run({:acknowledge_sop, id, sop_path}) do
+  defp dispatch({:acknowledge_sop, id, sop_path}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          :ok <- sop_acknowledgment_allowed(task),
@@ -402,7 +538,7 @@ defmodule SpruceGoose.CLI.Executor do
          {:ok, task} <-
            task
            |> Ash.Changeset.for_update(:acknowledge_sop, %{})
-           |> Ash.update() do
+           |> Authz.update_changeset() do
       {:ok, task_json(task)}
     else
       false -> {:error, "SOP path must be #{SopGate.path()}"}
@@ -410,7 +546,27 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:list_dependencies, task_id}) do
+  defp dispatch({:record_artifact_receipt, id, name, source_path, source_identity}) do
+    with :ok <- require_valid_id(id),
+         {:ok, task} <- read_one(Task, task_id: id),
+         :ok <- require_distinct_artifact_verifier(task),
+         {:ok, receipt} <-
+           SpruceGoose.Artifacts.Store.retrieve(
+             name,
+             source_path,
+             source_identity,
+             Authz.actor!().name
+           ),
+         receipts = (task.artifact_receipts || []) ++ [receipt],
+         {:ok, task} <-
+           task
+           |> Ash.Changeset.for_update(:record_artifact_receipt, %{artifact_receipts: receipts})
+           |> Authz.update_changeset() do
+      {:ok, task_json(task)}
+    end
+  end
+
+  defp dispatch({:list_dependencies, task_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]),
@@ -432,13 +588,13 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_dependency, task_id, predecessor_id}) do
+  defp dispatch({:add_dependency, task_id, predecessor_id}) do
     with {:ok, successor, predecessor} <- dependency_pair(task_id, predecessor_id),
          :ok <- require_same_workflow(successor, predecessor),
          :ok <- require_new_edge(successor, predecessor),
          :ok <- require_acyclic(successor, predecessor),
          {:ok, edge} <-
-           Ash.create(Dependency, %{
+           Authz.create(Dependency, %{
              predecessor_id: predecessor.id,
              successor_id: successor.id,
              source: "native"
@@ -453,11 +609,11 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:remove_dependency, task_id, predecessor_id}) do
+  defp dispatch({:remove_dependency, task_id, predecessor_id}) do
     with {:ok, successor, predecessor} <- dependency_pair(task_id, predecessor_id),
          {:ok, edge} <-
            read_one(Dependency, predecessor_id: predecessor.id, successor_id: successor.id),
-         :ok <- Ash.destroy(edge) do
+         :ok <- Authz.destroy(edge) do
       {:ok,
        %{
          removed: edge.id,
@@ -467,35 +623,35 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_inbox, body}) do
+  defp dispatch({:add_inbox, body}) do
     with {:ok, item} <-
-           Ash.create(InboxItem, %{capture_id: generate_record_id("inbox"), body: body}) do
+           Authz.create(InboxItem, %{capture_id: generate_record_id("inbox"), body: body}) do
       {:ok, inbox_json(item)}
     end
   end
 
-  def run({:list_inbox, state}) do
+  defp dispatch({:list_inbox, state}) do
     with {:ok, filter} <- inbox_scope(state),
-         {:ok, items} <- Ash.read(Ash.Query.filter_input(InboxItem, filter)) do
+         {:ok, items} <- Authz.read(Ash.Query.filter_input(InboxItem, filter)) do
       {:ok, %{items: items |> Enum.sort_by(& &1.capture_id) |> Enum.map(&inbox_json/1)}}
     end
   end
 
-  def run({:resolve_inbox, capture_id, reason}) do
+  defp dispatch({:resolve_inbox, capture_id, reason}) do
     with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
          {:ok, item} <- resolve_capture(item, :resolved, %{resolution_reason: reason}) do
       {:ok, inbox_json(item)}
     end
   end
 
-  def run({:drop_inbox, capture_id, reason}) do
+  defp dispatch({:drop_inbox, capture_id, reason}) do
     with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
          {:ok, item} <- resolve_capture(item, :dropped, %{resolution_reason: reason}) do
       {:ok, inbox_json(item)}
     end
   end
 
-  def run({:promote_inbox, capture_id, input}) do
+  defp dispatch({:promote_inbox, capture_id, input}) do
     with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
          :ok <- require_open_capture(item),
          title = input.title || item.body,
@@ -509,15 +665,15 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:list_todos, task_id}) do
+  defp dispatch({:list_todos, task_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
-         {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
+         {:ok, todos} <- Authz.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
       {:ok, %{todos: todos |> Enum.sort_by(& &1.position) |> Enum.map(&todo_json/1)}}
     end
   end
 
-  def run({:add_todo, task_id, body}) do
+  defp dispatch({:add_todo, task_id, body}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          {:ok, todo} <- create_todo(task, generate_record_id("todo"), body) do
@@ -525,43 +681,43 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:complete_todo, task_id, todo_id}) do
+  defp dispatch({:complete_todo, task_id, todo_id}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          {:ok, todo} <- read_one(Todo, task_id: task.id, todo_id: todo_id),
          :ok <- require_todo_predecessors_complete(task, todo),
-         {:ok, todo} <- todo |> Ash.Changeset.for_update(:complete) |> Ash.update() do
+         {:ok, todo} <- todo |> Ash.Changeset.for_update(:complete) |> Authz.update_changeset() do
       {:ok, todo_json(todo)}
     end
   end
 
-  def run({:add_board, project_key, roadmap_key, workflow_key, key, name}) do
+  defp dispatch({:add_board, project_key, roadmap_key, workflow_key, key, name}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
          {:ok, workflow} <-
            read_one(Workflow, roadmap_id: roadmap.id, workflow_id: workflow_key),
          {:ok, board} <-
-           Ash.create(Board, %{workflow_id: workflow.id, key: key, name: name}) do
+           Authz.create(Board, %{workflow_id: workflow.id, key: key, name: name}) do
       {:ok, board_json(board)}
     end
   end
 
-  def run({:list_boards, project_key, roadmap_key, workflow_key}) do
+  defp dispatch({:list_boards, project_key, roadmap_key, workflow_key}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: roadmap_key),
          {:ok, workflow} <-
            read_one(Workflow, roadmap_id: roadmap.id, workflow_id: workflow_key),
-         {:ok, boards} <- Ash.read(Ash.Query.filter_input(Board, workflow_id: workflow.id)) do
+         {:ok, boards} <- Authz.read(Ash.Query.filter_input(Board, workflow_id: workflow.id)) do
       {:ok, %{boards: Enum.map(boards, &board_json/1)}}
     end
   end
 
-  def run({:add_column, board_ref, key, position, state, name}) do
+  defp dispatch({:add_column, board_ref, key, position, state, name}) do
     with {position, ""} <- Integer.parse(position),
          {:ok, state} <- optional_state(state),
          {:ok, board_id} <- resolve_board_ref(board_ref),
          {:ok, column} <-
-           Ash.create(BoardColumn, %{
+           Authz.create(BoardColumn, %{
              board_id: board_id,
              key: key,
              name: name,
@@ -575,21 +731,21 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:list_columns, board_ref}) do
+  defp dispatch({:list_columns, board_ref}) do
     with {:ok, board_id} <- resolve_board_ref(board_ref),
-         {:ok, columns} <- Ash.read(Ash.Query.filter_input(BoardColumn, board_id: board_id)) do
+         {:ok, columns} <- Authz.read(Ash.Query.filter_input(BoardColumn, board_id: board_id)) do
       {:ok, %{columns: columns |> Enum.sort_by(& &1.position) |> Enum.map(&column_json/1)}}
     end
   end
 
-  def run({:move_task, task_id, board_ref, column_ref, rank}) do
+  defp dispatch({:move_task, task_id, board_ref, column_ref, rank}) do
     with :ok <- require_valid_id(task_id),
          {:ok, task} <- read_one(Task, task_id: task_id),
          {:ok, board_id} <- resolve_board_ref(board_ref),
          {:ok, column} <- resolve_column(board_id, column_ref),
          column_id = column.id,
          {:ok, task} <-
-           Ash.update(
+           Authz.update(
              task,
              %{board_id: board_id, column_id: column_id, rank: rank, to_state: column.task_state},
              action: :move
@@ -598,34 +754,34 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:update_task_metadata, task_id, json}) do
+  defp dispatch({:update_task_metadata, task_id, json}) do
     with :ok <- require_valid_id(task_id),
          {:ok, input} <- decode_metadata(json),
          {:ok, task} <- read_one(Task, task_id: task_id),
-         {:ok, task} <- Ash.update(task, input, action: :update_board_metadata) do
+         {:ok, task} <- Authz.update(task, input, action: :update_board_metadata) do
       {:ok, task_json(task)}
     end
   end
 
-  def run({:add_filter, board_ref, name, json}) do
+  defp dispatch({:add_filter, board_ref, name, json}) do
     with {:ok, board_id} <- resolve_board_ref(board_ref),
          {:ok, criteria} <- decode_json_object(json),
          {:ok, filter} <-
-           Ash.create(SavedFilter, %{board_id: board_id, name: name, criteria: criteria}) do
+           Authz.create(SavedFilter, %{board_id: board_id, name: name, criteria: criteria}) do
       {:ok, filter_json(filter)}
     end
   end
 
-  def run({:list_filters, board_ref}) do
+  defp dispatch({:list_filters, board_ref}) do
     with {:ok, board_id} <- resolve_board_ref(board_ref),
-         {:ok, filters} <- Ash.read(Ash.Query.filter_input(SavedFilter, board_id: board_id)) do
+         {:ok, filters} <- Authz.read(Ash.Query.filter_input(SavedFilter, board_id: board_id)) do
       {:ok, %{filters: Enum.map(filters, &filter_json/1)}}
     end
   end
 
-  def run({:apply_filter, filter_id}) do
+  defp dispatch({:apply_filter, filter_id}) do
     with {:ok, filter} <- read_one(SavedFilter, id: filter_id),
-         {:ok, tasks} <- Ash.read(Ash.Query.filter_input(Task, board_id: filter.board_id)) do
+         {:ok, tasks} <- Authz.read(Ash.Query.filter_input(Task, board_id: filter.board_id)) do
       {:ok,
        %{
          tasks:
@@ -634,7 +790,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  def run({:add_task, input}) do
+  defp dispatch({:add_task, input}) do
     with {:ok, priority} <- required_task_priority(input),
          {:ok, project} <- read_one(Project, key: input.project),
          {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: input.roadmap),
@@ -643,7 +799,7 @@ defmodule SpruceGoose.CLI.Executor do
          true <- input.sop_path == SopGate.path(),
          id = TaskId.generate(),
          {:ok, task} <-
-           Ash.create(
+           Authz.create(
              Task,
              %{
                workflow_id: workflow.id,
@@ -652,6 +808,7 @@ defmodule SpruceGoose.CLI.Executor do
                title: input.title,
                definition_of_done: input.definition_of_done,
                priority: priority,
+               artifact_requirements: Map.get(input, :artifact_requirements, []),
                runner: :oban
              }
            ) do
@@ -691,7 +848,7 @@ defmodule SpruceGoose.CLI.Executor do
   # dependents block removal instead of leaking a raw constraint error, and so
   # removal is never silently cascading.
   defp require_no_dependents(resource, filter, label) do
-    with {:ok, rows} <- Ash.read(Ash.Query.filter_input(resource, filter)) do
+    with {:ok, rows} <- Authz.read(Ash.Query.filter_input(resource, filter)) do
       case length(rows) do
         0 -> :ok
         count -> {:error, "cannot remove while #{count} #{label} still reference it"}
@@ -699,13 +856,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  defp destroy(record) do
-    case Ash.destroy(record) do
-      :ok -> :ok
-      {:ok, _} -> :ok
-      error -> error
-    end
-  end
+  defp destroy(record), do: Authz.destroy(record)
 
   defp todo_dependency_pair(task_id, todo_id, predecessor_id) do
     with :ok <- require_valid_id(task_id),
@@ -734,7 +885,7 @@ defmodule SpruceGoose.CLI.Executor do
   # Scoped to one task's edges. A new predecessor -> successor edge closes a
   # cycle exactly when successor is already reachable from predecessor.
   defp require_acyclic_todo(task, successor, predecessor) do
-    with {:ok, edges} <- Ash.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
+    with {:ok, edges} <- Authz.read(Ash.Query.filter_input(TodoDependency, task_id: task.id)) do
       predecessors_of = Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
 
       if reaches?(predecessor.id, successor.id, predecessors_of, MapSet.new()) do
@@ -758,9 +909,9 @@ defmodule SpruceGoose.CLI.Executor do
   # blocked only while an explicit predecessor is still open.
   defp require_todo_predecessors_complete(task, todo) do
     with {:ok, edges} <-
-           Ash.read(Ash.Query.filter_input(TodoDependency, successor_id: todo.id)),
+           Authz.read(Ash.Query.filter_input(TodoDependency, successor_id: todo.id)),
          false <- edges == [],
-         {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
+         {:ok, todos} <- Authz.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
       by_id = Map.new(todos, &{&1.id, &1})
 
       open =
@@ -815,7 +966,7 @@ defmodule SpruceGoose.CLI.Executor do
   # predecessor -> successor closes a cycle exactly when successor is already
   # reachable from predecessor by following existing predecessor edges.
   defp require_acyclic(successor, predecessor) do
-    with {:ok, edges} <- Ash.read(Dependency) do
+    with {:ok, edges} <- Authz.read(Dependency) do
       predecessors_of =
         Enum.group_by(edges, & &1.successor_id, & &1.predecessor_id)
 
@@ -870,7 +1021,7 @@ defmodule SpruceGoose.CLI.Executor do
   defp resolve_capture(item, to_state, attrs) do
     item
     |> Ash.Changeset.for_update(:resolve, Map.put(attrs, :to_state, to_state))
-    |> Ash.update()
+    |> Authz.update_changeset()
   end
 
   defp roadmap_scope(nil), do: {:ok, []}
@@ -884,7 +1035,7 @@ defmodule SpruceGoose.CLI.Executor do
   defp workflow_scope(nil, nil), do: {:ok, nil}
 
   defp workflow_scope(nil, roadmap_key) do
-    with {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, key: roadmap_key)) do
+    with {:ok, roadmaps} <- Authz.read(Ash.Query.filter_input(Roadmap, key: roadmap_key)) do
       case roadmaps do
         [] -> {:error, "not found"}
         roadmaps -> {:ok, Enum.map(roadmaps, & &1.id)}
@@ -899,7 +1050,7 @@ defmodule SpruceGoose.CLI.Executor do
           do: [project_id: project.id, key: roadmap_key],
           else: [project_id: project.id]
 
-      with {:ok, roadmaps} <- Ash.read(Ash.Query.filter_input(Roadmap, filter)) do
+      with {:ok, roadmaps} <- Authz.read(Ash.Query.filter_input(Roadmap, filter)) do
         case roadmaps do
           [] -> {:error, "not found"}
           roadmaps -> {:ok, Enum.map(roadmaps, & &1.id)}
@@ -931,8 +1082,8 @@ defmodule SpruceGoose.CLI.Executor do
   defp reject_ambiguous_workflow(workflows, _workflow_key), do: {:ok, workflows}
 
   defp roadmap_labels do
-    with {:ok, projects} <- Ash.read(Project),
-         {:ok, roadmaps} <- Ash.read(Roadmap) do
+    with {:ok, projects} <- Authz.read(Project),
+         {:ok, roadmaps} <- Authz.read(Roadmap) do
       project_keys = Map.new(projects, &{&1.id, &1.key})
 
       {:ok,
@@ -942,12 +1093,7 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  defp read_one(resource, filter) do
-    case resource |> Ash.Query.filter_input(filter) |> Ash.read_one() do
-      {:ok, nil} -> {:error, "not found"}
-      result -> result
-    end
-  end
+  defp read_one(resource, filter), do: Authz.read_one(resource, filter)
 
   defp require_valid_id(id) do
     if TaskId.valid?(id), do: :ok, else: {:error, "invalid task ID"}
@@ -1093,7 +1239,7 @@ defmodule SpruceGoose.CLI.Executor do
       with {:ok, roadmap_ids} <- workflow_scope(project, roadmap),
            filter = if(roadmap_ids, do: [roadmap_id: [in: roadmap_ids]], else: []),
            filter = if(workflow, do: [{:workflow_id, workflow} | filter], else: filter),
-           {:ok, workflows} <- Ash.read(Ash.Query.filter_input(Workflow, filter)),
+           {:ok, workflows} <- Authz.read(Ash.Query.filter_input(Workflow, filter)),
            {:ok, workflows} <- reject_ambiguous_workflow(workflows, workflow) do
         case workflows do
           [] -> {:error, "not found"}
@@ -1179,9 +1325,9 @@ defmodule SpruceGoose.CLI.Executor do
 
   # Human-readable project/roadmap/workflow membership for each workflow row.
   defp workflow_memberships do
-    with {:ok, projects} <- Ash.read(Project),
-         {:ok, roadmaps} <- Ash.read(Roadmap),
-         {:ok, workflows} <- Ash.read(Workflow) do
+    with {:ok, projects} <- Authz.read(Project),
+         {:ok, roadmaps} <- Authz.read(Roadmap),
+         {:ok, workflows} <- Authz.read(Workflow) do
       project_keys = Map.new(projects, &{&1.id, &1.key})
       roadmap_rows = Map.new(roadmaps, &{&1.id, &1})
 
@@ -1224,17 +1370,20 @@ defmodule SpruceGoose.CLI.Executor do
   defp transition(task, target, reason) do
     task
     |> Ash.Changeset.for_update(:transition, %{to_state: target, reason: reason})
-    |> Ash.update()
+    |> Authz.update_changeset()
   end
 
   defp create_todo(task, todo_id, body) do
+    # AUTHORIZATION: this CLI path resolves the request actor and all reads and
+    # writes in the transaction use Authz; the query only serializes task intake.
     Repo.transaction(fn ->
+      # AUTHORIZATION: covered by the actor-bound create_todo entrypoint above.
       Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [task.id])
 
       with {:ok, fresh_task} <- read_one(Task, id: task.id),
            :ok <- todo_admission_allowed(fresh_task),
-           {:ok, todos} <- Ash.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
-        Ash.create(
+           {:ok, todos} <- Authz.read(Ash.Query.filter_input(Todo, task_id: task.id)) do
+        Authz.create(
           Todo,
           %{
             task_id: task.id,
@@ -1293,10 +1442,16 @@ defmodule SpruceGoose.CLI.Executor do
       workflow: membership && membership.workflow,
       workflow_name: membership && membership.workflow_name,
       definition_of_done: task.definition_of_done,
+      artifact_requirements: task.artifact_requirements,
+      artifact_receipts: task.artifact_receipts,
       sop_gate_required: task.sop_gate_required,
       sop_id: task.sop_id,
       sop_path: task.sop_path,
       sop_digest: task.sop_digest,
+      # Exposed because the vault's write gate re-implements the same rule and
+      # reads this JSON; without the version it could only apply the digest
+      # branch and would refuse tasks SpruceGoose considers valid.
+      sop_version: task.sop_version,
       sop_acknowledged_at: task.sop_acknowledged_at,
       state: task.state,
       workflow_id: task.workflow_id,
@@ -1395,6 +1550,14 @@ defmodule SpruceGoose.CLI.Executor do
     case Jason.decode(json) do
       {:ok, value} when is_map(value) -> {:ok, value}
       _ -> {:error, "expected a JSON object"}
+    end
+  end
+
+  defp require_distinct_artifact_verifier(task) do
+    with {:ok, scope} <- SpruceGoose.Actors.Scope.of(task) do
+      if SpruceGoose.Actors.Scope.holds?(Authz.actor!(), :operator, scope),
+        do: {:error, "artifact verifier must not also hold operator over the task"},
+        else: :ok
     end
   end
 

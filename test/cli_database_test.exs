@@ -309,6 +309,100 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
   end
 
+  test "artifact-dependent tasks fail closed at ready until a verified receipt is recorded" do
+    workflow = workflow("artifact-receipt")
+
+    {:ok, task} =
+      Ash.create(Task, %{
+        workflow_id: workflow.id,
+        task_id: "tsk-20260810T121900Z-acde1234",
+        title: "Consume prototype",
+        definition_of_done: "Prototype is processed",
+        runner: :openclaw,
+        artifact_requirements: ["prototype"]
+      })
+
+    task =
+      Enum.reduce([:proposed, :queued], task, fn target, current ->
+        assert {:ok, updated} = Ash.update(current, %{to_state: target}, action: :transition)
+        updated
+      end)
+
+    assert {:error, error} = Ash.update(task, %{to_state: :ready}, action: :transition)
+    assert Exception.message(error) =~ "missing verified receipts for: prototype"
+
+    assert {:error, %Postgrex.Error{postgres: %{message: message}}} =
+             Ecto.Adapters.SQL.query(
+               SpruceGoose.Repo,
+               "UPDATE workflow_tasks SET state = 'ready' WHERE id = $1::text::uuid",
+               [task.id],
+               mode: :savepoint
+             )
+
+    assert message =~ "missing verified artifact receipt"
+
+    source = Path.join(System.tmp_dir!(), "sprucegoose-artifact-source")
+    File.write!(source, "prototype bytes")
+    on_exit(fn -> File.rm(source) end)
+
+    assert {:error, "artifact verifier must not also hold operator over the task"} =
+             Executor.run({
+               :record_artifact_receipt,
+               task.task_id,
+               "prototype",
+               source,
+               "telegram:message:6680"
+             })
+
+    {:ok, verifier} =
+      Ash.create(
+        SpruceGoose.Actors.Actor,
+        %{name: "receipt-verifier", kind: :agent, created_by: "test"},
+        authorize?: false
+      )
+
+    {:ok, _grant} =
+      Ash.create(
+        SpruceGoose.Actors.Grant,
+        %{actor_id: verifier.id, role: :artifact_verifier, scope: "*", granted_by: "test"},
+        authorize?: false
+      )
+
+    assert {:ok, received} =
+             Executor.run(
+               {:record_artifact_receipt, task.task_id, "prototype", source,
+                "telegram:message:6680"},
+               "receipt-verifier"
+             )
+
+    assert [receipt] = received.artifact_receipts
+
+    assert receipt["sha256"] ==
+             :crypto.hash(:sha256, "prototype bytes") |> Base.encode16(case: :lower)
+
+    assert receipt["storage_locator"] == "cas:sha256:" <> receipt["sha256"]
+    assert receipt["retrieval_verifier"] == "receipt-verifier"
+    assert receipt["size_bytes"] == 15
+
+    invalid =
+      receipt
+      |> Map.put("size_bytes", 0)
+      |> Map.put("extra", true)
+      |> Map.put("retrieval_verified_at", "2999-01-01T00:00:00Z")
+
+    assert {:error, error} =
+             Ash.update(task, %{artifact_receipts: [invalid]}, action: :record_artifact_receipt)
+
+    assert Exception.message(error) =~ "verified immutable receipt fields"
+    task = Ash.get!(Task, task.id)
+    assert {:ok, ready} = Ash.update(task, %{to_state: :ready}, action: :transition)
+
+    assert {:error, error} =
+             Ash.update(ready, %{artifact_receipts: [receipt]}, action: :record_artifact_receipt)
+
+    assert Exception.message(error) =~ "immutable after readiness"
+  end
+
   test "ordinary Task callers cannot choose exemptions or manufacture SOP evidence" do
     workflow = workflow("caller-evidence")
 

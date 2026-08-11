@@ -1,9 +1,12 @@
 defmodule SpruceGoose.Ledger do
   @moduledoc false
 
-  alias SpruceGoose.{Authority, Repo}
+  alias SpruceGoose.Actors.Scope
+  alias SpruceGoose.Ledger.ImportReceipt
+  alias SpruceGoose.{Authority, Authz, Repo}
 
   @task_id ~r/^tsk-\d{8}T\d{6}Z-[0-9a-f]{8}$/
+  @live_database Application.compile_env(:spruce_goose, :ledger_live_database)
   @states %{
     "active" => "in_progress",
     "blocked" => "blocked",
@@ -14,20 +17,8 @@ defmodule SpruceGoose.Ledger do
   }
 
   def read(path) do
-    with {:ok, body} <- File.read(path) do
-      body
-      |> String.split("\n", trim: true)
-      |> Enum.with_index(1)
-      |> Enum.reduce_while({:ok, []}, fn {line, number}, {:ok, tasks} ->
-        case parse(line) do
-          {:ok, task} -> {:cont, {:ok, [task | tasks]}}
-          {:error, reason} -> {:halt, {:error, "line #{number}: #{reason}"}}
-        end
-      end)
-      |> then(fn
-        {:ok, tasks} -> validate(Enum.reverse(tasks))
-        error -> error
-      end)
+    with {:ok, source} <- read_source(path) do
+      parse_body(source.body)
     end
   end
 
@@ -71,15 +62,30 @@ defmodule SpruceGoose.Ledger do
   end
 
   def import(path) do
-    with :ok <- Authority.require_tuxedo(),
-         {:ok, tasks} <- read(path) do
+    # Authorization must remain before recovery-mode, filesystem, or database checks.
+    with {:ok, actor} <- authorize_admin(),
+         :ok <- Authority.require_tuxedo(),
+         :ok <- require_recovery_mode(),
+         {:ok, source} <- read_source(path),
+         {:ok, tasks} <- parse_body(source.body) do
+      # AUTHORIZATION: the global-admin check above precedes this transaction.
       Repo.transaction(fn ->
         with :ok <- import_hierarchy(tasks),
              :ok <- import_tasks(tasks),
              :ok <- import_dependencies(tasks) do
           case parity_tasks(tasks) do
-            {:ok, _result} = success -> success
-            {:error, reason} -> Repo.rollback(reason)
+            {:ok, result} ->
+              receipt = record_receipt!(actor, source, result)
+
+              {:ok,
+               Map.merge(result, %{
+                 receipt_id: receipt.id,
+                 actor_id: actor.id,
+                 actor_name: actor.name
+               })}
+
+            {:error, reason} ->
+              Repo.rollback(reason)
           end
         else
           {:error, reason} -> Repo.rollback(reason)
@@ -93,7 +99,257 @@ defmodule SpruceGoose.Ledger do
   end
 
   def parity(path) do
-    with {:ok, tasks} <- read(path), do: parity_tasks(tasks)
+    # Authorization must remain before filesystem or database checks.
+    with {:ok, actor} <- authorize_admin(),
+         {:ok, source} <- read_source(path),
+         {:ok, tasks} <- parse_body(source.body),
+         {:ok, result} <- parity_tasks(tasks) do
+      {:ok, Map.merge(result, %{actor_id: actor.id, actor_name: actor.name})}
+    end
+  end
+
+  defp parse_body(body) do
+    body
+    |> String.split("\n", trim: true)
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, []}, fn {line, number}, {:ok, tasks} ->
+      case parse(line) do
+        {:ok, task} -> {:cont, {:ok, [task | tasks]}}
+        {:error, reason} -> {:halt, {:error, "line #{number}: #{reason}"}}
+      end
+    end)
+    |> then(fn
+      {:ok, tasks} -> validate(Enum.reverse(tasks))
+      error -> error
+    end)
+  end
+
+  defp read_source(path) do
+    task = Task.async(fn -> read_source_now(path) end)
+
+    case Task.yield(task, open_timeout_ms()) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      nil -> {:error, "ledger source open timed out"}
+    end
+  end
+
+  defp read_source_now(path) do
+    with {:ok, root} <- configured_root(),
+         {:ok, expanded} <- within_root(path, root),
+         {:ok, io} <- open_source(expanded) do
+      try do
+        inspect_source(io, expanded, root)
+      after
+        File.close(io)
+      end
+    end
+  end
+
+  defp configured_root do
+    case Application.get_env(:spruce_goose, :ledger_import_root) do
+      root when is_binary(root) and root != "" -> {:ok, Path.expand(root)}
+      _ -> {:error, "ledger import root is not configured"}
+    end
+  end
+
+  defp within_root(path, root) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if String.starts_with?(expanded, root <> "/") do
+      {:ok, expanded}
+    else
+      {:error, "ledger source must be within the configured root"}
+    end
+  end
+
+  defp within_root(_path, _root), do: {:error, "ledger source path is invalid"}
+
+  defp open_source(path) do
+    # Refuse pathnames that are already non-regular before opening. In particular,
+    # a read-only open of a FIFO blocks waiting for a writer and would prevent the
+    # descriptor checks below from ever running. The opened descriptor is still
+    # revalidated afterwards, so this preflight is not trusted for identity.
+    with {:ok, %{type: :regular}} <- File.lstat(path),
+         result <- File.open(path, [:read, :binary, :raw]) do
+      case result do
+        {:ok, io} -> {:ok, io}
+        {:error, :eisdir} -> {:error, "ledger source must be a regular file"}
+        {:error, _reason} -> {:error, "ledger source is unavailable"}
+      end
+    else
+      {:ok, %{type: :symlink}} -> {:error, "ledger source must not be a symlink"}
+      {:ok, _stat} -> {:error, "ledger source must be a regular file"}
+      {:error, _reason} -> {:error, "ledger source is unavailable"}
+    end
+  end
+
+  defp inspect_source(io, path, root) do
+    with {:ok, descriptor_record} <- :file.read_file_info(io),
+         descriptor = File.Stat.from_record(descriptor_record),
+         :ok <- no_symlink_components(path, root),
+         {:ok, pathname} <- File.lstat(path),
+         :ok <- regular_source(descriptor, pathname),
+         :ok <- same_open_file(descriptor, pathname),
+         :ok <- bounded_size(descriptor.size),
+         {:ok, body} <- bounded_read(io),
+         {:ok, lines} <- bounded_lines(body) do
+      {:ok,
+       %{
+         body: body,
+         bytes: byte_size(body),
+         lines: lines,
+         name: Path.relative_to(path, root),
+         sha256: :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
+       }}
+    else
+      {:error, :enoent} -> {:error, "ledger source is unavailable"}
+      error -> error
+    end
+  end
+
+  defp no_symlink_components(path, root) do
+    path
+    |> Path.relative_to(root)
+    |> Path.split()
+    |> Enum.drop(-1)
+    |> Enum.reduce_while(root, fn component, parent ->
+      current = Path.join(parent, component)
+
+      case File.lstat(current) do
+        {:ok, %{type: :symlink}} -> {:halt, {:error, "ledger source must not use symlinks"}}
+        {:ok, _stat} -> {:cont, current}
+        {:error, _reason} -> {:halt, {:error, "ledger source is unavailable"}}
+      end
+    end)
+    |> case do
+      {:error, _message} = error -> error
+      _parent -> :ok
+    end
+  end
+
+  defp regular_source(_descriptor, %{type: :symlink}),
+    do: {:error, "ledger source must not be a symlink"}
+
+  defp regular_source(%{type: :regular}, %{type: :regular}), do: :ok
+
+  defp regular_source(_descriptor, _pathname),
+    do: {:error, "ledger source must be a regular file"}
+
+  defp same_open_file(descriptor, pathname) do
+    fields = [:inode, :major_device, :minor_device]
+
+    if Enum.all?(fields, &(Map.fetch!(descriptor, &1) == Map.fetch!(pathname, &1))) do
+      :ok
+    else
+      {:error, "ledger source changed while it was opened"}
+    end
+  end
+
+  defp bounded_size(size) do
+    if size <= max_bytes(), do: :ok, else: {:error, "ledger source exceeds the byte limit"}
+  end
+
+  defp bounded_read(io) do
+    limit = max_bytes()
+
+    case IO.binread(io, limit + 1) do
+      :eof -> {:ok, ""}
+      {:error, _reason} -> {:error, "ledger source could not be read"}
+      body when byte_size(body) <= limit -> {:ok, body}
+      _body -> {:error, "ledger source exceeds the byte limit"}
+    end
+  end
+
+  defp bounded_lines(body) do
+    lines =
+      case body do
+        "" ->
+          0
+
+        _ ->
+          length(:binary.matches(body, "\n")) + if(String.ends_with?(body, "\n"), do: 0, else: 1)
+      end
+
+    if lines <= max_lines(),
+      do: {:ok, lines},
+      else: {:error, "ledger source exceeds the line limit"}
+  end
+
+  defp max_bytes, do: Application.fetch_env!(:spruce_goose, :ledger_max_bytes)
+  defp max_lines, do: Application.fetch_env!(:spruce_goose, :ledger_max_lines)
+  defp open_timeout_ms, do: Application.fetch_env!(:spruce_goose, :ledger_open_timeout_ms)
+
+  defp authorize_admin do
+    actor = Authz.actor!()
+
+    if Scope.holds?(actor, :admin, :global) do
+      {:ok, actor}
+    else
+      {:error, "ledger parity and recovery import require admin at global scope"}
+    end
+  end
+
+  defp require_recovery_mode do
+    enabled? = Application.get_env(:spruce_goose, :ledger_recovery_mode, false)
+    expected = Application.get_env(:spruce_goose, :ledger_recovery_database)
+    configured = Repo.config()[:database]
+
+    # AUTHORIZATION: import/1 has already required a global admin before this
+    # connected-database identity query; keep this query behind that entrypoint.
+    current =
+      Repo.query!("SELECT current_database()", []).rows
+      |> List.first()
+      |> List.first()
+
+    # AUTHORIZATION: import/1 has already required a global admin; this durable
+    # marker is cloned with the database and must be changed only on the offline
+    # recovery copy before imports are enabled.
+    # AUTHORIZATION: same global-admin-gated recovery check as above.
+    recovery_instance? =
+      Repo.query!(
+        "SELECT purpose = 'recovery' FROM authority_instance_identity WHERE singleton",
+        []
+      )
+      |> Map.fetch!(:rows)
+      |> List.first()
+      |> List.first()
+
+    cond do
+      not enabled? ->
+        {:error, "ledger import requires explicit offline recovery mode"}
+
+      not is_binary(expected) or expected == "" ->
+        {:error, "ledger recovery database is not configured"}
+
+      configured != expected or current != expected ->
+        {:error, "ledger recovery mode is bound to a different database"}
+
+      not recovery_instance? ->
+        {:error, "ledger import requires a database marked as an offline recovery instance"}
+
+      current == @live_database ->
+        {:error, "ledger import is forbidden on the live authority database"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp record_receipt!(actor, source, result) do
+    %ImportReceipt{
+      id: Ecto.UUID.generate(),
+      actor_id: actor.id,
+      actor_name: actor.name,
+      source_name: source.name,
+      source_sha256: source.sha256,
+      source_bytes: source.bytes,
+      source_lines: source.lines,
+      task_count: result.tasks,
+      dependency_count: result.dependencies,
+      inserted_at: DateTime.utc_now()
+    }
+    # AUTHORIZATION: only import/1 calls this after its global-admin check.
+    |> Repo.insert!()
   end
 
   defp validate(tasks) do
@@ -405,5 +661,7 @@ defmodule SpruceGoose.Ledger do
     end
   end
 
+  # AUTHORIZATION: all import SQL is reachable only through import/1 after its
+  # global-admin gate; statement values remain parameterized.
   defp sql!(statement, params \\ []), do: Ecto.Adapters.SQL.query!(Repo, statement, params)
 end

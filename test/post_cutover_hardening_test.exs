@@ -2,10 +2,22 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.CLI.Executor
-  alias SpruceGoose.Ledger
   alias SpruceGoose.Workflows.{Board, BoardColumn, Definition, Project, Roadmap, Task, Workflow}
 
   test "PC-01: completed authority cutover is immutable and import stays disabled" do
+    previous_root = Application.get_env(:spruce_goose, :ledger_import_root)
+    previous_recovery = Application.get_env(:spruce_goose, :ledger_recovery_mode)
+    previous_database = Application.get_env(:spruce_goose, :ledger_recovery_database)
+    Application.put_env(:spruce_goose, :ledger_import_root, "/home/admin-papa/tasks")
+    Application.put_env(:spruce_goose, :ledger_recovery_mode, true)
+    Application.put_env(:spruce_goose, :ledger_recovery_database, Repo.config()[:database])
+
+    on_exit(fn ->
+      restore(:ledger_import_root, previous_root)
+      restore(:ledger_recovery_mode, previous_recovery)
+      restore(:ledger_recovery_database, previous_database)
+    end)
+
     Repo.query!(
       "UPDATE spruce_goose_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE"
     )
@@ -17,8 +29,11 @@ defmodule SpruceGoose.PostCutoverHardeningTest do
              Repo.query("UPDATE spruce_goose_authority SET cutover_at = NULL WHERE id = TRUE")
 
     assert {:error, "ledger import is disabled while ash is authoritative"} =
-             Ledger.import("/home/admin-papa/tasks/todo.txt")
+             Executor.run({:import_ledger, "/home/admin-papa/tasks/todo.txt"})
   end
+
+  defp restore(key, nil), do: Application.delete_env(:spruce_goose, key)
+  defp restore(key, value), do: Application.put_env(:spruce_goose, key, value)
 
   test "PC-02/06: terminal TODO admission fails and concurrent admission is race-free" do
     %{task: task} = fixture("todos")

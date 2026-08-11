@@ -29,6 +29,7 @@ defmodule SpruceGoose.Identity.Local do
 
   @impl true
   def peer_id do
+    # AUTHORIZATION: internal singleton node identity, not actor-owned task data.
     case Repo.query!("SELECT peer_public_key FROM spruce_goose_identity WHERE id IS TRUE", []) do
       %{rows: [[key]]} when is_binary(key) -> key
       %{rows: []} -> provision_peer_key()
@@ -37,6 +38,7 @@ defmodule SpruceGoose.Identity.Local do
 
   @impl true
   def next_seq do
+    # AUTHORIZATION: internal monotonic origin sequence, not actor-owned task data.
     %{rows: [[seq]]} = Repo.query!("SELECT nextval('spruce_goose_origin_seq')", [])
     seq
   end
@@ -54,6 +56,7 @@ defmodule SpruceGoose.Identity.Local do
   def provision_peer_key do
     {public_key, private_key} = :crypto.generate_key(:eddsa, :ed25519)
 
+    # AUTHORIZATION: internal one-time node identity provisioning guarded by DB constraints.
     Repo.query!(
       """
       INSERT INTO spruce_goose_identity
@@ -64,6 +67,7 @@ defmodule SpruceGoose.Identity.Local do
       [public_key, private_key]
     )
 
+    # AUTHORIZATION: reads the singleton provisioned immediately above.
     %{rows: [[key]]} =
       Repo.query!("SELECT peer_public_key FROM spruce_goose_identity WHERE id IS TRUE", [])
 

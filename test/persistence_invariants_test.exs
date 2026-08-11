@@ -77,6 +77,24 @@ defmodule SpruceGoose.PersistenceInvariantsTest do
     assert Exception.message(error) =~ "cycle"
   end
 
+  test "database rejects direct corruption of dependency workflow metadata" do
+    {workflow, first} = hierarchy("edge-workflow")
+    second = task_for(workflow, "edge-workflow-second")
+    {other_workflow, _other_task} = hierarchy("edge-workflow-other")
+
+    assert {:ok, dependency} =
+             Ash.create(Dependency, %{predecessor_id: first.id, successor_id: second.id})
+
+    assert {:error, %Postgrex.Error{postgres: %{message: message}}} =
+             Repo.query(
+               "UPDATE task_dependencies SET workflow_id = $1 WHERE id = $2",
+               [Ecto.UUID.dump!(other_workflow.id), Ecto.UUID.dump!(dependency.id)],
+               mode: :savepoint
+             )
+
+    assert message =~ "must match its endpoints"
+  end
+
   test "concurrent opposing dependency inserts cannot persist a cycle" do
     workflow = workflow_for("concurrent")
     first = task_for(workflow, "concurrent-first")

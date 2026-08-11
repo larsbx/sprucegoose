@@ -1,11 +1,39 @@
 defmodule SpruceGoose.Workflows.Task do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("workflow_tasks")
     repo(SpruceGoose.Repo)
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    # Admitting and driving work is the operator's whole job — this is the bulk
+    # of what an agent does, and is deliberately distinct from being allowed to
+    # revise what the work says.
+    policy action_type([:create, :destroy]) do
+      authorize_if(HasRole.operator())
+    end
+
+    policy action([:transition, :move, :update_board_metadata, :acknowledge_sop]) do
+      authorize_if(HasRole.operator())
+    end
+
+    policy action(:record_artifact_receipt) do
+      authorize_if(HasRole.artifact_verifier())
+    end
+
+    policy action(:revise) do
+      authorize_if(HasRole.approver())
+    end
   end
 
   attributes do
@@ -24,6 +52,11 @@ defmodule SpruceGoose.Workflows.Task do
     attribute(:sop_id, :string, public?: true)
     attribute(:sop_path, :string, public?: true)
     attribute(:sop_digest, :string, public?: true)
+
+    # Nullable because null *is* the grandfathered state: every acknowledgment
+    # taken before the SOP declared a version carries none, and must stay
+    # representable rather than being backfilled with a version nobody read.
+    attribute(:sop_version, :string, public?: true)
     attribute(:sop_acknowledged_at, :utc_datetime_usec, public?: true)
 
     attribute(:state, SpruceGoose.Workflows.TaskState,
@@ -34,6 +67,14 @@ defmodule SpruceGoose.Workflows.Task do
 
     attribute(:runner, SpruceGoose.Workflows.TaskKind, allow_nil?: false, public?: true)
     attribute(:input, :map, allow_nil?: false, default: %{}, public?: true)
+
+    attribute(:artifact_requirements, {:array, :string},
+      allow_nil?: false,
+      default: [],
+      public?: true
+    )
+
+    attribute(:artifact_receipts, {:array, :map}, allow_nil?: false, default: [], public?: true)
     attribute(:origin_event_id, :string, public?: true)
     attribute(:lock_version, :integer, allow_nil?: false, default: 1, public?: true)
     attribute(:description, :string, public?: true)
@@ -91,6 +132,7 @@ defmodule SpruceGoose.Workflows.Task do
         :definition_of_done,
         :runner,
         :input,
+        :artifact_requirements,
         :origin_event_id,
         :description,
         :board_id,
@@ -109,6 +151,19 @@ defmodule SpruceGoose.Workflows.Task do
     update :revise do
       require_atomic?(false)
       accept([:title, :description, :definition_of_done, :runner, :input])
+      change(optimistic_lock(:lock_version))
+    end
+
+    update :record_artifact_receipt do
+      require_atomic?(false)
+      accept([:artifact_receipts])
+
+      validate(fn changeset, _context ->
+        if changeset.data.state in [:inbox, :proposed, :queued],
+          do: :ok,
+          else: {:error, field: :artifact_receipts, message: "are immutable after readiness"}
+      end)
+
       change(optimistic_lock(:lock_version))
     end
 
@@ -151,6 +206,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_artifact_readiness(changeset) end)
       validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
@@ -201,6 +257,7 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       validate(fn changeset, _context -> validate_start(changeset) end)
+      validate(fn changeset, _context -> validate_artifact_readiness(changeset) end)
       validate(fn changeset, _context -> validate_predecessors(changeset) end)
 
       change(fn changeset, _context ->
@@ -234,6 +291,7 @@ defmodule SpruceGoose.Workflows.Task do
     end)
 
     validate(fn changeset, _context -> valid_board_metadata(changeset) end)
+    validate(fn changeset, _context -> valid_artifacts(changeset) end)
   end
 
   defp valid_custom_fields(fields) when fields in [nil, %{}], do: :ok
@@ -258,11 +316,17 @@ defmodule SpruceGoose.Workflows.Task do
     id = Ash.Changeset.get_attribute(changeset, :sop_id)
     path = Ash.Changeset.get_attribute(changeset, :sop_path)
     digest = Ash.Changeset.get_attribute(changeset, :sop_digest)
+    version = Ash.Changeset.get_attribute(changeset, :sop_version)
     acknowledged_at = Ash.Changeset.get_attribute(changeset, :sop_acknowledged_at)
 
     cond do
       required == false ->
         :ok
+
+      # nil is the grandfathered state and stays valid; a recorded version that
+      # is not semver could never be compared, so it is refused at the door.
+      not is_nil(version) and match?(:error, Version.parse(version)) ->
+        {:error, field: :sop_version, message: "must be semantic versioning"}
 
       id != SpruceGoose.SopGate.id() ->
         {:error, field: :sop_id, message: "must identify the Systemwide SOP"}
@@ -303,6 +367,73 @@ defmodule SpruceGoose.Workflows.Task do
        else: :ok
   end
 
+  defp validate_artifact_readiness(changeset) do
+    if Ash.Changeset.get_argument(changeset, :to_state) == :ready do
+      requirements = changeset.data.artifact_requirements || []
+      receipts = changeset.data.artifact_receipts || []
+      received = MapSet.new(receipts, &Map.get(&1, "name"))
+      missing = Enum.reject(requirements, &MapSet.member?(received, &1))
+
+      if missing == [],
+        do: :ok,
+        else:
+          {:error,
+           field: :artifact_receipts,
+           message: "missing verified receipts for: #{Enum.join(missing, ", ")}"}
+    else
+      :ok
+    end
+  end
+
+  defp valid_artifacts(changeset) do
+    requirements = Ash.Changeset.get_attribute(changeset, :artifact_requirements) || []
+    receipts = Ash.Changeset.get_attribute(changeset, :artifact_receipts) || []
+
+    cond do
+      requirements != Enum.uniq(requirements) or not Enum.all?(requirements, &bounded_name?/1) ->
+        {:error, field: :artifact_requirements, message: "must be unique bounded names"}
+
+      not Enum.all?(receipts, &valid_artifact_receipt?/1) ->
+        {:error,
+         field: :artifact_receipts, message: "must contain verified immutable receipt fields"}
+
+      Enum.any?(receipts, &(Map.get(&1, "name") not in requirements)) ->
+        {:error, field: :artifact_receipts, message: "must match a declared artifact requirement"}
+
+      receipts |> Enum.map(&Map.get(&1, "name")) |> Enum.uniq() |> length() != length(receipts) ->
+        {:error, field: :artifact_receipts, message: "must contain one receipt per artifact"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valid_artifact_receipt?(receipt) when is_map(receipt) do
+    with name when is_binary(name) <- Map.get(receipt, "name"),
+         digest when is_binary(digest) <- Map.get(receipt, "sha256"),
+         size when is_integer(size) and size > 0 <- Map.get(receipt, "size_bytes"),
+         locator when is_binary(locator) <- Map.get(receipt, "storage_locator"),
+         source when is_binary(source) <- Map.get(receipt, "source_identity"),
+         verifier when is_binary(verifier) <- Map.get(receipt, "retrieval_verifier"),
+         verified_at when is_binary(verified_at) <- Map.get(receipt, "retrieval_verified_at"),
+         true <- bounded_name?(name),
+         true <- Regex.match?(~r/^[0-9a-f]{64}$/, digest),
+         true <- locator == "cas:sha256:" <> digest,
+         true <- String.trim(source) != "",
+         true <- String.trim(verifier) != "",
+         true <-
+           Map.keys(receipt) |> Enum.sort() ==
+             ~w(name retrieval_verified_at retrieval_verifier sha256 size_bytes source_identity storage_locator),
+         {:ok, date, 0} <- DateTime.from_iso8601(verified_at),
+         true <- DateTime.compare(date, DateTime.utc_now()) != :gt do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  defp valid_artifact_receipt?(_), do: false
+
   defp validate_predecessors(changeset) do
     if Ash.Changeset.get_argument(changeset, :to_state) == :in_progress do
       sql = """
@@ -314,6 +445,7 @@ defmodule SpruceGoose.Workflows.Task do
       LIMIT 1
       """
 
+      # AUTHORIZATION: Ash change validation; the enclosing action carries the actor.
       case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [changeset.data.id]).rows do
         [] -> :ok
         _ -> {:error, field: :state, message: "task has incomplete predecessors"}
@@ -375,6 +507,7 @@ defmodule SpruceGoose.Workflows.Task do
       AND bc.task_state = $4
     """
 
+    # AUTHORIZATION: Ash change validation; the enclosing action carries the actor.
     case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [
            column_id,
            board_id,
@@ -394,6 +527,7 @@ defmodule SpruceGoose.Workflows.Task do
   defp align_board_column(changeset, state) do
     sql = "SELECT id FROM board_columns WHERE board_id = $1::text::uuid AND task_state = $2"
 
+    # AUTHORIZATION: Ash transition hook; the enclosing action carries the actor.
     case Ecto.Adapters.SQL.query!(SpruceGoose.Repo, sql, [
            changeset.data.board_id,
            to_string(state)

@@ -52,6 +52,28 @@ defmodule SpruceGoose.MigrationUpgradeTest do
                """
              )
 
+    assert %{rows: [["sprucegoose_task_dependency_graph"]]} =
+             Ecto.Adapters.SQL.query!(
+               UpgradeRepo,
+               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
+             )
+
+    Ecto.Migrator.run(UpgradeRepo, @migrations, :down, to: 20_260_810_133_000)
+
+    assert %{rows: []} =
+             Ecto.Adapters.SQL.query!(
+               UpgradeRepo,
+               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
+             )
+
+    Ecto.Migrator.run(UpgradeRepo, @migrations, :up, all: true)
+
+    assert %{rows: [["sprucegoose_task_dependency_graph"]]} =
+             Ecto.Adapters.SQL.query!(
+               UpgradeRepo,
+               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
+             )
+
     GenServer.stop(UpgradeRepo)
   end
 end

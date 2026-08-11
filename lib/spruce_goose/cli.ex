@@ -14,8 +14,15 @@ defmodule SpruceGoose.CLI do
     end
   end
 
+  # `--as` is stripped before parsing rather than declared on every verb: each
+  # clause parses with `strict:`, so an undeclared flag would be rejected by
+  # whichever verb it landed on. Pulling it out once keeps it genuinely global.
   def run(args) do
-    with {:ok, command} <- Command.parse(args), do: Executor.run(command)
+    {actor_name, args} = Command.extract_actor(args)
+
+    with :ok <- SpruceGoose.AuthorityRuntime.ensure_local_execution_allowed(),
+         {:ok, command} <- Command.parse(args),
+         do: Executor.run(command, actor_name)
   end
 
   defp inspect_error(:usage), do: "usage: " <> Command.usage()

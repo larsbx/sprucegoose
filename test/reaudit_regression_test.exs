@@ -2,24 +2,39 @@ defmodule SpruceGoose.ReauditRegressionTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.CLI.Executor
-  alias SpruceGoose.Ledger
   alias SpruceGoose.Workflows.{Dependency, Task}
 
   @a "tsk-20260727T104500Z-11111111"
   @b "tsk-20260727T104501Z-22222222"
   @c "tsk-20260727T104502Z-33333333"
 
+  setup do
+    previous_root = Application.get_env(:spruce_goose, :ledger_import_root)
+    previous_recovery = Application.get_env(:spruce_goose, :ledger_recovery_mode)
+    previous_database = Application.get_env(:spruce_goose, :ledger_recovery_database)
+    Application.put_env(:spruce_goose, :ledger_import_root, System.tmp_dir!())
+    Application.put_env(:spruce_goose, :ledger_recovery_mode, true)
+    Application.put_env(:spruce_goose, :ledger_recovery_database, Repo.config()[:database])
+    Repo.query!("UPDATE authority_instance_identity SET purpose = 'recovery' WHERE singleton")
+
+    on_exit(fn ->
+      restore(:ledger_import_root, previous_root)
+      restore(:ledger_recovery_mode, previous_recovery)
+      restore(:ledger_recovery_database, previous_database)
+    end)
+  end
+
   test "refresh preserves native metadata, invalidates stale writes, and locks after cutover" do
     path = ledger([line(@a, "Original")])
     on_exit(fn -> File.rm(path) end)
 
-    assert {:ok, %{parity: true}} = Ledger.import(path)
+    assert {:ok, %{parity: true}} = Executor.run({:import_ledger, path})
     {:ok, stale} = read_task(@a)
     assert {:ok, _} = Executor.run({:link_task, @a, "evidence", "/tmp/native"})
     {:ok, before_refresh} = read_task(@a)
 
     File.write!(path, line(@a, "Refreshed") <> "\n")
-    assert {:ok, %{parity: true}} = Ledger.import(path)
+    assert {:ok, %{parity: true}} = Executor.run({:import_ledger, path})
     {:ok, refreshed} = read_task(@a)
 
     assert refreshed.title == "Refreshed"
@@ -32,7 +47,10 @@ defmodule SpruceGoose.ReauditRegressionTest do
              |> Ash.update()
 
     sql!("UPDATE spruce_goose_authority SET mode = 'ash', cutover_at = now() WHERE id = TRUE")
-    assert {:error, "ledger import is disabled while ash is authoritative"} = Ledger.import(path)
+
+    assert {:error, "ledger import is disabled while ash is authoritative"} =
+             Executor.run({:import_ledger, path})
+
     assert {:ok, %{title: "Refreshed"}} = Executor.run({:show_task, @a})
   end
 
@@ -45,14 +63,14 @@ defmodule SpruceGoose.ReauditRegressionTest do
       ])
 
     on_exit(fn -> File.rm(path) end)
-    assert {:ok, %{dependencies: 1}} = Ledger.import(path)
+    assert {:ok, %{dependencies: 1}} = Executor.run({:import_ledger, path})
 
     {:ok, b} = read_task(@b)
     {:ok, c} = read_task(@c)
     assert {:ok, _} = Ash.create(Dependency, %{predecessor_id: b.id, successor_id: c.id})
 
     File.write!(path, Enum.join([line(@a, "A"), line(@b, "B"), line(@c, "C")], "\n") <> "\n")
-    assert {:ok, %{dependencies: 0, parity: true}} = Ledger.import(path)
+    assert {:ok, %{dependencies: 0, parity: true}} = Executor.run({:import_ledger, path})
 
     assert [[0]] = sql!("SELECT count(*) FROM task_dependencies WHERE source = 'tuxedo'").rows
     assert [[1]] = sql!("SELECT count(*) FROM task_dependencies WHERE source = 'native'").rows
@@ -66,7 +84,7 @@ defmodule SpruceGoose.ReauditRegressionTest do
       ])
 
     on_exit(fn -> File.rm(path) end)
-    assert {:ok, %{parity: true}} = Ledger.import(path)
+    assert {:ok, %{parity: true}} = Executor.run({:import_ledger, path})
 
     assert {:error, "task must be ready"} =
              Executor.run({:transition_task, @a, :in_progress, nil})
@@ -125,4 +143,7 @@ defmodule SpruceGoose.ReauditRegressionTest do
   end
 
   defp sql!(statement), do: Ecto.Adapters.SQL.query!(SpruceGoose.Repo, statement, [])
+
+  defp restore(key, nil), do: Application.delete_env(:spruce_goose, key)
+  defp restore(key, value), do: Application.put_env(:spruce_goose, key, value)
 end

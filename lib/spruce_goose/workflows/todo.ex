@@ -1,11 +1,24 @@
 defmodule SpruceGoose.Workflows.Todo do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("task_todos")
     repo(SpruceGoose.Repo)
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    policy action_type([:create, :update, :destroy]) do
+      authorize_if(HasRole.operator())
+    end
   end
 
   attributes do

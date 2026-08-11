@@ -1,5 +1,15 @@
 import Config
 
+if config_env() == :test do
+  if marker = System.get_env("SPRUCE_GOOSE_TEST_AUTHORITY_MARKER") do
+    config :spruce_goose, :authority_host_marker, marker
+  end
+
+  if System.get_env("SPRUCE_GOOSE_TEST_DOGFOOD") == "true" do
+    config :spruce_goose, SpruceGoose.Repo, pool: DBConnection.ConnectionPool
+  end
+end
+
 config :spruce_goose,
        :systemwide_sop_path,
        System.get_env(
@@ -25,9 +35,42 @@ outbox_handler =
 if outbox_enabled? and is_nil(outbox_handler),
   do: raise("OUTBOX_HANDLER is required when OUTBOX_DISPATCHER_ENABLED is true")
 
+if outbox_enabled? do
+  case SpruceGoose.Outbox.Dispatcher.validate_handler(outbox_handler) do
+    :ok -> :ok
+    {:error, message} -> raise message
+  end
+end
+
 config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler
+
+config :spruce_goose,
+  ledger_import_root: System.get_env("LEDGER_IMPORT_ROOT"),
+  ledger_max_bytes: String.to_integer(System.get_env("LEDGER_MAX_BYTES", "1048576")),
+  ledger_max_lines: String.to_integer(System.get_env("LEDGER_MAX_LINES", "10000")),
+  ledger_open_timeout_ms: String.to_integer(System.get_env("LEDGER_OPEN_TIMEOUT_MS", "1000")),
+  ledger_recovery_mode: System.get_env("LEDGER_RECOVERY_MODE", "false") in ["1", "true"],
+  ledger_recovery_database: System.get_env("LEDGER_RECOVERY_DATABASE")
+
+config :spruce_goose,
+  artifact_store_root:
+    System.get_env(
+      "ARTIFACT_STORE_ROOT",
+      if(config_env() == :prod,
+        do: "/var/lib/sprucegoose/artifacts",
+        else: Path.join(System.tmp_dir!(), "sprucegoose-artifacts")
+      )
+    ),
+  artifact_max_bytes: String.to_integer(System.get_env("ARTIFACT_MAX_BYTES", "67108864"))
+
+if outbox_enabled? do
+  config :spruce_goose, Oban,
+    plugins: [
+      {Oban.Plugins.Cron, crontab: SpruceGoose.Outbox.Dispatcher.cron_config()}
+    ]
+end
 
 cli_service_enabled? =
   System.get_env("SPRUCE_GOOSE_CLI_SERVICE_ENABLED", "false") in ["1", "true"]

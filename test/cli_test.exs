@@ -7,7 +7,8 @@ defmodule SpruceGoose.CLITest do
   alias SpruceGoose.TaskId
 
   test "returns scoped help for every command family and rejects unknown families" do
-    families = ~w(id project roadmap workflow task dep todo board column filter inbox ledger)
+    families =
+      ~w(id project roadmap workflow task dep todo board column filter inbox ledger outbox)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -18,7 +19,7 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, task_help} = CLI.run(["task", "--help"])
 
-    assert "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] TITLE" in task_help.forms
+    assert "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE" in task_help.forms
 
     assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
 
@@ -37,6 +38,15 @@ defmodule SpruceGoose.CLITest do
     refute TaskId.valid?("tsk-20260231T012351Z-ea5ba1b1")
     refute TaskId.valid?("tsk-20260727T012351Z-EA5BA1B1")
     refute TaskId.valid?("114")
+  end
+
+  test "parses failed-event inspection and replay commands" do
+    assert {:ok, :list_failed_outbox} = Command.parse(["outbox", "failed"])
+
+    assert {:ok, {:replay_outbox, "ad6cb708-3d90-47de-a701-19a45689f7ee"}} =
+             Command.parse(["outbox", "replay", "ad6cb708-3d90-47de-a701-19a45689f7ee"])
+
+    assert {:error, :usage} = Command.parse(["outbox", "replay"])
   end
 
   test "task admission requires typed membership, DoD, type, and title" do
@@ -214,6 +224,25 @@ defmodule SpruceGoose.CLITest do
              ])
   end
 
+  test "parses dependency graph query commands" do
+    task_id = "tsk-20260810T142243Z-66915779"
+
+    assert {:ok, {:task_blockers, ^task_id}} =
+             Command.parse(["task", "blockers", task_id])
+
+    assert {:ok, {:task_impact, ^task_id}} =
+             Command.parse(["task", "impact", task_id])
+
+    assert {:ok, {:workflow_critical_path, "openclaw-system", "convergence", "v1"}} =
+             Command.parse([
+               "workflow",
+               "critical-path",
+               "openclaw-system",
+               "convergence",
+               "v1"
+             ])
+  end
+
   test "hierarchy read commands reject stray arguments and unknown options" do
     assert {:error, :usage} = Command.parse(["project", "list", "extra"])
     assert {:error, :usage} = Command.parse(["project", "show"])
@@ -275,6 +304,16 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["task", "acknowledge-sop", id, SopGate.path()])
 
     assert sop_path == SopGate.path()
+
+    assert {:ok, {:record_artifact_receipt, ^id, "prototype", "/tmp/prototype", "telegram:6680"}} =
+             Command.parse([
+               "task",
+               "artifact-receipt",
+               id,
+               "prototype",
+               "/tmp/prototype",
+               "telegram:6680"
+             ])
 
     assert {:ok, {:transition_task, ^id, :completed, nil}} = Command.parse(["task", "done", id])
 

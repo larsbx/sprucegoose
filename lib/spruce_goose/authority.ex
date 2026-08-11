@@ -4,6 +4,7 @@ defmodule SpruceGoose.Authority do
   alias SpruceGoose.Repo
 
   def mode do
+    # AUTHORIZATION: read-only system authority gate, not operator data access.
     case Ecto.Adapters.SQL.query!(Repo, "SELECT mode FROM spruce_goose_authority WHERE id = TRUE").rows do
       [[mode]] -> {:ok, mode}
       _ -> {:error, "authority state is missing"}
