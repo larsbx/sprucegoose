@@ -110,8 +110,10 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert body =~ ~s([[ ! -e "$receipt" ]])
     assert body =~ "signal.signal(signal.SIGINT, signal.SIG_DFL)"
     assert body =~ "CORR7_EXPECTED_TREE"
+    assert body =~ "CORR7_EXPECTED_HEAD"
     assert body =~ "CORR7_EXPECTED_ARCHIVE_SHA256"
     assert body =~ "expected_tree=%s"
+    assert body =~ "expected_head=%s"
     assert body =~ "expected_archive_sha256=%s"
     assert body =~ "sha256sum"
     assert body =~ "chmod 0400"
@@ -222,6 +224,39 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert guard =~ "candidate and live PGDATA resolve on different mounts"
     assert prepare =~ "pgdata_guard="
     assert before?(prepare, ~s("$pgdata_guard" "$root"), ~s(rm -rf -- "$root"))
+  end
+
+  test "every recursively deleted rehearsal directory is guarded immediately before deletion" do
+    upgrade = File.read!(Path.join(@root, "run-pg19-upgrade-rehearsal.sh"))
+    actor = File.read!(Path.join(@root, "run-actor-migration-on-pg19-rehearsal.sh"))
+
+    assert upgrade =~
+             ~s("$pgdata_guard" "$evidence" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$evidence")
+
+    assert upgrade =~
+             ~s("$pgdata_guard" "$work_dir" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$work_dir")
+
+    assert actor =~
+             ~s("$pgdata_guard" "$evidence" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$evidence")
+
+    assert actor =~
+             ~s("$pgdata_guard" "$release" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$release")
+  end
+
+  test "all rehearsal exits verify cleanup and fail closed when cleanup is incomplete" do
+    for name <- [
+          "prepare-pg19-upgrade-rehearsal.sh",
+          "run-pg19-upgrade-rehearsal.sh",
+          "run-actor-migration-on-pg19-rehearsal.sh"
+        ] do
+      script = File.read!(Path.join(@root, name))
+      assert script =~ "finalize_exit()"
+      assert script =~ "cleanup_failed=0"
+      assert script =~ "exit_status=1"
+      assert script =~ "sprucegoose-postgresql.service"
+      assert script =~ "sprucegoose.service"
+      assert script =~ "trap finalize_exit EXIT"
+    end
   end
 
   test "clean actor evidence is finalized from EXIT after cleanup and live-service checks" do

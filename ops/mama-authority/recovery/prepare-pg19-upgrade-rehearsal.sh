@@ -35,7 +35,24 @@ cleanup_process() {
       "$old_root/bin/pg_ctl" -D "$old_data" -m fast -w stop >/dev/null 2>&1 || true
   fi
 }
-trap cleanup_process EXIT
+
+finalize_exit() {
+  local exit_status=$? cleanup_failed=0
+  trap - EXIT
+  cleanup_process
+  if [[ -d "$old_data" ]] && LD_LIBRARY_PATH="$HOME/pglocal/usr/lib/x86_64-linux-gnu" \
+    "$old_root/bin/pg_ctl" -D "$old_data" status >/dev/null 2>&1; then
+    cleanup_failed=1
+  fi
+  [[ "$(systemctl --user show sprucegoose-postgresql.service -p ActiveState --value)" == active ]] || cleanup_failed=1
+  [[ "$(systemctl --user show sprucegoose.service -p ActiveState --value)" == active ]] || cleanup_failed=1
+  if [[ "$cleanup_failed" == 1 ]]; then
+    printf 'rehearsal cleanup verification failed\n' >&2
+    exit_status=1
+  fi
+  exit "$exit_status"
+}
+trap finalize_exit EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM

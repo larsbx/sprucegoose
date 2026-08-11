@@ -31,7 +31,26 @@ stop_clone() {
     LD_LIBRARY_PATH="$new_root/lib:$old_lib" "$new_root/bin/pg_ctl" -D "$new_data" -m fast -w stop >/dev/null 2>&1 || true
   fi
 }
-trap stop_clone EXIT
+
+finalize_exit() {
+  local exit_status=$? cleanup_failed=0
+  trap - EXIT
+  stop_clone
+  if [[ -d "$old_data" ]] && LD_LIBRARY_PATH="$old_lib" "$old_root/bin/pg_ctl" -D "$old_data" status >/dev/null 2>&1; then
+    cleanup_failed=1
+  fi
+  if [[ -d "$new_data" ]] && LD_LIBRARY_PATH="$new_root/lib:$old_lib" "$new_root/bin/pg_ctl" -D "$new_data" status >/dev/null 2>&1; then
+    cleanup_failed=1
+  fi
+  [[ "$(systemctl --user show sprucegoose-postgresql.service -p ActiveState --value)" == active ]] || cleanup_failed=1
+  [[ "$(systemctl --user show sprucegoose.service -p ActiveState --value)" == active ]] || cleanup_failed=1
+  if [[ "$cleanup_failed" == 1 ]]; then
+    printf 'rehearsal cleanup verification failed\n' >&2
+    exit_status=1
+  fi
+  exit "$exit_status"
+}
+trap finalize_exit EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -86,8 +105,10 @@ new_system_identifier="$(LD_LIBRARY_PATH="$new_root/lib:$old_lib" "$new_root/bin
 grep -Fqx "old_system_identifier=$old_system_identifier" "$root/compatibility-manifest.txt"
 grep -Fqx "new_system_identifier=$new_system_identifier" "$root/compatibility-manifest.txt"
 grep -Fq 'Clusters are compatible' "$log_dir/pg_upgrade-check.log"
+"$pgdata_guard" "$evidence" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null
 rm -rf -- "$evidence"
 install -d -m 0700 "$evidence"
+"$pgdata_guard" "$work_dir" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null
 rm -rf -- "$work_dir"
 install -d -m 0700 "$work_dir"
 

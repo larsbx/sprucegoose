@@ -5,6 +5,7 @@ umask 077
 mode="${1:-}"
 signal="${2:-TERM}"
 run_id="${CORR7_REHEARSAL_RUN_ID:?CORR7_REHEARSAL_RUN_ID is required}"
+expected_head="${CORR7_EXPECTED_HEAD:-not-applicable}"
 expected_tree="${CORR7_EXPECTED_TREE:-not-applicable}"
 expected_archive="${CORR7_EXPECTED_ARCHIVE_SHA256:-not-applicable}"
 root="$HOME/recovery-rehearsal"
@@ -110,6 +111,7 @@ write_receipt() {
     printf 'cleanup=PASS\n'
     printf 'live_postgresql=active\n'
     printf 'live_application=active\n'
+    printf 'expected_head=%s\n' "$expected_head"
     printf 'expected_tree=%s\n' "$expected_tree"
     printf 'expected_archive_sha256=%s\n' "$expected_archive"
     printf 'probe_script_sha256=%s\n' "$(sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1)"
@@ -138,6 +140,7 @@ case "$mode" in
     printf 'clone_signal=%s\nclone_signal_exit=%s\nclone_cleanup=PASS\nlive_services=active\n' "$signal" "$actual_status"
     ;;
   app)
+    [[ "$expected_head" =~ ^[0-9a-f]{40}$ ]]
     [[ "$expected_tree" =~ ^[0-9a-f]{40}$ ]]
     [[ "$expected_archive" =~ ^[0-9a-f]{64}$ ]]
     start_target "$actor" CORR7_REHEARSAL_HOLD_AFTER_APP_START_SECONDS

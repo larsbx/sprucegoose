@@ -61,22 +61,26 @@ cleanup_processes() {
 
 finalize_exit() {
   local exit_status=$?
-  local live_postgresql live_application transient_application
+  local live_postgresql live_application transient_application cleanup_failed=0
   trap - EXIT
   cleanup_processes
 
-  if [[ "$exit_status" == 0 ]]; then
-    live_postgresql="$(systemctl --user show sprucegoose-postgresql.service -p ActiveState --value)"
-    live_application="$(systemctl --user show sprucegoose.service -p ActiveState --value)"
-    transient_application="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+  live_postgresql="$(systemctl --user show sprucegoose-postgresql.service -p ActiveState --value)"
+  live_application="$(systemctl --user show sprucegoose.service -p ActiveState --value)"
+  transient_application="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
+  [[ "$live_postgresql" == active ]] || cleanup_failed=1
+  [[ "$live_application" == active ]] || cleanup_failed=1
+  [[ "$transient_application" != active && "$transient_application" != activating ]] || cleanup_failed=1
+  [[ ! -S "$app_socket" ]] || cleanup_failed=1
+  if [[ -d "$pg_data" ]] && LD_LIBRARY_PATH="$pg_lib" "$pg_bin/pg_ctl" -D "$pg_data" status >/dev/null 2>&1; then
+    cleanup_failed=1
+  fi
+  if [[ "$cleanup_failed" == 1 ]]; then
+    printf 'rehearsal cleanup verification failed\n' >&2
+    exit_status=1
+  fi
 
-    [[ "$live_postgresql" == active ]] || exit 1
-    [[ "$live_application" == active ]] || exit 1
-    [[ "$transient_application" != active && "$transient_application" != activating ]] || exit 1
-    [[ ! -S "$app_socket" ]] || exit 1
-    if [[ -d "$pg_data" ]] && LD_LIBRARY_PATH="$pg_lib" "$pg_bin/pg_ctl" -D "$pg_data" status >/dev/null 2>&1; then
-      exit 1
-    fi
+  if [[ "$exit_status" == 0 ]]; then
     [[ -f "$evidence/actor-manifest.txt" ]] || exit 1
 
     {
@@ -134,9 +138,11 @@ PY
 [[ "$(<"$pg_root/run-id")" == "$run_id" ]]
 grep -Fqx "run_id=$run_id" "$pg_root/evidence/upgrade-manifest.txt"
 (cd "$pg_root/evidence" && sha256sum -c SHA256SUMS >/dev/null)
+"$pgdata_guard" "$evidence" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null
 rm -rf -- "$evidence"
 install -d -m 0700 "$evidence" "$app_socket_dir"
 rm -f -- "$app_socket"
+"$pgdata_guard" "$release" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null
 rm -rf -- "$release"
 tar -C "$root" -xzf "$archive"
 [[ -x "$release/bin/spruce_goose" ]]
