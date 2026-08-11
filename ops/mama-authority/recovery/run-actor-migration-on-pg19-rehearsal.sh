@@ -5,6 +5,7 @@ umask 077
 root="$HOME/recovery-rehearsal"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 pgdata_guard="$script_dir/assert-disposable-pgdata.sh"
+cleanup_state_guard="$script_dir/assert-rehearsal-cleanup-state.sh"
 pg_root="$root/pg19-upgrade-check"
 pg_data="$pg_root/pg19-data"
 pg_socket="$pg_root/socket"
@@ -61,20 +62,20 @@ cleanup_processes() {
 
 finalize_exit() {
   local exit_status=$?
-  local live_postgresql live_application transient_application cleanup_failed=0
+  local live_postgresql live_application transient_application socket_state transient_postgresql cleanup_failed=0
   trap - EXIT
   cleanup_processes
 
   live_postgresql="$(systemctl --user show sprucegoose-postgresql.service -p ActiveState --value)"
   live_application="$(systemctl --user show sprucegoose.service -p ActiveState --value)"
   transient_application="$(systemctl --user show "$unit" -p ActiveState --value 2>/dev/null || true)"
-  [[ "$live_postgresql" == active ]] || cleanup_failed=1
-  [[ "$live_application" == active ]] || cleanup_failed=1
-  [[ "$transient_application" != active && "$transient_application" != activating ]] || cleanup_failed=1
-  [[ ! -S "$app_socket" ]] || cleanup_failed=1
+  socket_state=absent
+  [[ ! -S "$app_socket" ]] || socket_state=present
+  transient_postgresql=inactive
   if [[ -d "$pg_data" ]] && LD_LIBRARY_PATH="$pg_lib" "$pg_bin/pg_ctl" -D "$pg_data" status >/dev/null 2>&1; then
-    cleanup_failed=1
+    transient_postgresql=active
   fi
+  "$cleanup_state_guard" "$live_postgresql" "$live_application" "$transient_application" "$socket_state" "$transient_postgresql" || cleanup_failed=1
   if [[ "$cleanup_failed" == 1 ]]; then
     printf 'rehearsal cleanup verification failed\n' >&2
     exit_status=1

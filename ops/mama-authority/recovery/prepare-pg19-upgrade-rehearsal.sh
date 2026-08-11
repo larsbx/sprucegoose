@@ -103,6 +103,7 @@ LIVE_DB="${db_parts[4]}"
 [[ "$DBUSER" == postgres ]]
 [[ "$LIVE_DB" == spruce_goose_dev ]]
 
+"$pgdata_guard" "$root" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null
 rm -rf -- "$root"
 install -d -m 0700 "$root" "$socket_dir" "$work_dir" "$log_dir"
 printf '%s\n' "$run_id" > "$root/run-id"

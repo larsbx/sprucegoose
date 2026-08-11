@@ -227,8 +227,12 @@ defmodule SpruceGoose.RecoveryScriptsTest do
   end
 
   test "every recursively deleted rehearsal directory is guarded immediately before deletion" do
+    prepare = File.read!(Path.join(@root, "prepare-pg19-upgrade-rehearsal.sh"))
     upgrade = File.read!(Path.join(@root, "run-pg19-upgrade-rehearsal.sh"))
     actor = File.read!(Path.join(@root, "run-actor-migration-on-pg19-rehearsal.sh"))
+
+    assert prepare =~
+             ~s("$pgdata_guard" "$root" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$root")
 
     assert upgrade =~
              ~s("$pgdata_guard" "$evidence" "$HOME/pgdata" "$actual_live_pgdata" >/dev/null\nrm -rf -- "$evidence")
@@ -259,6 +263,25 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     end
   end
 
+  test "cleanup-state guard executably rejects stop failure and deactivating units" do
+    guard = @root |> Path.join("assert-rehearsal-cleanup-state.sh") |> Path.expand()
+    assert File.regular?(guard)
+
+    {_output, 0} =
+      System.cmd(guard, ~w(active active inactive absent inactive), stderr_to_stdout: true)
+
+    for unsafe <- [
+          ~w(active active deactivating absent inactive),
+          ~w(active active inactive absent active),
+          ~w(active active inactive present inactive),
+          ~w(failed active inactive absent inactive),
+          ~w(active failed inactive absent inactive)
+        ] do
+      {_output, status} = System.cmd(guard, unsafe, stderr_to_stdout: true)
+      assert status != 0
+    end
+  end
+
   test "clean actor evidence is finalized from EXIT after cleanup and live-service checks" do
     actor = File.read!(Path.join(@root, "run-actor-migration-on-pg19-rehearsal.sh"))
 
@@ -268,6 +291,7 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert actor =~ "live_postgresql=active"
     assert actor =~ "live_application=active"
     assert actor =~ "trap finalize_exit EXIT"
+    assert actor =~ "assert-rehearsal-cleanup-state.sh"
     assert before?(actor, "cleanup_processes", "completion-status.txt")
   end
 
