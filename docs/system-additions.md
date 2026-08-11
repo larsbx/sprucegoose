@@ -10,12 +10,12 @@ This document explains the additions carried by the PostgreSQL 19 staging line, 
 
 | View | Purpose | Exported assets |
 |---|---|---|
-| System architecture | Components, trust boundaries, data/control flows | [SVG](/docs/assets/sprucegoose-system-architecture.svg) · [PNG](/docs/assets/sprucegoose-system-architecture.png) · [Excalidraw](/docs/assets/sprucegoose-system-architecture.excalidraw) |
-| Migration DAG | Ordered 24→33 schema and feature dependency chain | [SVG](/docs/assets/sprucegoose-migration-dag.svg) · [PNG](/docs/assets/sprucegoose-migration-dag.png) · [Excalidraw](/docs/assets/sprucegoose-migration-dag.excalidraw) |
-| Rehearsal workflow | Snapshot, upgrade, actor transition, cleanup, custody, review | [SVG](/docs/assets/sprucegoose-rehearsal-workflow.svg) · [PNG](/docs/assets/sprucegoose-rehearsal-workflow.png) · [Excalidraw](/docs/assets/sprucegoose-rehearsal-workflow.excalidraw) |
+| System architecture | Components, trust boundaries, data/control flows | [SVG](diagrams/sprucegoose-system-architecture.svg) · [PNG](diagrams/sprucegoose-system-architecture.png) · [Excalidraw](diagrams/sprucegoose-system-architecture.excalidraw) |
+| Migration DAG | Ordered 24→33 schema and feature dependency chain | [SVG](diagrams/sprucegoose-migration-dag.svg) · [PNG](diagrams/sprucegoose-migration-dag.png) · [Excalidraw](diagrams/sprucegoose-migration-dag.excalidraw) |
+| Rehearsal workflow | Snapshot, upgrade, actor transition, cleanup, custody, review | [SVG](diagrams/sprucegoose-rehearsal-workflow.svg) · [PNG](diagrams/sprucegoose-rehearsal-workflow.png) · [Excalidraw](diagrams/sprucegoose-rehearsal-workflow.excalidraw) |
 | Canonical ICM | Corr-8 reconciliation record and production boundary | [Open in dashboard](/docs/icm-corr8-reconciliation) |
 
-![SpruceGoose system architecture](/docs/assets/sprucegoose-system-architecture.svg)
+![SpruceGoose system architecture](diagrams/sprucegoose-system-architecture.svg)
 
 ## 1. What was added
 
@@ -58,7 +58,7 @@ flowchart LR
   M33 --> GRAPH
 ```
 
-![Migration dependency DAG](/docs/assets/sprucegoose-migration-dag.svg)
+![Migration dependency DAG](diagrams/sprucegoose-migration-dag.svg)
 
 ### Why the chain is indivisible
 
@@ -141,7 +141,7 @@ flowchart TD
   DECIDE -->|yes| PREFLIGHT[Freeze, backups, restore proof, manifests]
 ```
 
-![Snapshot rehearsal workflow](/docs/assets/sprucegoose-rehearsal-workflow.svg)
+![Snapshot rehearsal workflow](diagrams/sprucegoose-rehearsal-workflow.svg)
 
 ### Destructive-operation guard
 

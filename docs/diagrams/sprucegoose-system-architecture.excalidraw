@@ -151,14 +151,14 @@
       "y": 422,
       "width": 204,
       "height": 40,
-      "text": "Immutable binding\nclient_id \u2192 actor_id",
+      "text": "Immutable binding\nclient_id → actor_id",
       "fontSize": 16,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_binding",
-      "originalText": "Immutable binding\nclient_id \u2192 actor_id",
+      "originalText": "Immutable binding\nclient_id → actor_id",
       "autoResize": true
     },
     {
@@ -223,14 +223,14 @@
       "y": 242,
       "width": 204,
       "height": 40,
-      "text": "SpruceGoose\nresources \u00b7 lifecycle \u00b7 outbox",
+      "text": "SpruceGoose\nresources · lifecycle · outbox",
       "fontSize": 16,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_app",
-      "originalText": "SpruceGoose\nresources \u00b7 lifecycle \u00b7 outbox",
+      "originalText": "SpruceGoose\nresources · lifecycle · outbox",
       "autoResize": true
     },
     {
@@ -259,14 +259,14 @@
       "y": 222,
       "width": 174,
       "height": 40,
-      "text": "PostgreSQL authority\nrevisions \u00b7 custody \u00b7 graph",
+      "text": "PostgreSQL authority\nrevisions · custody · graph",
       "fontSize": 16,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_pg",
-      "originalText": "PostgreSQL authority\nrevisions \u00b7 custody \u00b7 graph",
+      "originalText": "PostgreSQL authority\nrevisions · custody · graph",
       "autoResize": true
     },
     {
@@ -742,6 +742,20 @@
           0.5
         ]
       }
+    },
+    {
+      "type": "text",
+      "id": "provenance_footer",
+      "x": 40,
+      "y": 782,
+      "width": 1320,
+      "height": 22,
+      "text": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e",
+      "originalText": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
+      "autoResize": true
     }
   ],
   "appState": {

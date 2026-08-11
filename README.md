@@ -113,8 +113,9 @@ mix escript.build
 ./sprucegoose revise approve rev-... --task tsk-... --digest <sha256> --as lars
 ```
 
-PostgreSQL 19 exposes task dependencies as the read-only property graph
-`sprucegoose_task_dependency_graph`. The three graph commands authorize the
+The PostgreSQL 19 staging/rehearsal line exposes task dependencies as the
+read-only property graph `sprucegoose_task_dependency_graph`; production remains
+on PostgreSQL 16.14 at migration 24. The three graph commands authorize the
 named task or workflow through Ash before executing workflow-scoped SQL. The
 relational task and dependency tables remain authoritative; graph queries do
 not transition tasks or change edges. See

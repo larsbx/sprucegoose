@@ -10,11 +10,11 @@
       "y": 30,
       "width": 800,
       "height": 36,
-      "text": "Snapshot rehearsal and custody workflow",
+      "text": "Snapshot rehearsal, custody, and production decision",
       "fontSize": 28,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
-      "originalText": "Snapshot rehearsal and custody workflow",
+      "originalText": "Snapshot rehearsal, custody, and production decision",
       "autoResize": true
     },
     {
@@ -223,14 +223,14 @@
       "y": 362,
       "width": 189,
       "height": 40,
-      "text": "Migrate 24 \u2192 33\ngraph parity",
+      "text": "Migrate 24 → 33\ngraph parity",
       "fontSize": 16,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_migrate",
-      "originalText": "Migrate 24 \u2192 33\ngraph parity",
+      "originalText": "Migrate 24 → 33\ngraph parity",
       "autoResize": true
     },
     {
@@ -403,14 +403,14 @@
       "y": 572,
       "width": 189,
       "height": 40,
-      "text": "Independent reviews\nactor \u00b7 safety \u00b7 custody",
+      "text": "Independent reviews\nactor · safety · custody",
       "fontSize": 16,
       "fontFamily": 1,
       "strokeColor": "#1e1e1e",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_review",
-      "originalText": "Independent reviews\nactor \u00b7 safety \u00b7 custody",
+      "originalText": "Independent reviews\nactor · safety · custody",
       "autoResize": true
     },
     {
@@ -880,6 +880,20 @@
           0.5
         ]
       }
+    },
+    {
+      "type": "text",
+      "id": "provenance_footer",
+      "x": 40,
+      "y": 722,
+      "width": 1320,
+      "height": 22,
+      "text": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e",
+      "originalText": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
+      "autoResize": true
     }
   ],
   "appState": {
