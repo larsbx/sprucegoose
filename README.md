@@ -120,6 +120,11 @@ relational task and dependency tables remain authoritative; graph queries do
 not transition tasks or change edges. See
 [`docs/property-graph-queries.md`](docs/property-graph-queries.md).
 
+For the integrated nine-migration architecture, actor and custody boundaries,
+snapshot rehearsal workflow, production gate, and exported DAG visuals, see
+[`docs/system-additions.md`](docs/system-additions.md). The visual exports are
+versioned under [`docs/diagrams/`](docs/diagrams/).
+
 Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still
 required before creating a task.
