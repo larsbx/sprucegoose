@@ -216,12 +216,15 @@ neither approve anything nor see any other project.
 
 ## MCP
 
-`SpruceGoose.Web.ActorPlug` runs after `BearerPlug` and maps the token's
-`OauthClient.client_name` to an actor, then calls `Ash.PlugHelpers.set_actor/2`.
-AshAi reads the actor off the connection, so the read-only tools inherit the same
-project scoping with no change to the tool list. A client with no matching actor
-is refused, not defaulted: an unregistered caller is not an anonymous one, it is
-one nobody granted anything.
+`RequireScopePlug` runs after `BearerPlug` and rejects a token that does not
+carry the exact `mcp` delegated scope. `SpruceGoose.Web.ActorPlug` then reads
+only the verified token claim `client_id`, resolves it through the
+administrator-governed client-ID to actor-ID binding, and calls
+`Ash.PlugHelpers.set_actor/2`. Registration metadata such as `client_name`,
+caller-controlled connection assignments, and the OAuth user identity are not
+actor authority inputs. AshAi reads the actor from the connection, so the
+read-only tools inherit the same project scoping with no change to the tool
+list. An unbound client is refused, not defaulted.
 
 Note that `AshAi.exposed_tools/1` ends in a `can?` filter, so an actor-less
 caller now sees an empty tool list. That is the surface the plug exists to keep
