@@ -90,6 +90,12 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert actor =~ "CORR7_EXPECTED_TREE"
     assert actor =~ "CORR7_EXPECTED_ARCHIVE_SHA256"
     assert actor =~ "CORR7_PROVENANCE"
+    assert actor =~ "CORR7_COMMIT"
+    assert actor =~ "CORR7_EXPECTED_HEAD"
+    assert actor =~ "git hash-object -t commit --stdin"
+    assert actor =~ ~s(grep -Fqx "tree $expected_tree")
+    assert actor =~ "expected_head=%s"
+    assert actor =~ "review_commit_sha256=%s"
     assert actor =~ "SHA256SUMS"
   end
 

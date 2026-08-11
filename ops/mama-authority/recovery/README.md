@@ -50,7 +50,7 @@ Run from Mama as `admin-papa`, not against the live data directory:
    - requires exact before/after inventory equality;
    - runs staged analysis, stops the clone, and writes a checksummed upgrade evidence manifest.
 3. `run-actor-migration-on-pg19-rehearsal.sh`
-   - requires the same run ID, `CORR7_EXPECTED_TREE`, and externally recorded `CORR7_EXPECTED_ARCHIVE_SHA256`; verifies archive/client digests, verifies the archive's `CORR7_PROVENANCE` tree, and verifies the preceding upgrade evidence checksums;
+   - requires the same run ID, `CORR7_EXPECTED_HEAD`, `CORR7_EXPECTED_TREE`, and externally recorded `CORR7_EXPECTED_ARCHIVE_SHA256`; verifies archive/client digests, reconstructs the exact Git commit ID from the packaged detached commit payload, verifies its tree and the archive's `CORR7_PROVENANCE`, and verifies the preceding upgrade evidence checksums;
    - derives a passwordless private `DATABASE_URL` for synthetic role `postgres` using the owner-only Unix `socket_dir`; host authentication is rejected and no rehearsal TCP listener exists;
    - generates a fresh rehearsal-only signing secret and release cookie and never sources or passes the live token-signing secret or database password to the candidate;
    - binds Genesis to the explicit rehearsal-only actor `recovery-operator`;
@@ -73,6 +73,12 @@ head=<FINAL_HEAD>
 tree=<FINAL_STAGED_TREE>
 ```
 
+Also add `CORR7_COMMIT`, containing the exact raw output of
+`git cat-file commit <FINAL_HEAD>`. The rehearsal reconstructs its identity
+with `git hash-object -t commit --stdin`, requires it to equal
+`CORR7_EXPECTED_HEAD`, and requires the payload's tree header to equal
+`CORR7_EXPECTED_TREE`.
+
 Run the committed separate-session gate on Evergreen before packaging:
 
 ```sh
@@ -84,6 +90,7 @@ Run the normal Mama rehearsal with one fresh run identity and the exact final st
 
 ```sh
 export CORR7_REHEARSAL_RUN_ID="corr7-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 8)"
+export CORR7_EXPECTED_HEAD='<FINAL_HEAD>'
 export CORR7_EXPECTED_TREE='<FINAL_STAGED_TREE>'
 export CORR7_EXPECTED_ARCHIVE_SHA256='<FINAL_RELEASE_ARCHIVE_SHA256>'
 $HOME/recovery-rehearsal/prepare-pg19-upgrade-rehearsal.sh
@@ -133,6 +140,7 @@ done
 
 # Each application probe requires a fresh 24-migration clone because the actor
 # script migrates it before starting the transient application.
+export CORR7_EXPECTED_HEAD='<FINAL_HEAD>'
 export CORR7_EXPECTED_TREE='<FINAL_STAGED_TREE>'
 export CORR7_EXPECTED_ARCHIVE_SHA256='<FINAL_RELEASE_ARCHIVE_SHA256>'
 for signal in HUP INT TERM; do

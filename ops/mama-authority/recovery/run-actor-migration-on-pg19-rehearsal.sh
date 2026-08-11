@@ -23,9 +23,11 @@ unit="sprucegoose-corr7-pg19.service"
 evidence="$root/corr7-pg19-evidence"
 expected_client="d07cc14bff1d4384176f829d9c130a09e82425bc7326fe5370ffc9785ad6b9b9"
 run_id="${CORR7_REHEARSAL_RUN_ID:?CORR7_REHEARSAL_RUN_ID is required}"
+expected_head="${CORR7_EXPECTED_HEAD:?CORR7_EXPECTED_HEAD is required}"
 expected_tree="${CORR7_EXPECTED_TREE:?CORR7_EXPECTED_TREE is required}"
 expected_archive="${CORR7_EXPECTED_ARCHIVE_SHA256:?CORR7_EXPECTED_ARCHIVE_SHA256 is required}"
 [[ "$run_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$ ]]
+[[ "$expected_head" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_tree" =~ ^[0-9a-f]{40}$ ]]
 [[ "$expected_archive" =~ ^[0-9a-f]{64}$ ]]
 script_sha="$(sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1)"
@@ -85,6 +87,7 @@ finalize_exit() {
       printf 'transient_application=inactive\n'
       printf 'live_postgresql=active\n'
       printf 'live_application=active\n'
+      printf 'expected_head=%s\n' "$expected_head"
       printf 'expected_tree=%s\n' "$expected_tree"
       printf 'expected_archive_sha256=%s\n' "$expected_archive"
       printf 'actor_manifest_sha256=%s\n' "$(sha256sum "$evidence/actor-manifest.txt" | cut -d' ' -f1)"
@@ -138,7 +141,12 @@ rm -rf -- "$release"
 tar -C "$root" -xzf "$archive"
 [[ -x "$release/bin/spruce_goose" ]]
 [[ -f "$release/CORR7_PROVENANCE" && ! -L "$release/CORR7_PROVENANCE" ]]
+[[ -f "$release/CORR7_COMMIT" && ! -L "$release/CORR7_COMMIT" ]]
+[[ "$(git hash-object -t commit --stdin < "$release/CORR7_COMMIT")" == "$expected_head" ]]
+grep -Fqx "tree $expected_tree" "$release/CORR7_COMMIT"
+grep -Fqx "head=$expected_head" "$release/CORR7_PROVENANCE"
 grep -Fqx "tree=$expected_tree" "$release/CORR7_PROVENANCE"
+install -m 0600 "$release/CORR7_COMMIT" "$evidence/review-commit"
 
 shopt -s nullglob
 migration_files=("$release"/lib/spruce_goose-*/priv/repo/migrations/*.exs)
@@ -367,11 +375,13 @@ actor_cluster_system_identifier="$(LD_LIBRARY_PATH="$pg_lib" "$pg_bin/pg_control
 {
   printf 'run_id=%s\n' "$run_id"
   printf 'completed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'expected_head=%s\n' "$expected_head"
   printf 'expected_tree=%s\n' "$expected_tree"
   printf 'actor_script_sha256=%s\n' "$script_sha"
   printf 'archive_sha256=%s\n' "$expected_archive"
   printf 'client_sha256=%s\n' "$expected_client"
   printf 'archive_provenance_sha256=%s\n' "$(sha256sum "$release/CORR7_PROVENANCE" | cut -d' ' -f1)"
+  printf 'review_commit_sha256=%s\n' "$(sha256sum "$release/CORR7_COMMIT" | cut -d' ' -f1)"
   printf 'upgrade_manifest_sha256=%s\n' "$(sha256sum "$pg_root/evidence/upgrade-manifest.txt" | cut -d' ' -f1)"
   printf 'cluster_system_identifier=%s\n' "$actor_cluster_system_identifier"
 } > "$evidence/actor-manifest.txt"
