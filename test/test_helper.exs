@@ -1,4 +1,4 @@
-ExUnit.start()
+ExUnit.start(exclude: [:separate_sessions])
 
 Ecto.Adapters.SQL.Sandbox.mode(SpruceGoose.Repo, :manual)
 

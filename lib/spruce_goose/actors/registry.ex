@@ -19,22 +19,37 @@ defmodule SpruceGoose.Actors.Registry do
   require Ash.Query
 
   alias SpruceGoose.Actors.{Actor, Grant, Scope}
+  alias SpruceGoose.Repo
   alias SpruceGoose.Workflows.Project
 
   @admin_scope "*"
+  @registry_write_lock "sprucegoose:actor-registry-write"
 
   # -- actors ----------------------------------------------------------------
 
   def add(attrs, acting) do
-    case genesis?() do
-      true ->
-        genesis_add(attrs)
+    serialized_registry_write(fn ->
+      result =
+        case genesis?() do
+          true ->
+            genesis_add(attrs)
 
-      false ->
-        with :ok <- require_admin(acting),
-             {:ok, actor} <- create_actor(attrs, acting.name) do
-          {:ok, Map.put(actor_json(actor), :grants, [])}
+          false ->
+            with {:ok, current_admin} <- require_current_admin(acting),
+                 {:ok, actor, notifications} <- create_actor(attrs, current_admin.name) do
+              {:ok, Map.put(actor_json(actor), :grants, []), notifications}
+            end
         end
+
+      rollback_registry_error(result)
+    end)
+    |> case do
+      {:ok, {:ok, result, notifications}} ->
+        Ash.Notifier.notify(notifications)
+        {:ok, result}
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 
@@ -53,50 +68,68 @@ defmodule SpruceGoose.Actors.Registry do
   end
 
   def disable(name, reason, acting) do
-    with :ok <- require_admin(acting),
-         :ok <- require_reason(reason),
-         {:ok, actor} <- fetch(name),
-         :ok <- refuse_self(actor, acting, "disable"),
-         {:ok, actor} <-
-           Ash.update(actor, %{disabled_reason: reason}, action: :disable, authorize?: false) do
-      {:ok, actor_json(actor)}
-    end
+    registry_write(fn ->
+      with {:ok, current_admin} <- require_current_admin(acting),
+           :ok <- require_reason(reason),
+           {:ok, actor} <- fetch(name),
+           :ok <- refuse_self(actor, current_admin, "disable"),
+           {:ok, actor, notifications} <-
+             Ash.update(actor, %{disabled_reason: reason},
+               action: :disable,
+               authorize?: false,
+               return_notifications?: true
+             ) do
+        {:ok, actor_json(actor), notifications}
+      end
+    end)
   end
 
   def enable(name, acting) do
-    with :ok <- require_admin(acting),
-         {:ok, actor} <- fetch(name),
-         {:ok, actor} <- Ash.update(actor, %{}, action: :enable, authorize?: false) do
-      {:ok, actor_json(actor)}
-    end
+    registry_write(fn ->
+      with {:ok, _current_admin} <- require_current_admin(acting),
+           {:ok, actor} <- fetch(name),
+           {:ok, actor, notifications} <-
+             Ash.update(actor, %{},
+               action: :enable,
+               authorize?: false,
+               return_notifications?: true
+             ) do
+        {:ok, actor_json(actor), notifications}
+      end
+    end)
   end
 
   # -- grants ----------------------------------------------------------------
 
   def grant(name, role, scope, acting) do
-    with :ok <- require_admin(acting),
-         {:ok, role} <- parse_role(role),
-         :ok <- validate_scope(scope),
-         {:ok, actor} <- fetch(name),
-         {:ok, _grant} <-
-           Ash.create(
-             Grant,
-             %{actor_id: actor.id, role: role, scope: scope, granted_by: acting.name},
-             authorize?: false
-           ) do
-      {:ok, Map.put(actor_json(actor), :grants, Scope.summary(actor))}
-    end
+    registry_write(fn ->
+      with {:ok, current_admin} <- require_current_admin(acting),
+           {:ok, role} <- parse_role(role),
+           :ok <- validate_scope(scope),
+           {:ok, actor} <- fetch(name),
+           {:ok, _grant, notifications} <-
+             Ash.create(
+               Grant,
+               %{actor_id: actor.id, role: role, scope: scope, granted_by: current_admin.name},
+               authorize?: false,
+               return_notifications?: true
+             ) do
+        {:ok, Map.put(actor_json(actor), :grants, Scope.summary(actor)), notifications}
+      end
+    end)
   end
 
   def revoke(name, role, scope, acting) do
-    with :ok <- require_admin(acting),
-         {:ok, role} <- parse_role(role),
-         {:ok, actor} <- fetch(name),
-         {:ok, grant} <- fetch_grant(actor, role, scope),
-         :ok <- refuse_last_admin(actor, grant),
-         :ok <- destroy(grant) do
-      {:ok, Map.put(actor_json(actor), :grants, Scope.summary(actor))}
-    end
+    registry_write(fn ->
+      with {:ok, _current_admin} <- require_current_admin(acting),
+           {:ok, role} <- parse_role(role),
+           {:ok, actor} <- fetch(name),
+           {:ok, grant} <- fetch_grant(actor, role, scope),
+           :ok <- refuse_last_admin(actor, grant),
+           {:ok, notifications} <- destroy(grant) do
+        {:ok, Map.put(actor_json(actor), :grants, Scope.summary(actor)), notifications}
+      end
+    end)
   end
 
   def grants(name, role, acting) do
@@ -116,50 +149,117 @@ defmodule SpruceGoose.Actors.Registry do
 
   # -- gates -----------------------------------------------------------------
 
+  defp registry_write(fun) do
+    serialized_registry_write(fn -> fun.() |> rollback_registry_error() end)
+    |> case do
+      {:ok, {:ok, result, notifications}} ->
+        Ash.Notifier.notify(notifications)
+        {:ok, result}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp serialized_registry_write(fun) do
+    # AUTHORIZATION: registry authorization is re-read and enforced inside this serialized transaction.
+    Repo.transaction(fn ->
+      # All actor/grant mutations share this transaction-scoped lock. Re-reading
+      # the acting administrator after the lock makes authority stable through
+      # commit: disable/revoke cannot interleave after the authorization check.
+      # AUTHORIZATION: this SQL only serializes the gated registry decision; it accesses no domain rows.
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        "SELECT pg_advisory_xact_lock(hashtext($1))",
+        [@registry_write_lock]
+      )
+
+      fun.()
+    end)
+  end
+
+  defp rollback_registry_error({:error, error}), do: Repo.rollback(error)
+  defp rollback_registry_error(success), do: success
+
+  defp require_current_admin(%{name: name}) when is_binary(name) do
+    with {:ok, current} <- fetch(name),
+         :ok <- require_admin(current) do
+      {:ok, current}
+    end
+  end
+
+  defp require_current_admin(_acting),
+    do: {:error, "registry changes require an actor: pass --as NAME"}
+
   defp genesis?, do: Ash.count!(Actor, authorize?: false) == 0
 
   defp genesis_add(attrs) do
-    if Map.get(attrs, :kind) == :human do
-      with {:ok, actor} <- create_actor(attrs, "genesis"),
-           :ok <- grant_all(actor),
-           {:ok, reloaded} <- fetch(actor.name) do
-        {:ok,
-         reloaded
-         |> actor_json()
-         |> Map.merge(%{
-           grants: Scope.summary(reloaded),
-           genesis: true,
-           note:
-             "registry was empty, so #{reloaded.name} was created as the genesis actor " <>
-               "holding every role at #{@admin_scope}. Every later actor requires an " <>
-               "admin to create it, and should be granted only what it needs."
-         })}
+    with :ok <- require_expected_genesis(attrs) do
+      if Map.get(attrs, :kind) == :human do
+        with {:ok, actor, actor_notifications} <- create_actor(attrs, "genesis"),
+             {:ok, grant_notifications} <- grant_all(actor),
+             {:ok, reloaded} <- fetch(actor.name) do
+          {:ok,
+           reloaded
+           |> actor_json()
+           |> Map.merge(%{
+             grants: Scope.summary(reloaded),
+             genesis: true,
+             note:
+               "registry was empty, so #{reloaded.name} was created as the genesis actor " <>
+                 "holding every role at #{@admin_scope}. Every later actor requires an " <>
+                 "admin to create it, and should be granted only what it needs."
+           }), actor_notifications ++ grant_notifications}
+        end
+      else
+        {:error,
+         "the first actor must be --kind human: an empty registry has nobody to hold " <>
+           "an agent accountable"}
       end
-    else
-      {:error,
-       "the first actor must be --kind human: an empty registry has nobody to hold " <>
-         "an agent accountable"}
     end
   end
+
+  defp require_expected_genesis(%{name: name}) do
+    case Application.get_env(:spruce_goose, :expected_genesis_actor) do
+      nil ->
+        :ok
+
+      ^name ->
+        :ok
+
+      expected ->
+        {:error, "expected Genesis actor #{expected}; refusing first actor #{name}"}
+    end
+  end
+
+  defp require_expected_genesis(_attrs), do: :ok
 
   # Every role, not just admin. Admin can grant itself anything unilaterally, so
   # withholding the rest at genesis is ceremony rather than a control — it only
   # buys the first operator five commands before they can do any work.
   defp grant_all(actor) do
-    Enum.reduce_while(SpruceGoose.Actors.Role.values(), :ok, fn role, :ok ->
+    Enum.reduce_while(SpruceGoose.Actors.Role.values(), {:ok, []}, fn role,
+                                                                      {:ok, notifications} ->
       case Ash.create(
              Grant,
              %{actor_id: actor.id, role: role, scope: @admin_scope, granted_by: "genesis"},
-             authorize?: false
+             authorize?: false,
+             return_notifications?: true
            ) do
-        {:ok, _grant} -> {:cont, :ok}
-        {:error, error} -> {:halt, {:error, error}}
+        {:ok, _grant, created_notifications} ->
+          {:cont, {:ok, notifications ++ created_notifications}}
+
+        {:error, error} ->
+          {:halt, {:error, error}}
       end
     end)
   end
 
   defp create_actor(attrs, created_by) do
-    Ash.create(Actor, Map.put(attrs, :created_by, created_by), authorize?: false)
+    Ash.create(Actor, Map.put(attrs, :created_by, created_by),
+      authorize?: false,
+      return_notifications?: true
+    )
   end
 
   defp require_admin(acting) do
@@ -186,13 +286,14 @@ defmodule SpruceGoose.Actors.Registry do
     remaining =
       Grant
       |> Ash.Query.filter_input(role: :admin, scope: @admin_scope)
+      |> Ash.Query.filter(Ash.Expr.expr(is_nil(actor.disabled_at)))
       |> Ash.read!(authorize?: false)
       |> Enum.reject(&(&1.actor_id == actor.id))
 
     if remaining == [] do
       {:error,
-       "refusing to revoke the last global admin grant; grant admin to another " <>
-         "actor first or the registry becomes unmanageable"}
+       "refusing to revoke the last active global admin grant (the last global admin " <>
+         "capable of recovery); enable or grant admin to another actor first"}
     else
       :ok
     end
@@ -307,11 +408,7 @@ defmodule SpruceGoose.Actors.Registry do
   end
 
   defp destroy(record) do
-    case Ash.destroy(record, authorize?: false) do
-      :ok -> :ok
-      {:ok, _destroyed} -> :ok
-      error -> error
-    end
+    Ash.destroy(record, authorize?: false, return_notifications?: true)
   end
 
   defp actor_json(actor) do

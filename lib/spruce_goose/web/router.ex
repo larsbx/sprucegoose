@@ -3,8 +3,9 @@ defmodule SpruceGoose.Web.Router do
   Routes for the OAuth 2.1 authorization server and the Ash AI MCP server.
 
   The MCP surface is protected by `BearerPlug`, which validates an
-  `Authorization: Bearer <jwt>` header against `SpruceGoose.Oauth2Server`.
-  Missing or invalid tokens fail closed with `401` per RFC 6750.
+  `Authorization: Bearer *** header against `SpruceGoose.Oauth2Server`, and by
+  `RequireScopePlug`, which enforces the exact `mcp` delegated scope. Missing,
+  invalid, or insufficient tokens fail closed before actor resolution.
   """
   use Phoenix.Router
   use AshAuthentication.Phoenix.Oauth2Server.Router
@@ -19,8 +20,6 @@ defmodule SpruceGoose.Web.Router do
     plug(:accepts, ["json"])
   end
 
-  # Bearer-token gate for the MCP surface. `required?: true` means an absent
-  # or invalid token is rejected before any tool is reachable.
   pipeline :mcp_protected do
     plug(:accepts, ["json"])
 
@@ -30,26 +29,27 @@ defmodule SpruceGoose.Web.Router do
       scope: "mcp"
     )
 
-    # Turns the authenticated client into a registered actor, so the read tools
-    # are scoped by the same grants the CLI honours rather than seeing
-    # everything. A client with no actor is refused, not defaulted.
+    plug(AshAuthentication.Phoenix.Oauth2Server.RequireScopePlug,
+      oauth2_server: SpruceGoose.Oauth2Server,
+      scope: "mcp"
+    )
+
+    # Resolve only the verified token claim client_id through the governed
+    # immutable client-ID -> actor-ID map. OAuth user `sub` and registration
+    # metadata are not actor authority inputs.
     plug(SpruceGoose.Web.ActorPlug)
   end
 
-  # User-facing consent step (browser pipeline, CSRF protected).
   scope "/" do
     pipe_through(:browser)
     oauth2_server_consent_routes(oauth2_server: SpruceGoose.Oauth2Server)
   end
 
-  # Client-facing protocol endpoints: /oauth/token, /oauth/register,
-  # /oauth/revoke and the .well-known discovery documents.
   scope "/" do
     pipe_through(:api)
     oauth2_server_protocol_routes(oauth2_server: SpruceGoose.Oauth2Server)
   end
 
-  # The MCP server itself. Read-only tools defined on SpruceGoose.Workflows.
   scope "/mcp" do
     pipe_through(:mcp_protected)
 
