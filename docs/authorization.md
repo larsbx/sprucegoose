@@ -47,6 +47,7 @@ granted this, and when" and "revoke exactly this one".
 |---|---|
 | `reader` | read within scope |
 | `operator` | task lifecycle, board moves, metadata, todos, dependencies, inbox triage |
+| `artifact_verifier` | verify and record artifact-custody receipts |
 | `proposer` | propose and withdraw revisions |
 | `approver` | approve revisions, and the entity `:revise` actions they apply through |
 | `author` | create and remove project, roadmap, workflow, board, column, filter; `rename` |
@@ -58,8 +59,11 @@ operating on is not a coherent grant.
 
 `admin` is registry authority, not superuser. An admin holding nothing else can
 grant roles and create actors, and cannot touch a single task — though it can of
-course grant itself anything, which is why genesis hands out the full set rather
-than making the first operator run five more commands for no safety gain.
+course grant itself anything, which is why Genesis hands out the complete seven-role
+set—seven global grants—rather than making the first operator run six more commands
+for no safety gain. The disposable recovery rehearsal later adds one separate
+`operator` grant for `recovery-agent`, so its expected database inventory is eight
+grant rows in total; that is not an eighth Genesis role.
 
 ### Scopes
 
@@ -158,6 +162,15 @@ The registry gate is `admin` at global scope, with one exception. While the
 `actors` table is **empty** there is no admin to authorize the first one, so
 `actor add` is permitted and must create a `:human` holding every role at `*`.
 The response says so loudly. Once one actor exists, genesis is closed.
+
+The empty-registry decision, first actor, and complete seven-grant Genesis set execute
+in one PostgreSQL transaction under the same transaction-scoped advisory lock used by
+every actor/grant mutation. Concurrent first requests therefore serialize: exactly one
+can become Genesis, while every other request observes the now-nonempty registry and
+enters the ordinary admin gate. For non-Genesis writes, the acting administrator is
+re-read and re-authorized only after acquiring that lock, so disable or grant revocation
+cannot invalidate authority between the check and commit. Any actor or grant failure
+rolls the whole transaction back, and Ash notifications are delivered only after commit.
 
 A control that can lock you out of fixing it is not a control, it is a trap.
 The same reasoning keeps vault reads ungated.
