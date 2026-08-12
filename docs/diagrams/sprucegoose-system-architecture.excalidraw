@@ -1,8 +1,80 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "hermes-agent",
+  "source": "https://github.com/larsbx/sprucegoose/tree/8a2755509773be2bb2b0184f45ba7579c3db6d03",
   "elements": [
+    {
+      "type": "rectangle",
+      "id": "section_0",
+      "x": 30,
+      "y": 115,
+      "width": 560,
+      "height": 410,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
+    {
+      "type": "rectangle",
+      "id": "section_1",
+      "x": 610,
+      "y": 115,
+      "width": 850,
+      "height": 310,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
+    {
+      "type": "rectangle",
+      "id": "section_2",
+      "x": 900,
+      "y": 450,
+      "width": 560,
+      "height": 175,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
+    {
+      "type": "rectangle",
+      "id": "section_3",
+      "x": 610,
+      "y": 620,
+      "width": 560,
+      "height": 150,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
     {
       "type": "text",
       "id": "title",
@@ -13,9 +85,100 @@
       "text": "SpruceGoose authority and rehearsal architecture",
       "fontSize": 28,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#f8fafc",
       "originalText": "SpruceGoose authority and rehearsal architecture",
-      "autoResize": true
+      "autoResize": true,
+      "role": "title"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "x": 40,
+      "y": 72,
+      "width": 1380,
+      "height": 20,
+      "text": "Runtime authority, data plane, evidence plane, and dashboard documentation boundary",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#94a3b8",
+      "originalText": "Runtime authority, data plane, evidence plane, and dashboard documentation boundary",
+      "autoResize": true,
+      "role": "subtitle",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_0",
+      "x": 45,
+      "y": 122,
+      "width": 530,
+      "height": 16,
+      "text": "AUTHENTICATION + IDENTITY",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "AUTHENTICATION + IDENTITY",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_1",
+      "x": 625,
+      "y": 122,
+      "width": 820,
+      "height": 16,
+      "text": "AUTHORITATIVE APPLICATION + DATABASE",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "AUTHORITATIVE APPLICATION + DATABASE",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_2",
+      "x": 915,
+      "y": 457,
+      "width": 530,
+      "height": 16,
+      "text": "DISPOSABLE EVIDENCE PLANE",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "DISPOSABLE EVIDENCE PLANE",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_3",
+      "x": 625,
+      "y": 627,
+      "width": 530,
+      "height": 16,
+      "text": "DOCUMENTATION PLANE",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "DOCUMENTATION PLANE",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
     },
     {
       "type": "rectangle",
@@ -34,7 +197,9 @@
           "id": "t_operator",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -46,12 +211,13 @@
       "text": "Governed operator\nCLI --as actor",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_operator",
       "originalText": "Governed operator\nCLI --as actor",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -70,7 +236,9 @@
           "id": "t_oauth",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -82,12 +250,13 @@
       "text": "OAuth client\nsigned bearer token",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_oauth",
       "originalText": "OAuth client\nsigned bearer token",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -106,7 +275,9 @@
           "id": "t_scope",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -118,12 +289,13 @@
       "text": "Bearer + scope gate\nverified client_id only",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_scope",
       "originalText": "Bearer + scope gate\nverified client_id only",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -142,7 +314,9 @@
           "id": "t_binding",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -154,12 +328,13 @@
       "text": "Immutable binding\nclient_id → actor_id",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_binding",
       "originalText": "Immutable binding\nclient_id → actor_id",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -178,7 +353,9 @@
           "id": "t_authz",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -190,12 +367,13 @@
       "text": "Actor / grant registry\nadvisory lock + Ash policies",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_authz",
       "originalText": "Actor / grant registry\nadvisory lock + Ash policies",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -214,7 +392,9 @@
           "id": "t_app",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -226,12 +406,13 @@
       "text": "SpruceGoose\nresources · lifecycle · outbox",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_app",
       "originalText": "SpruceGoose\nresources · lifecycle · outbox",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -250,7 +431,9 @@
           "id": "t_pg",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -262,12 +445,13 @@
       "text": "PostgreSQL authority\nrevisions · custody · graph",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_pg",
       "originalText": "PostgreSQL authority\nrevisions · custody · graph",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -286,7 +470,9 @@
           "id": "t_rehearsal",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -298,12 +484,13 @@
       "text": "Disposable PG19\nsnapshot rehearsal",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_rehearsal",
       "originalText": "Disposable PG19\nsnapshot rehearsal",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -322,7 +509,9 @@
           "id": "t_evidence",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -334,12 +523,13 @@
       "text": "Portable custody\nchecksums + receipts",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_evidence",
       "originalText": "Portable custody\nchecksums + receipts",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -358,7 +548,9 @@
           "id": "t_icm",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -370,12 +562,13 @@
       "text": "Canonical ICM Git\nreviewed system record",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_icm",
       "originalText": "Canonical ICM Git\nreviewed system record",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -394,7 +587,9 @@
           "id": "t_dashboard",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -406,359 +601,454 @@
       "text": "Authenticated Docs\nMarkdown + visual exports",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_dashboard",
       "originalText": "Authenticated Docs\nMarkdown + visual exports",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "arrow",
       "id": "a0",
-      "x": 155.0,
-      "y": 190.0,
-      "width": 595.0,
-      "height": 115.0,
+      "x": 250,
+      "y": 190,
+      "width": 385,
+      "height": 110,
       "points": [
         [
           0,
           0
         ],
         [
-          595.0,
-          115.0
+          385,
+          110
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_operator",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_authz",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a1",
-      "x": 155.0,
-      "y": 340.0,
-      "width": 285.0,
-      "height": -20.0,
+      "x": 250,
+      "y": 340,
+      "width": 75,
+      "height": -20,
       "points": [
         [
           0,
           0
         ],
         [
-          285.0,
-          -20.0
+          75,
+          -20
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_oauth",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_scope",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a2",
-      "x": 440.0,
-      "y": 320.0,
-      "width": 310.0,
-      "height": -15.0,
+      "x": 550,
+      "y": 320,
+      "width": 85,
+      "height": -15,
       "points": [
         [
           0,
           0
         ],
         [
-          310.0,
-          -15.0
+          85,
+          -15
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_scope",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_authz",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a3",
-      "x": 440.0,
-      "y": 450.0,
-      "width": 310.0,
-      "height": -145.0,
+      "x": 550,
+      "y": 450,
+      "width": 85,
+      "height": -120,
       "points": [
         [
           0,
           0
         ],
         [
-          310.0,
-          -145.0
+          85,
+          -120
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_binding",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_authz",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a4",
-      "x": 750.0,
-      "y": 305.0,
-      "width": 310.0,
-      "height": -15.0,
+      "x": 860,
+      "y": 305,
+      "width": 85,
+      "height": -15,
       "points": [
         [
           0,
           0
         ],
         [
-          310.0,
-          -15.0
+          85,
+          -15
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_authz",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_app",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a5",
-      "x": 1060.0,
-      "y": 290.0,
-      "width": 275.0,
-      "height": -5.0,
+      "x": 1170,
+      "y": 290,
+      "width": 65,
+      "height": -5,
       "points": [
         [
           0,
           0
         ],
         [
-          275.0,
-          -5.0
+          65,
+          -5
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_app",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_pg",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a6",
-      "x": 1335.0,
-      "y": 285.0,
-      "width": -275.0,
-      "height": 265.0,
+      "x": 1335,
+      "y": 360,
+      "width": -275,
+      "height": 135,
       "points": [
         [
           0,
           0
         ],
         [
-          -275.0,
-          265.0
+          -275,
+          135
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_pg",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_rehearsal",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a7",
-      "x": 1060.0,
-      "y": 550.0,
-      "width": 275.0,
-      "height": 0.0,
+      "x": 1170,
+      "y": 550,
+      "width": 65,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          275.0,
-          0.0
+          65,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_rehearsal",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_evidence",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a8",
-      "x": 1335.0,
-      "y": 550.0,
-      "width": -275.0,
-      "height": 145.0,
+      "x": 1240,
+      "y": 570,
+      "width": -75,
+      "height": 75,
       "points": [
         [
           0,
           0
         ],
         [
-          -275.0,
-          145.0
+          -75,
+          75
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_evidence",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_dashboard",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a9",
-      "x": 750.0,
-      "y": 695.0,
-      "width": 310.0,
-      "height": 0.0,
+      "x": 860,
+      "y": 695,
+      "width": 85,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          310.0,
-          0.0
+          85,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_icm",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_dashboard",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
       "id": "provenance_footer",
       "x": 40,
-      "y": 782,
-      "width": 1320,
+      "y": 816,
+      "width": 1420,
       "height": 22,
       "text": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "fontSize": 16,
+      "fontSize": 12,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#94a3b8",
       "originalText": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "autoResize": true
+      "autoResize": true,
+      "role": "provenance"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_0",
+      "x": 300,
+      "y": 190,
+      "width": 70,
+      "height": 20,
+      "text": "explicit actor",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "explicit actor",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a0"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_1",
+      "x": 255,
+      "y": 305,
+      "width": 70,
+      "height": 20,
+      "text": "verify JWT",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "verify JWT",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a1"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_2",
+      "x": 555,
+      "y": 275,
+      "width": 70,
+      "height": 20,
+      "text": "exact mcp scope",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "exact mcp scope",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a2"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_3",
+      "x": 555,
+      "y": 390,
+      "width": 70,
+      "height": 20,
+      "text": "resolve actor",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "resolve actor",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a3"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_4",
+      "x": 865,
+      "y": 260,
+      "width": 70,
+      "height": 20,
+      "text": "authorize",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "authorize",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a4"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_5",
+      "x": 1170,
+      "y": 245,
+      "width": 70,
+      "height": 20,
+      "text": "transaction",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "transaction",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a5"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_6",
+      "x": 1190,
+      "y": 405,
+      "width": 70,
+      "height": 20,
+      "text": "snapshot",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "snapshot",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a6"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_7",
+      "x": 1170,
+      "y": 520,
+      "width": 70,
+      "height": 20,
+      "text": "receipts",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "receipts",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a7"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_8",
+      "x": 1130,
+      "y": 610,
+      "width": 70,
+      "height": 20,
+      "text": "evidence",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "evidence",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a8"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_9",
+      "x": 865,
+      "y": 675,
+      "width": 70,
+      "height": 20,
+      "text": "render source",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "render source",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a9"
     }
   ],
   "appState": {
-    "viewBackgroundColor": "#ffffff"
+    "viewBackgroundColor": "#020617",
+    "exportBackground": true,
+    "exportWidth": 1500,
+    "exportHeight": 850
   }
 }

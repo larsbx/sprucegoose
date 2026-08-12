@@ -1,8 +1,44 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "hermes-agent",
+  "source": "https://github.com/larsbx/sprucegoose/tree/8a2755509773be2bb2b0184f45ba7579c3db6d03",
   "elements": [
+    {
+      "type": "rectangle",
+      "id": "section_0",
+      "x": 30,
+      "y": 115,
+      "width": 1330,
+      "height": 350,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
+    {
+      "type": "rectangle",
+      "id": "section_1",
+      "x": 30,
+      "y": 525,
+      "width": 1060,
+      "height": 145,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
     {
       "type": "text",
       "id": "title",
@@ -13,9 +49,64 @@
       "text": "Snapshot rehearsal, custody, and production decision",
       "fontSize": 28,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#f8fafc",
       "originalText": "Snapshot rehearsal, custody, and production decision",
-      "autoResize": true
+      "autoResize": true,
+      "role": "title"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "x": 40,
+      "y": 72,
+      "width": 1380,
+      "height": 20,
+      "text": "Every path terminates in verified cleanup; Beta 2 can only produce evidence",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#94a3b8",
+      "originalText": "Every path terminates in verified cleanup; Beta 2 can only produce evidence",
+      "autoResize": true,
+      "role": "subtitle",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_0",
+      "x": 45,
+      "y": 122,
+      "width": 1300,
+      "height": 16,
+      "text": "DISPOSABLE REHEARSAL",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "DISPOSABLE REHEARSAL",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_1",
+      "x": 45,
+      "y": 532,
+      "width": 1030,
+      "height": 16,
+      "text": "CUSTODY + DECISION",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "CUSTODY + DECISION",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
     },
     {
       "type": "rectangle",
@@ -34,7 +125,9 @@
           "id": "t_pin",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -46,12 +139,13 @@
       "text": "Pin commit / tree\nrelease SHA-256",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_pin",
       "originalText": "Pin commit / tree\nrelease SHA-256",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -70,7 +164,9 @@
           "id": "t_guard",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -82,12 +178,13 @@
       "text": "Guard every\ndestructive root",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_guard",
       "originalText": "Guard every\ndestructive root",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -106,7 +203,9 @@
           "id": "t_snap",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -118,12 +217,13 @@
       "text": "Fresh PG16\nphysical snapshot",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_snap",
       "originalText": "Fresh PG16\nphysical snapshot",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -142,7 +242,9 @@
           "id": "t_check",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -154,12 +256,13 @@
       "text": "PG19 upgrade\ncheck + inventory",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_check",
       "originalText": "PG19 upgrade\ncheck + inventory",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -178,7 +281,9 @@
           "id": "t_upgrade",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -190,12 +295,13 @@
       "text": "Disposable PG19\nupgrade clone",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_upgrade",
       "originalText": "Disposable PG19\nupgrade clone",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -214,7 +320,9 @@
           "id": "t_migrate",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -226,12 +334,13 @@
       "text": "Migrate 24 → 33\ngraph parity",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_migrate",
       "originalText": "Migrate 24 → 33\ngraph parity",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -250,7 +359,9 @@
           "id": "t_genesis",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -262,12 +373,13 @@
       "text": "Genesis + grants\nauthority controls",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_genesis",
       "originalText": "Genesis + grants\nauthority controls",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -286,7 +398,9 @@
           "id": "t_signals",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -298,12 +412,13 @@
       "text": "Clone + app\nHUP / INT / TERM",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_signals",
       "originalText": "Clone + app\nHUP / INT / TERM",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -322,7 +437,9 @@
           "id": "t_cleanup",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -334,12 +451,13 @@
       "text": "Fail-closed cleanup\nlive health proof",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_cleanup",
       "originalText": "Fail-closed cleanup\nlive health proof",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -358,7 +476,9 @@
           "id": "t_custody",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -370,12 +490,13 @@
       "text": "Portable custody\ncommit + checksums",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_custody",
       "originalText": "Portable custody\ncommit + checksums",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -394,7 +515,9 @@
           "id": "t_review",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -406,12 +529,13 @@
       "text": "Independent reviews\nactor · safety · custody",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_review",
       "originalText": "Independent reviews\nactor · safety · custody",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -430,7 +554,9 @@
           "id": "t_decision",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -442,12 +568,13 @@
       "text": "Production gate\nGA + freeze + restore",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_decision",
       "originalText": "Production gate\nGA + freeze + restore",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -466,7 +593,9 @@
           "id": "t_blocked",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -478,425 +607,556 @@
       "text": "Current result\nremain PG16 / NOT READY",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_blocked",
       "originalText": "Current result\nremain PG16 / NOT READY",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "arrow",
       "id": "a0",
-      "x": 162.5,
-      "y": 185.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 265,
+      "y": 185,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_pin",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_guard",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a1",
-      "x": 427.5,
-      "y": 185.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 530,
+      "y": 185,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_guard",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_snap",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a2",
-      "x": 692.5,
-      "y": 185.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 795,
+      "y": 185,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_snap",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_check",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a3",
-      "x": 957.5,
-      "y": 185.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 1060,
+      "y": 185,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_check",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_upgrade",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a4",
-      "x": 1222.5,
-      "y": 185.0,
-      "width": 0.0,
-      "height": 205.0,
+      "x": 1222,
+      "y": 225,
+      "width": 0,
+      "height": 120,
       "points": [
         [
           0,
           0
         ],
         [
-          0.0,
-          205.0
+          0,
+          120
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_upgrade",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_migrate",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a5",
-      "x": 1222.5,
-      "y": 390.0,
-      "width": -265.0,
-      "height": 0.0,
+      "x": 1120,
+      "y": 390,
+      "width": -55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -265.0,
-          0.0
+          -55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_migrate",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_genesis",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a6",
-      "x": 957.5,
-      "y": 390.0,
-      "width": -265.0,
-      "height": 0.0,
+      "x": 855,
+      "y": 390,
+      "width": -55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -265.0,
-          0.0
+          -55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_genesis",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_signals",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a7",
-      "x": 692.5,
-      "y": 390.0,
-      "width": -265.0,
-      "height": 0.0,
+      "x": 590,
+      "y": 390,
+      "width": -55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -265.0,
-          0.0
+          -55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_signals",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_cleanup",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a8",
-      "x": 427.5,
-      "y": 390.0,
-      "width": -265.0,
-      "height": 0.0,
+      "x": 325,
+      "y": 390,
+      "width": -55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -265.0,
-          0.0
+          -55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_cleanup",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_custody",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a9",
-      "x": 162.5,
-      "y": 390.0,
-      "width": 265.0,
-      "height": 210.0,
+      "x": 213,
+      "y": 430,
+      "width": 162,
+      "height": 125,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          210.0
+          162,
+          125
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_custody",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_review",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a10",
-      "x": 427.5,
-      "y": 600.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 530,
+      "y": 600,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_review",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_decision",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a11",
-      "x": 692.5,
-      "y": 600.0,
-      "width": 265.0,
-      "height": 0.0,
+      "x": 795,
+      "y": 600,
+      "width": 55,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          265.0,
-          0.0
+          55,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_decision",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_blocked",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
       "id": "provenance_footer",
       "x": 40,
-      "y": 722,
-      "width": 1320,
+      "y": 756,
+      "width": 1420,
       "height": 22,
       "text": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "fontSize": 16,
+      "fontSize": 12,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#94a3b8",
       "originalText": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "autoResize": true
+      "autoResize": true,
+      "role": "provenance"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_0",
+      "x": 265,
+      "y": 157,
+      "width": 70,
+      "height": 20,
+      "text": "identity",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "identity",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a0"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_1",
+      "x": 530,
+      "y": 157,
+      "width": 70,
+      "height": 20,
+      "text": "allow once",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "allow once",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a1"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_2",
+      "x": 795,
+      "y": 157,
+      "width": 70,
+      "height": 20,
+      "text": "clone",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "clone",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a2"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_3",
+      "x": 1060,
+      "y": 157,
+      "width": 70,
+      "height": 20,
+      "text": "compatible",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "compatible",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a3"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_4",
+      "x": 1240,
+      "y": 265,
+      "width": 70,
+      "height": 20,
+      "text": "start",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "start",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a4"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_5",
+      "x": 1060,
+      "y": 395,
+      "width": 70,
+      "height": 20,
+      "text": "schema ready",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "schema ready",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a5"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_6",
+      "x": 795,
+      "y": 395,
+      "width": 70,
+      "height": 20,
+      "text": "controls pass",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "controls pass",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a6"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_7",
+      "x": 530,
+      "y": 395,
+      "width": 70,
+      "height": 20,
+      "text": "all exits",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "all exits",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a7"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_8",
+      "x": 265,
+      "y": 395,
+      "width": 70,
+      "height": 20,
+      "text": "PASS only",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "PASS only",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a8"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_9",
+      "x": 220,
+      "y": 475,
+      "width": 70,
+      "height": 20,
+      "text": "portable",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "portable",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a9"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_10",
+      "x": 530,
+      "y": 575,
+      "width": 70,
+      "height": 20,
+      "text": "verdict",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "verdict",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a10"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_11",
+      "x": 795,
+      "y": 575,
+      "width": 70,
+      "height": 20,
+      "text": "BLOCKED",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 1,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "angle": 0,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 811,
+      "version": 1,
+      "versionNonce": 811,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "baseline": 15,
+      "originalText": "BLOCKED",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "edgeId": "a11"
     }
   ],
   "appState": {
-    "viewBackgroundColor": "#ffffff"
+    "viewBackgroundColor": "#020617",
+    "exportBackground": true,
+    "exportWidth": 1500,
+    "exportHeight": 790
   }
 }

@@ -1,8 +1,26 @@
 {
   "type": "excalidraw",
   "version": 2,
-  "source": "hermes-agent",
+  "source": "https://github.com/larsbx/sprucegoose/tree/8a2755509773be2bb2b0184f45ba7579c3db6d03",
   "elements": [
+    {
+      "type": "rectangle",
+      "id": "section_0",
+      "x": 30,
+      "y": 120,
+      "width": 1420,
+      "height": 445,
+      "roundness": {
+        "type": 3
+      },
+      "backgroundColor": "#0f172a",
+      "fillStyle": "solid",
+      "boundElements": [],
+      "strokeColor": "#334155",
+      "strokeWidth": 1,
+      "opacity": 100,
+      "role": "section-background"
+    },
     {
       "type": "text",
       "id": "title",
@@ -13,9 +31,46 @@
       "text": "PostgreSQL 19 migration dependency DAG",
       "fontSize": 28,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#f8fafc",
       "originalText": "PostgreSQL 19 migration dependency DAG",
-      "autoResize": true
+      "autoResize": true,
+      "role": "title"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "x": 40,
+      "y": 72,
+      "width": 1380,
+      "height": 20,
+      "text": "The nine migrations are an ordered control-plane chain, not an extractable graph patch",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#94a3b8",
+      "originalText": "The nine migrations are an ordered control-plane chain, not an extractable graph patch",
+      "autoResize": true,
+      "role": "subtitle",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
+    },
+    {
+      "type": "text",
+      "id": "section_label_0",
+      "x": 45,
+      "y": 127,
+      "width": 1390,
+      "height": 16,
+      "text": "SCHEMA 24 → 33",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#67e8f9",
+      "originalText": "SCHEMA 24 → 33",
+      "autoResize": true,
+      "role": "section",
+      "textAlign": "left",
+      "containerId": null,
+      "boundElements": null
     },
     {
       "type": "rectangle",
@@ -34,7 +89,9 @@
           "id": "t_m24",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -46,12 +103,13 @@
       "text": "24 PG16 baseline",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m24",
       "originalText": "24 PG16 baseline",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -70,7 +128,9 @@
           "id": "t_m25",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -82,12 +142,13 @@
       "text": "25 Revisions",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m25",
       "originalText": "25 Revisions",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -106,7 +167,9 @@
           "id": "t_m26",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -118,12 +181,13 @@
       "text": "26 Actors + grants",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m26",
       "originalText": "26 Actors + grants",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -142,7 +206,9 @@
           "id": "t_m27",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -154,12 +220,13 @@
       "text": "27 SOP acks",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m27",
       "originalText": "27 SOP acks",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -178,7 +245,9 @@
           "id": "t_m28",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -190,12 +259,13 @@
       "text": "28 Ledger receipts",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m28",
       "originalText": "28 Ledger receipts",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -214,7 +284,9 @@
           "id": "t_m29",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -226,12 +298,13 @@
       "text": "29 Authority ID",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m29",
       "originalText": "29 Authority ID",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -250,7 +323,9 @@
           "id": "t_m30",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -262,12 +337,13 @@
       "text": "30 Artifact custody",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m30",
       "originalText": "30 Artifact custody",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -286,7 +362,9 @@
           "id": "t_m31",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -298,12 +376,13 @@
       "text": "31 Custody trigger",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m31",
       "originalText": "31 Custody trigger",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -322,7 +401,9 @@
           "id": "t_m32",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -334,12 +415,13 @@
       "text": "32 Property graph\nPG19 required",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m32",
       "originalText": "32 Property graph\nPG19 required",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "rectangle",
@@ -358,7 +440,9 @@
           "id": "t_m33",
           "type": "text"
         }
-      ]
+      ],
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
@@ -370,326 +454,412 @@
       "text": "33 Workflow integrity",
       "fontSize": 16,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#0f172a",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": "r_m33",
       "originalText": "33 Workflow integrity",
-      "autoResize": true
+      "autoResize": true,
+      "role": "node-label"
     },
     {
       "type": "arrow",
       "id": "a0",
-      "x": 155.0,
-      "y": 200.0,
-      "width": 295.0,
-      "height": 0.0,
+      "x": 265,
+      "y": 200,
+      "width": 70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          295.0,
-          0.0
+          70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m24",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m25",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a1",
-      "x": 450.0,
-      "y": 200.0,
-      "width": 295.0,
-      "height": 0.0,
+      "x": 560,
+      "y": 200,
+      "width": 70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          295.0,
-          0.0
+          70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m25",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m26",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a2",
-      "x": 745.0,
-      "y": 200.0,
-      "width": 295.0,
-      "height": 0.0,
+      "x": 855,
+      "y": 200,
+      "width": 70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          295.0,
-          0.0
+          70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m26",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m27",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a3",
-      "x": 1040.0,
-      "y": 200.0,
-      "width": 295.0,
-      "height": 0.0,
+      "x": 1150,
+      "y": 200,
+      "width": 70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          295.0,
-          0.0
+          70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m27",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m28",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a4",
-      "x": 1335.0,
-      "y": 200.0,
-      "width": 0.0,
-      "height": 280.0,
+      "x": 1335,
+      "y": 245,
+      "width": 0,
+      "height": 185,
       "points": [
         [
           0,
           0
         ],
         [
-          0.0,
-          280.0
+          0,
+          185
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m28",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m29",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a5",
-      "x": 1335.0,
-      "y": 480.0,
-      "width": -295.0,
-      "height": 0.0,
+      "x": 1225,
+      "y": 480,
+      "width": -70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -295.0,
-          0.0
+          -70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m29",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m30",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a6",
-      "x": 1040.0,
-      "y": 480.0,
-      "width": -295.0,
-      "height": 0.0,
+      "x": 930,
+      "y": 480,
+      "width": -70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -295.0,
-          0.0
+          -70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m30",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m31",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a7",
-      "x": 745.0,
-      "y": 480.0,
-      "width": -295.0,
-      "height": 0.0,
+      "x": 635,
+      "y": 480,
+      "width": -70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -295.0,
-          0.0
+          -70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m31",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m32",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "arrow",
       "id": "a8",
-      "x": 450.0,
-      "y": 480.0,
-      "width": -295.0,
-      "height": 0.0,
+      "x": 340,
+      "y": 480,
+      "width": -70,
+      "height": 0,
       "points": [
         [
           0,
           0
         ],
         [
-          -295.0,
-          0.0
+          -70,
+          0
         ]
       ],
       "endArrowhead": "arrow",
-      "startBinding": {
-        "elementId": "r_m32",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      },
-      "endBinding": {
-        "elementId": "r_m33",
-        "fixedPoint": [
-          0.5,
-          0.5
-        ]
-      }
+      "startBinding": null,
+      "endBinding": null,
+      "strokeColor": "#94a3b8",
+      "strokeWidth": 2
     },
     {
       "type": "text",
       "id": "provenance_footer",
       "x": 40,
-      "y": 652,
-      "width": 1320,
+      "y": 686,
+      "width": 1420,
       "height": 22,
       "text": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "fontSize": 16,
+      "fontSize": 12,
       "fontFamily": 1,
-      "strokeColor": "#1e1e1e",
+      "strokeColor": "#94a3b8",
       "originalText": "Source: commit 8a2755509773be2bb2b0184f45ba7579c3db6d03 · tree 1219a96837ff1c904db9d60d002f38378a037fd1 · PostgreSQL 19 Beta 2 rehearsal-only · Production: PostgreSQL 16.14 / migration 24",
-      "autoResize": true
+      "autoResize": true,
+      "role": "provenance"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_0",
+      "x": 270,
+      "y": 172,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a0"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_1",
+      "x": 565,
+      "y": 172,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a1"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_2",
+      "x": 860,
+      "y": 172,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a2"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_3",
+      "x": 1155,
+      "y": 172,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a3"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_4",
+      "x": 1350,
+      "y": 325,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a4"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_5",
+      "x": 1155,
+      "y": 485,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a5"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_6",
+      "x": 860,
+      "y": 485,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a6"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_7",
+      "x": 565,
+      "y": 485,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a7"
+    },
+    {
+      "type": "text",
+      "id": "edge_label_8",
+      "x": 270,
+      "y": 485,
+      "width": 70,
+      "height": 20,
+      "text": "requires",
+      "fontSize": 14,
+      "fontFamily": 1,
+      "strokeColor": "#cbd5e1",
+      "originalText": "requires",
+      "autoResize": true,
+      "role": "edge-label",
+      "textAlign": "center",
+      "containerId": null,
+      "boundElements": null,
+      "edgeId": "a8"
     }
   ],
   "appState": {
-    "viewBackgroundColor": "#ffffff"
+    "viewBackgroundColor": "#020617",
+    "exportBackground": true,
+    "exportWidth": 1500,
+    "exportHeight": 720
   }
 }

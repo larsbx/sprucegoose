@@ -1,5 +1,13 @@
 # PostgreSQL 19 staging current-state audit
 
+> [!WARNING]
+> **Historical snapshot — superseded on 2026-08-11.** This audit records the
+> state before the governed snapshot rehearsal. Its “no snapshot rehearsal”
+> blocker is no longer current. Use the
+> [reconciled rehearsal identity and verified results](../system-additions.md#reconciled-rehearsal-identity)
+> for current evidence. PostgreSQL 19 Beta 2 remains rehearsal-only; production
+> remains PostgreSQL 16.14 at migration 24.
+
 Date: 2026-08-11 UTC
 
 Governing task: `tsk-20260811T173357Z-51102d3c`
