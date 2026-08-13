@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
+command -v git >/dev/null || fail "git is required"
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not a git worktree"
+cd "$repo"
+
+dirty=false
+if ! git diff-index --quiet HEAD -- || test -n "$(git ls-files --others --exclude-standard)"; then dirty=true; fi
+if $dirty; then
+  if [[ ${SPRUCE_GOOSE_ALLOW_DIRTY_EVIDENCE:-} != 1 ]]; then
+    fail "dirty source rejected before output or build tool invocation"
+  fi
+  [[ -n ${SPRUCE_GOOSE_DIRTY_EVIDENCE:-} && -f ${SPRUCE_GOOSE_DIRTY_EVIDENCE} ]] ||
+    fail "dirty override requires SPRUCE_GOOSE_DIRTY_EVIDENCE file"
+  printf 'classification=non-transferable-dirty-evidence\n' >&2
+fi
+
+require_env() {
+  local name=$1
+  [[ -n ${!name:-} ]] || fail "explicit $name is required"
+}
+for name in SPRUCE_GOOSE_BUILDER SPRUCE_GOOSE_TASK SPRUCE_GOOSE_TRANSACTION SPRUCE_GOOSE_BUILD_TIME_UTC SPRUCE_GOOSE_OUTPUT_DIR SOURCE_DATE_EPOCH; do
+  require_env "$name"
+done
+[[ $SOURCE_DATE_EPOCH =~ ^[0-9]+$ ]] || fail "SOURCE_DATE_EPOCH must be integer seconds"
+[[ $SPRUCE_GOOSE_BUILD_TIME_UTC =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "build time must be explicit UTC seconds"
+[[ ! -e $SPRUCE_GOOSE_OUTPUT_DIR ]] || fail "output directory must not exist"
+
+commit=$(git rev-parse HEAD)
+tree=$(git rev-parse HEAD^{tree})
+mkdir -p "$SPRUCE_GOOSE_OUTPUT_DIR"
+work=$(mktemp -d "${TMPDIR:-/tmp}/spruce-goose-release.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+mix compile --warnings-as-errors
+app=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:app])')
+version=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:version])')
+elixir_version=$(elixir --version | sed -n 's/^Elixir //p' | head -1)
+erlang_version=$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().' 2>/dev/null)
+mix_version=$(mix --version | sed -n 's/^Mix //p' | head -1)
+
+migration_file="$work/migrations.term"
+: >"$migration_file"
+while IFS= read -r path; do
+  sha=$(sha256sum "$path" | cut -d' ' -f1)
+  printf '%s\t%s\n' "$path" "$sha" >>"$migration_file"
+done < <(LC_ALL=C git ls-files 'priv/repo/migrations/*.exs' | sort)
+[[ -s $migration_file ]] || fail "migration set is empty"
+
+provenance="$work/governed-provenance.json"
+export SG_COMMIT="$commit" SG_TREE="$tree" SG_DIRTY="$dirty" SG_ELIXIR="$elixir_version" SG_ERLANG="$erlang_version" SG_MIX="$mix_version" SG_MIGRATIONS="$migration_file" SG_PROVENANCE="$provenance"
+elixir -r lib/spruce_goose/release_provenance.ex -e '
+migrations = System.fetch_env!("SG_MIGRATIONS") |> File.stream!() |> Enum.map(fn line -> [p,s] = line |> String.trim_trailing() |> String.split("\t"); %{"path" => p, "sha256" => s} end)
+p = %{"build" => %{"builder" => System.fetch_env!("SPRUCE_GOOSE_BUILDER"), "time_utc" => System.fetch_env!("SPRUCE_GOOSE_BUILD_TIME_UTC")}, "governed" => %{"task" => System.fetch_env!("SPRUCE_GOOSE_TASK"), "transaction" => System.fetch_env!("SPRUCE_GOOSE_TRANSACTION")}, "migration_set_sha256" => SpruceGoose.ReleaseProvenance.migration_set_digest(migrations), "migrations" => migrations, "schema" => SpruceGoose.ReleaseProvenance.provenance_schema(), "source" => %{"commit" => System.fetch_env!("SG_COMMIT"), "dirty" => System.fetch_env!("SG_DIRTY") == "true", "tree" => System.fetch_env!("SG_TREE")}, "toolchain" => %{"elixir" => System.fetch_env!("SG_ELIXIR"), "erlang" => System.fetch_env!("SG_ERLANG"), "mix" => System.fetch_env!("SG_MIX")}}
+{:ok, bytes} = SpruceGoose.ReleaseProvenance.encode_provenance(p); File.write!(System.fetch_env!("SG_PROVENANCE"), bytes, [:exclusive])'
+
+release="$work/release"
+MIX_ENV=prod mix release "$app" --path "$release" --overwrite
+install -m 0644 "$provenance" "$release/releases/$version/governed-provenance.json"
+archive_name="${app}-${version}-governed.tar.gz"
+archive="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name"
+TZ=UTC LC_ALL=C tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --format=gnu -C "$release" -cf - . | gzip -n -9 >"$archive"
+archive_sha=$(sha256sum "$archive" | cut -d' ' -f1)
+provenance_sha=$(sha256sum "$provenance" | cut -d' ' -f1)
+export SG_ARCHIVE_NAME="$archive_name" SG_ARCHIVE_SHA="$archive_sha" SG_PROVENANCE_SHA="$provenance_sha" SG_RECEIPT="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name.receipt.json"
+elixir -r lib/spruce_goose/release_provenance.ex -e 'r=%{"archive"=>%{"filename"=>System.fetch_env!("SG_ARCHIVE_NAME"),"sha256"=>System.fetch_env!("SG_ARCHIVE_SHA")},"provenance_sha256"=>System.fetch_env!("SG_PROVENANCE_SHA"),"schema"=>SpruceGoose.ReleaseProvenance.receipt_schema()}; {:ok,b}=SpruceGoose.ReleaseProvenance.encode_receipt(r); File.write!(System.fetch_env!("SG_RECEIPT"),b,[:exclusive])'
+printf 'archive=%s\nreceipt=%s\nclassification=%s\n' "$archive" "$SG_RECEIPT" "$($dirty && printf non-transferable-dirty-evidence || printf clean-source-candidate)"

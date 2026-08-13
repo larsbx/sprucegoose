@@ -30,6 +30,17 @@ defmodule SpruceGoose.CLI.Executor do
   # same reason genesis exists.
   @unauthenticated [:help, :version, :generate_id]
 
+  @doc "Execute only boot-free, read-only release provenance commands."
+  def run_read_only({:inspect_release_provenance, archive}) do
+    SpruceGoose.ReleaseValidator.inspect_archive(archive)
+  end
+
+  def run_read_only({:validate_release_provenance, archive, opts}) do
+    SpruceGoose.ReleaseValidator.validate(Keyword.put(opts, :archive, archive))
+  end
+
+  def run_read_only(_), do: {:error, "not a read-only release provenance command"}
+
   @registry_verbs [
     :add_actor,
     :list_actors,

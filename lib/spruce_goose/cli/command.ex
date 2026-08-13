@@ -99,6 +99,11 @@ defmodule SpruceGoose.CLI.Command do
      ]},
     {"ledger", ["import PATH", "parity PATH"]},
     {"outbox", ["failed", "replay EVENT_ID"]},
+    {"release",
+     [
+       "inspect-provenance ARCHIVE",
+       "validate-provenance ARCHIVE --receipt PATH --expected-commit OID --expected-tree OID (--destination-inventory PATH|--artifact-only) [--allow-dirty]"
+     ]},
     # Nounless verbs. `whoami` sits here rather than under its own noun because
     # it takes no subcommand, and because it answers a question about the caller
     # rather than about the work.
@@ -156,6 +161,30 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse([noun, help]) when noun in @help_nouns and help in ["help", "--help", "-h"],
     do: {:ok, {:help, noun}}
+
+  def parse(["release", "inspect-provenance", archive]),
+    do: {:ok, {:inspect_release_provenance, archive}}
+
+  def parse(["release", "validate-provenance", archive | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          receipt: :string,
+          expected_commit: :string,
+          expected_tree: :string,
+          destination_inventory: :string,
+          artifact_only: :boolean,
+          allow_dirty: :boolean
+        ]
+      )
+
+    if rest == [] and invalid == [] and
+         Enum.all?([:receipt, :expected_commit, :expected_tree], &Keyword.has_key?(opts, &1)) do
+      {:ok, {:validate_release_provenance, archive, opts}}
+    else
+      {:error, "invalid release validate-provenance arguments"}
+    end
+  end
 
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}
