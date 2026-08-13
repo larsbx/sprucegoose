@@ -2,7 +2,7 @@ defmodule SpruceGoose.ReleaseValidator do
   @moduledoc "Boot-free, read-only governed archive inspection and pre-mutation validation."
 
   alias SpruceGoose.ReleaseProvenance, as: Provenance
-  @member ~r|\Areleases/[^/]+/governed-provenance\.json\z|
+  @member ~r"\Areleases/(?!\.{1,2}(?:/|$))[^/]+/governed-provenance\.json\z"
   @inventory_schema "spruce-goose-migration-inventory-v1"
 
   def inspect_archive(path) when is_binary(path) do

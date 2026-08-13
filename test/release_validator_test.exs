@@ -89,6 +89,7 @@ defmodule SpruceGoose.ReleaseValidatorTest do
     for alternative <- [
           ~c"./releases/9.8.7/governed-provenance.json",
           ~c"x/releases/9.8.7/governed-provenance.json",
+          ~c"releases/../governed-provenance.json",
           ~c"releases/9.8.7/../9.8.7/governed-provenance.json"
         ] do
       assert {:error, "archive contains noncanonical governed provenance member"} =
