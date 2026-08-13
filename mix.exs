@@ -13,7 +13,25 @@ defmodule SpruceGoose.MixProject do
         path: System.get_env("SPRUCE_GOOSE_ESCRIPT_PATH", "sprucegoose")
       ],
       test_ignore_filters: [~r|^test/fixtures/|],
+      releases: releases(),
       deps: deps()
+    ]
+  end
+
+  # Explicit release configuration. Previously the release was built on
+  # implicit defaults, so what shipped was not described anywhere in version
+  # control.
+  #
+  # strip_beams: false is deliberate. Stripping removes the CInf chunk, which
+  # is where compile provenance lives; without it a deployed artifact cannot
+  # say what it was built from. Recovering that for the running production
+  # release required diffing CLI usage strings commit by commit.
+  defp releases do
+    [
+      spruce_goose: [
+        include_executables_for: [:unix],
+        strip_beams: false
+      ]
     ]
   end
 

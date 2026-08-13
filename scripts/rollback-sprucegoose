@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# SpruceGoose rollback — INERT SKELETON. Performs no action.
+#
+# Governing task: tsk-20260813T141153Z-336632d6
+#
+# The 2026-08-10 rollback left no structured record: no reason, no operator,
+# no parity delta, no digest. Its entire archive was a directory name. This
+# skeleton fixes the record format now so that capability, when it is added in
+# the gated lane, cannot be added without it.
+#
+# It is INERT by construction and always exits non-zero.
+
+set -euo pipefail
+
+export ERL_CRASH_DUMP_SECONDS=0
+
+readonly SCRIPT_VERSION="0.1.0-inert"
+readonly SCRIPT_NAME="${0##*/}"
+
+usage() {
+  cat <<'USAGE'
+usage: rollback-sprucegoose --target NAME --to-release ID --task TASK_ID
+                            --reason TEXT [--operator NAME]
+
+  --target NAME      rollback target key (declared, never contacted)
+  --to-release ID    release identity to roll back to
+  --task TASK_ID     governing SpruceGoose task, tsk-<ts>-<8hex>
+  --reason TEXT      why the rollback happened; recorded, never optional
+  --operator NAME    who performed it; defaults to the invoking user
+
+This build is INERT and always refuses to act.
+USAGE
+}
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 2
+}
+
+target=""
+to_release=""
+task=""
+reason=""
+operator="${USER:-unknown}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)     [[ $# -ge 2 ]] || die "--target requires a value"; target="$2"; shift 2 ;;
+    --to-release) [[ $# -ge 2 ]] || die "--to-release requires a value"; to_release="$2"; shift 2 ;;
+    --task)       [[ $# -ge 2 ]] || die "--task requires a value"; task="$2"; shift 2 ;;
+    --reason)     [[ $# -ge 2 ]] || die "--reason requires a value"; reason="$2"; shift 2 ;;
+    --operator)   [[ $# -ge 2 ]] || die "--operator requires a value"; operator="$2"; shift 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    *)            die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$target" ]]     || die "--target is required"
+[[ -n "$to_release" ]] || die "--to-release is required"
+[[ -n "$task" ]]       || die "--task is required"
+[[ -n "$reason" ]]     || die "--reason is required; an unexplained rollback is not a record"
+
+[[ "$task" =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
+  || die "--task must be a stable SpruceGoose id (tsk-YYYYMMDDTHHMMSSZ-8hex)"
+
+# The record format a real rollback must emit. Printed, never written.
+printf 'rollback-record-schema: v1\n'
+printf 'target: %s\n' "$target"
+printf 'to_release: %s\n' "$to_release"
+printf 'task: %s\n' "$task"
+printf 'operator: %s\n' "$operator"
+printf 'reason: %s\n' "$reason"
+printf 'version: %s\n' "$SCRIPT_VERSION"
+
+cat >&2 <<'REFUSAL'
+
+REFUSED: this rollback script is INERT and performs no rollback.
+
+A real implementation must additionally record the source release identity,
+the destination migration delta at rollback time, and a digest of the
+artifact rolled back to. That capability belongs to the gated deployment
+lane, not to this scaffolding task.
+REFUSAL
+
+exit 3

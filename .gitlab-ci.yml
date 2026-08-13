@@ -1,0 +1,62 @@
+# SpruceGoose application CI — provenance-independent scaffolding.
+#
+# Governing task: tsk-20260813T141153Z-336632d6
+#
+# Scope is deliberately narrow. This pipeline builds, checks, and tests the
+# source. It does NOT stamp provenance, check destination migration parity,
+# reconcile the production authority declaration, transfer artifacts, or
+# activate anything. Those belong to tsk-20260813T111813Z-19e119cb and the
+# dependency-gated tsk-20260813T140419Z-d8dbffc5.
+#
+# No job in this file contacts the authority host or mutates any deployment.
+
+stages:
+  - check
+  - build
+  - test
+
+default:
+  # A crash dump written into the workspace is an undeclared mutation. Two
+  # forensic dumps were destroyed on 2026-08-13 by unguarded runtime boots.
+  before_script:
+    - export ERL_CRASH_DUMP_SECONDS=0
+    - export MIX_ENV=test
+
+variables:
+  ERL_CRASH_DUMP_SECONDS: "0"
+
+# Fail early when the build toolchain does not match the declared pin.
+# The cycle-2 provenance candidate was built on OTP 27 while .tool-versions
+# pinned 28.3.1 and production shipped erts-16.2 — nothing caught it.
+sprucegoose:toolchain:
+  stage: check
+  script:
+    - test -f .tool-versions
+    - grep -qx 'erlang 28.3.1' .tool-versions
+    - grep -qx 'elixir 1.19.5-otp-28' .tool-versions
+    - erl -noshell -eval 'io:format("otp=~s erts=~s~n",[erlang:system_info(otp_release),erlang:system_info(version)]),halt().'
+    - elixir --version
+
+sprucegoose:format:
+  stage: check
+  script:
+    - mix format --check-formatted
+
+sprucegoose:compile:
+  stage: build
+  needs: ["sprucegoose:toolchain"]
+  script:
+    - mix deps.get
+    - mix compile --warnings-as-errors
+
+sprucegoose:test:
+  stage: test
+  needs: ["sprucegoose:compile"]
+  script:
+    - mix test
+  artifacts:
+    name: "sprucegoose-test-$CI_COMMIT_SHORT_SHA"
+    when: always
+    paths:
+      - _build/test/lib/spruce_goose/.mix
+    expire_in: 30 days
