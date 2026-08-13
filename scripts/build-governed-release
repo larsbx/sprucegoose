@@ -63,7 +63,7 @@ verify_source_identity() {
   current_tree=$(git rev-parse HEAD^{tree})
   current_status=$(git status --porcelain=v1 --untracked-files=all)
   if [[ $current_commit != "$commit" || $current_tree != "$tree" || $current_status != "$source_status" ]]; then
-    fail "source changed during build; output removed"
+    fail "source changed during build; unpublished private artifacts retained"
   fi
 }
 private_output=$(mktemp -d "$output_parent/.spruce-goose-output.XXXXXXXXXX") ||
@@ -72,18 +72,15 @@ private_identity=$(stat -Lc '%d:%i' -- "$private_output") || fail "cannot identi
 SPRUCE_GOOSE_OUTPUT_DIR=$private_output
 success=false
 work=$(mktemp -d "${TMPDIR:-/tmp}/spruce-goose-release.XXXXXX")
-cleanup_private_output() {
-  local current_identity
-  [[ -n ${private_output:-} && -d $private_output && ! -L $private_output ]] || return 0
-  current_identity=$(stat -Lc '%d:%i' -- "$private_output") || return 0
-  [[ $current_identity == "$private_identity" ]] || return 0
-  rm -rf -- "$private_output"
+report_retained_artifacts() {
+  printf 'retained-work-artifact=%s\n' "$work" >&2
+  if ! $success; then
+    printf 'retained-private-output-artifact=%s\n' "$private_output" >&2
+  fi
 }
-cleanup() {
-  rm -rf -- "$work"
-  if ! $success; then cleanup_private_output; fi
-}
-trap cleanup EXIT
+# Recursive pathname cleanup cannot remain bound to an inode through the final
+# removal. Retain these private artifacts rather than risk deleting a replacement.
+trap report_retained_artifacts EXIT
 
 mix compile --warnings-as-errors
 app=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:app])')
