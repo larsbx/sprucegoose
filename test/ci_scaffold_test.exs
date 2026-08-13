@@ -63,6 +63,27 @@ defmodule SpruceGoose.CIScaffoldTest do
       assert ci =~ ".tool-versions",
              "CI must verify the toolchain against the declared pin, not assume it"
     end
+
+    test "the toolchain check is an executable script, not inline prose" do
+      path = Path.join(@root, "scripts/check-toolchain")
+      assert File.exists?(path)
+      assert Bitwise.band(File.stat!(path).mode, 0o111) != 0
+
+      assert read(".gitlab-ci.yml") =~ "scripts/check-toolchain",
+             "the toolchain job must call the script so the check is runnable"
+    end
+
+    test "the toolchain script COMPARES rather than merely printing" do
+      body = read("scripts/check-toolchain")
+
+      # The original CI job printed erl and elixir versions and compared
+      # nothing, so it would have passed the OTP 27 build it exists to catch.
+      assert body =~ ~r/actual_otp|running_otp/,
+             "the script must capture the running version"
+
+      assert body =~ ~r/!=|-ne\b/,
+             "the script must compare running versions against the pin"
+    end
   end
 
   describe "CI jobs" do
@@ -157,6 +178,49 @@ defmodule SpruceGoose.CIScaffoldTest do
         refute File.read!(file) =~ "sprucegoose_readonly",
                "the role declaration must stay unapplied: #{Path.basename(file)}"
       end
+    end
+  end
+
+  describe "CI job custody" do
+    setup do
+      {:ok, ci: read(".gitlab-ci.yml")}
+    end
+
+    test "the format job installs dependencies before checking", %{ci: ci} do
+      format_job = job_block(ci, "sprucegoose:format")
+
+      assert format_job =~ "mix deps.get",
+             "mix format aborts on :import_deps without fetched deps, so the " <>
+               "job would fail before checking anything"
+    end
+
+    test "the compile job publishes deps and _build for downstream jobs", %{ci: ci} do
+      compile_job = job_block(ci, "sprucegoose:compile")
+
+      assert compile_job =~ "artifacts:",
+             "a clean executor does not inherit the compile job filesystem"
+
+      assert compile_job =~ "_build"
+      assert compile_job =~ "deps"
+    end
+
+    test "the test job can obtain dependencies", %{ci: ci} do
+      test_job = job_block(ci, "sprucegoose:test")
+
+      assert test_job =~ "needs:",
+             "the test job must declare where its build inputs come from"
+
+      assert test_job =~ "mix deps.get" or test_job =~ ~r/artifacts:\s*true/,
+             "the test job must either fetch deps or inherit compile artifacts"
+    end
+  end
+
+  # Crude YAML job slicer: from a top-level job key to the next top-level key.
+  # Enough for these assertions without taking a YAML dependency.
+  defp job_block(yaml, job) do
+    case String.split(yaml, ~r/^#{Regex.escape(job)}:$/m, parts: 2) do
+      [_, rest] -> hd(String.split(rest, ~r/^[a-z]/m, parts: 2))
+      _ -> flunk("job #{job} not found in .gitlab-ci.yml")
     end
   end
 

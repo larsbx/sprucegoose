@@ -31,15 +31,18 @@ variables:
 sprucegoose:toolchain:
   stage: check
   script:
-    - test -f .tool-versions
-    - grep -qx 'erlang 28.3.1' .tool-versions
-    - grep -qx 'elixir 1.19.5-otp-28' .tool-versions
-    - erl -noshell -eval 'io:format("otp=~s erts=~s~n",[erlang:system_info(otp_release),erlang:system_info(version)]),halt().'
-    - elixir --version
+    # Delegates to a script that COMPARES running versions against the pin and
+    # exits non-zero on mismatch. An earlier revision grepped .tool-versions
+    # for its own contents and then merely printed the running versions, which
+    # proves nothing about the executing machine.
+    - ./scripts/check-toolchain
 
 sprucegoose:format:
   stage: check
   script:
+    # mix format aborts on :import_deps before checking anything when deps are
+    # absent, so the check must not run on a bare checkout.
+    - mix deps.get
     - mix format --check-formatted
 
 sprucegoose:compile:
@@ -48,11 +51,24 @@ sprucegoose:compile:
   script:
     - mix deps.get
     - mix compile --warnings-as-errors
+  # A clean executor does not inherit another job's filesystem. Publish deps
+  # and _build so the test job has the compiled tree rather than an empty one.
+  artifacts:
+    name: "sprucegoose-build-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - deps
+      - _build
+    expire_in: 1 day
 
 sprucegoose:test:
   stage: test
-  needs: ["sprucegoose:compile"]
+  needs:
+    - job: "sprucegoose:compile"
+      artifacts: true
   script:
+    # Idempotent belt-and-braces: artifacts should supply deps, but a cache
+    # miss must fail on a real test result rather than on missing deps.
+    - mix deps.get
     - mix test
   artifacts:
     name: "sprucegoose-test-$CI_COMMIT_SHORT_SHA"
