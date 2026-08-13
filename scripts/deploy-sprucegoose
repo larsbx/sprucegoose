@@ -23,6 +23,12 @@ set -euo pipefail
 
 export ERL_CRASH_DUMP_SECONDS=0
 
+# Byte-deterministic pattern ranges. Set as an exported variable, never as a
+# prefix on [[ ]]: [[ is a bash keyword, not a command, so "LC_ALL=C [[ ... ]]"
+# raises "[[: command not found" at runtime. Inside an if-condition that error
+# is swallowed and the guard silently never fires. bash -n does not catch it.
+export LC_ALL=C
+
 readonly SCRIPT_VERSION="0.1.0-inert"
 readonly SCRIPT_NAME="${0##*/}"
 
@@ -45,6 +51,34 @@ die() {
   exit 2
 }
 
+# Reject any C0 control byte or DEL before it can reach line-oriented output.
+#
+# A caller who can inject a newline into a field can forge additional record
+# lines: a reviewer observed a second "operator: root" and a forged
+# "version:" appearing inside otherwise valid output. ESC additionally lets a
+# value drive the reviewer's terminal. Output that a caller can shape is not
+# evidence.
+#
+# Every value is validated BEFORE the first stdout write, so an invalid
+# invocation emits nothing on stdout rather than a partial, ambiguous record.
+reject_control_bytes() {
+  local field="$1" value="$2"
+
+  if [[ "$value" == *[$'\x01'-$'\x1f\x7f']* ]]; then
+    die "$field contains a control character; refusing to emit a forgeable record"
+  fi
+}
+
+# Identifier-shaped fields are constrained further: a deployment target or
+# archive path has no business containing shell or record metacharacters.
+require_identifier() {
+  local field="$1" value="$2"
+
+  if [[ ! "$value" =~ ^[A-Za-z0-9._@:/-]+$ ]]; then
+    die "$field must match ^[A-Za-z0-9._@:/-]+$"
+  fi
+}
+
 target=""
 archive=""
 task=""
@@ -64,6 +98,14 @@ done
 [[ -n "$target" ]]  || die "--target is required"
 [[ -n "$archive" ]] || die "--release-archive is required"
 [[ -n "$task" ]]    || die "--task is required"
+
+# Validate every field before ANY stdout write.
+reject_control_bytes "--target" "$target"
+reject_control_bytes "--release-archive" "$archive"
+reject_control_bytes "--task" "$task"
+
+require_identifier "--target" "$target"
+require_identifier "--release-archive" "$archive"
 
 [[ "$task" =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
   || die "--task must be a stable SpruceGoose id (tsk-YYYYMMDDTHHMMSSZ-8hex)"

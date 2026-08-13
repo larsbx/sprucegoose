@@ -224,6 +224,158 @@ defmodule SpruceGoose.CIScaffoldTest do
     end
   end
 
+  describe "control-byte and record-line injection" do
+    # A rollback record is evidence. If a caller can inject a newline into any
+    # field, it can forge additional record lines -- observed producing a
+    # second "operator: root" and "version: 9.9.9-trusted" in otherwise valid
+    # output. Validation must therefore happen before ANY stdout write, so an
+    # invalid invocation produces zero stdout rather than a partial record.
+    @valid_task "tsk-20260813T141153Z-336632d6"
+
+    @injected [
+      {"newline", "\n"},
+      {"carriage_return", "\r"},
+      {"escape", "\e"},
+      {"tab", "\t"}
+    ]
+
+    defp run_script(script, args) do
+      System.cmd(Path.join(@root, script), args, cd: @root, stderr_to_stdout: false)
+    end
+
+    defp deploy_args(overrides) do
+      base = %{
+        target: "mama",
+        archive: "/tmp/release.tar.gz",
+        task: @valid_task
+      }
+
+      a = Map.merge(base, overrides)
+      ["--target", a.target, "--release-archive", a.archive, "--task", a.task]
+    end
+
+    defp rollback_args(overrides) do
+      base = %{
+        target: "mama",
+        release: "0.1.0",
+        task: @valid_task,
+        reason: "routine",
+        operator: "jimbo"
+      }
+
+      a = Map.merge(base, overrides)
+
+      [
+        "--target",
+        a.target,
+        "--to-release",
+        a.release,
+        "--task",
+        a.task,
+        "--reason",
+        a.reason,
+        "--operator",
+        a.operator
+      ]
+    end
+
+    for {label, byte} <- @injected do
+      test "deploy --target rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/deploy-sprucegoose",
+            deploy_args(%{target: "mama#{unquote(byte)}forged: line"})
+          )
+
+        assert code == 2
+        assert out == "", "invalid input must produce no stdout, got: #{inspect(out)}"
+      end
+
+      test "deploy --release-archive rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/deploy-sprucegoose",
+            deploy_args(%{archive: "/tmp/a.tar.gz#{unquote(byte)}forged: line"})
+          )
+
+        assert code == 2
+        assert out == ""
+      end
+
+      test "rollback --target rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/rollback-sprucegoose",
+            rollback_args(%{target: "mama#{unquote(byte)}forged: line"})
+          )
+
+        assert code == 2
+        assert out == ""
+      end
+
+      test "rollback --to-release rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/rollback-sprucegoose",
+            rollback_args(%{release: "0.1.0#{unquote(byte)}forged: line"})
+          )
+
+        assert code == 2
+        assert out == ""
+      end
+
+      test "rollback --reason rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/rollback-sprucegoose",
+            rollback_args(%{reason: "legit#{unquote(byte)}operator: root"})
+          )
+
+        assert code == 2
+        assert out == ""
+      end
+
+      test "rollback --operator rejects #{label} with zero stdout" do
+        {out, code} =
+          run_script(
+            "scripts/rollback-sprucegoose",
+            rollback_args(%{operator: "jimbo#{unquote(byte)}version: 9.9.9"})
+          )
+
+        assert code == 2
+        assert out == ""
+      end
+    end
+
+    test "every C0 control byte and DEL is rejected on a free-text field" do
+      # 0x01..0x1F plus 0x7F. 0x00 is excluded: the shell cannot carry a NUL
+      # inside an argument at all, so it is unreachable rather than allowed.
+      bytes = Enum.to_list(1..31) ++ [127]
+
+      for b <- bytes do
+        {out, code} =
+          run_script(
+            "scripts/rollback-sprucegoose",
+            rollback_args(%{reason: "legit" <> <<b>> <> "operator: root"})
+          )
+
+        assert code == 2, "byte 0x#{Integer.to_string(b, 16)} was not rejected"
+        assert out == "", "byte 0x#{Integer.to_string(b, 16)} produced stdout"
+      end
+    end
+
+    test "valid input still reaches the inert refusal" do
+      {out, code} = run_script("scripts/rollback-sprucegoose", rollback_args(%{}))
+
+      assert code == 3, "clean input must still exercise the inert path, not validation"
+      assert out =~ "rollback-record-schema: v1"
+
+      # Exactly one of each record field: no forged duplicates.
+      assert length(String.split(out, "operator:")) == 2
+      assert length(String.split(out, "version:")) == 2
+    end
+  end
+
   describe "lane exclusions" do
     test "provenance-lane paths are absent from this worktree" do
       for path <- [
