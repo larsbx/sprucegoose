@@ -11,8 +11,12 @@ defmodule SpruceGoose.ReleaseValidator do
 
   def inspect_archive_bytes(bytes) when is_binary(bytes) do
     with {:ok, entries} <- archive_entries(bytes),
-         matches = Enum.filter(entries, fn {name, _} -> Regex.match?(@member, name) end),
-         [{member, provenance_bytes}] <- matches,
+         provenance_entries =
+           Enum.filter(entries, fn {name, _} ->
+             Path.basename(name) == "governed-provenance.json"
+           end),
+         :ok <- canonical_provenance_members(provenance_entries),
+         [{member, provenance_bytes}] <- provenance_entries,
          {:ok, provenance} <- Provenance.decode_provenance(provenance_bytes) do
       {:ok, %{member: member, provenance_bytes: provenance_bytes, provenance: provenance}}
     else
@@ -84,6 +88,23 @@ defmodule SpruceGoose.ReleaseValidator do
     else
       {:error, _} = error -> error
       _ -> {:error, "invalid migration inventory"}
+    end
+  end
+
+  defp canonical_provenance_members([]), do: :ok
+
+  defp canonical_provenance_members(entries) do
+    names = Enum.map(entries, &elem(&1, 0))
+
+    cond do
+      Enum.any?(names, &(not Regex.match?(@member, &1))) ->
+        {:error, "archive contains noncanonical governed provenance member"}
+
+      length(names) > 1 ->
+        {:error, "archive contains multiple governed provenance members"}
+
+      true ->
+        :ok
     end
   end
 
