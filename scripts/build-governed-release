@@ -73,9 +73,57 @@ SPRUCE_GOOSE_OUTPUT_DIR=$private_output
 success=false
 work=$(mktemp -d "${TMPDIR:-/tmp}/spruce-goose-release.XXXXXX")
 report_retained_artifacts() {
-  printf 'retained-work-artifact=%s\n' "$work" >&2
+  local private_current_state private_current_identity final_current_state
+
+  printf 'retained-work-residue=%s\n' "$work" >&2
+  printf 'retained-work-residue-owner-only=true\n' >&2
+  printf 'retained-work-residue-published=%s\n' "$success" >&2
+  printf 'retained-work-residue-run-task=%s\n' "$SPRUCE_GOOSE_TASK" >&2
+  printf 'retained-work-residue-run-transaction=%s\n' "$SPRUCE_GOOSE_TRANSACTION" >&2
+  printf 'retained-work-residue-cleanup-policy=bounded-governed-cleanup-required\n' >&2
+
   if ! $success; then
-    printf 'retained-private-output-artifact=%s\n' "$private_output" >&2
+    private_current_identity=
+    if [[ -L $private_output ]]; then
+      private_current_state=symlink
+      private_current_identity=$(stat -c '%d:%i' -- "$private_output" 2>/dev/null || true)
+    elif [[ ! -e $private_output ]]; then
+      private_current_state=absent
+    elif private_current_identity=$(stat -c '%d:%i' -- "$private_output" 2>/dev/null); then
+      if [[ -d $private_output && $private_current_identity == "$private_identity" ]]; then
+        private_current_state=same-object
+      else
+        private_current_state=different-object
+      fi
+    else
+      private_current_state=inspection-error
+    fi
+
+    if [[ -e $final_output || -L $final_output ]]; then
+      final_current_state=present
+    else
+      final_current_state=absent-at-inspection
+    fi
+
+    printf 'invocation did not publish output to requested final path: %s\n' "$final_output" >&2
+    printf 'automatic recursive cleanup was not attempted\n' >&2
+    printf 'published=false\n' >&2
+    printf 'automatic-cleanup-attempted=false\n' >&2
+    printf 'requested-final-path=%s\n' "$final_output" >&2
+    printf 'requested-final-path-current-state=%s\n' "$final_current_state" >&2
+    printf 'recorded-private-identity=%s\n' "$private_identity" >&2
+    printf 'private-last-known-path=%s\n' "$private_output" >&2
+    printf 'private-current-state=%s\n' "$private_current_state" >&2
+    [[ -z $private_current_identity ]] ||
+      printf 'private-current-identity=%s\n' "$private_current_identity" >&2
+
+    if [[ $private_current_state == same-object ]]; then
+      printf 'owned-private-location=%s\n' "$private_output" >&2
+      printf 'private-last-known-path-currently-references-recorded-object=true\n' >&2
+      printf 'future-custody-guaranteed=false\n' >&2
+    else
+      printf 'owned-private-location=UNKNOWN\n' >&2
+    fi
   fi
 }
 # Recursive pathname cleanup cannot remain bound to an inode through the final

@@ -90,10 +90,17 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert rc == 99, text
     assert File.exists?(c.marker)
     refute File.exists?(output)
-    work = retained_path(text, "retained-work-artifact")
-    private = retained_path(text, "retained-private-output-artifact")
+    work = retained_path(text, "retained-work-residue")
+    private = retained_path(text, "private-last-known-path")
     assert File.dir?(work)
     assert File.dir?(private)
+    assert failure_status(text, output, "same-object")
+    assert text =~ "private-last-known-path-currently-references-recorded-object=true"
+    assert text =~ "future-custody-guaranteed=false"
+    assert text =~ "retained-work-residue-owner-only=true"
+    assert text =~ "retained-work-residue-published=false"
+    assert owner_only_directory?(work)
+    assert owner_only_directory?(private)
   end
 
   test "foreign output created during private output creation is never deleted" do
@@ -171,7 +178,14 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
 
     assert rc == 99, text
     assert length(foreign) == 1
+    replacement = Path.dirname(hd(foreign))
     assert File.read!(hd(foreign)) == "foreign"
+    assert failure_status(text, output, "different-object")
+    assert retained_path(text, "private-last-known-path") == replacement
+    assert retained_path(text, "owned-private-location") == "UNKNOWN"
+    assert retained_path(text, "private-current-identity") =~ ~r/^\d+:\d+$/
+    refute text =~ "retained-private-output-artifact="
+    refute text =~ "owned-private-location=#{replacement}"
   end
 
   test "symlink replacement after private creation is preserved without following its target" do
@@ -199,9 +213,13 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
 
     assert rc == 99, text
-    private = retained_path(text, "retained-private-output-artifact")
+    private = retained_path(text, "private-last-known-path")
     assert File.lstat!(private).type == :symlink
     assert File.read!(sentinel) == "foreign"
+    assert failure_status(text, output, "symlink")
+    assert retained_path(text, "owned-private-location") == "UNKNOWN"
+    refute text =~ "retained-private-output-artifact="
+    refute text =~ "owned-private-location=#{private}"
   end
 
   test "foreign replacement installed after cleanup identity return is preserved" do
@@ -247,6 +265,80 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert File.read!(Path.join(replaced, "foreign-sentinel")) == "foreign"
   end
 
+  test "private directory moved away without replacement is reported absent and unowned" do
+    c = repo_fixture(false)
+    output = Path.join(tmp("absent-private-parent"), "candidate")
+
+    File.write!(
+      Path.join(c.fake_bin, "mix"),
+      """
+      #!/usr/bin/env bash
+      private=$(find '#{Path.dirname(output)}' -maxdepth 1 -type d -name '.spruce-goose-output.*' -print -quit)
+      mv -- "$private" "$private-owned-away"
+      exit 99
+      """
+    )
+
+    File.chmod!(Path.join(c.fake_bin, "mix"), 0o700)
+    git(c.root, ["add", "fake-bin/mix"])
+    git(c.root, ["commit", "-qm", "absent-private-fixture"])
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    private = retained_path(text, "private-last-known-path")
+    moved = private <> "-owned-away"
+    assert rc == 99, text
+    assert File.dir?(moved)
+    refute File.exists?(private)
+    assert text =~ "private-current-state=absent"
+    assert retained_path(text, "owned-private-location") == "UNKNOWN"
+    assert text =~ "published=false"
+    assert text =~ "automatic-cleanup-attempted=false"
+  end
+
+  test "reporting stat failure preserves primary status and reports unknown ownership" do
+    c = repo_fixture(false)
+    output = Path.join(tmp("report-stat-failure-parent"), "candidate")
+    calls = Path.join(tmp("report-stat-failure-calls"), "stat.calls")
+    barrier = calls <> ".report-lookup-ran"
+    real_stat = System.find_executable("stat")
+
+    File.write!(
+      Path.join(c.fake_bin, "stat"),
+      """
+      #!/usr/bin/env bash
+      target=${!#}
+      if [[ $target == *'/.spruce-goose-output.'* ]]; then
+        count=0
+        [[ ! -f '#{calls}' ]] || count=$(cat '#{calls}')
+        count=$((count + 1))
+        printf '%s' "$count" >'#{calls}'
+        if [[ $count -eq 2 ]]; then
+          printf report-lookup-ran >'#{barrier}'
+          exit 77
+        fi
+      fi
+      exec '#{real_stat}' "$@"
+      """
+    )
+
+    File.chmod!(Path.join(c.fake_bin, "stat"), 0o700)
+    git(c.root, ["add", "fake-bin/stat"])
+    git(c.root, ["commit", "-qm", "report-stat-failure-fixture"])
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    private = retained_path(text, "private-last-known-path")
+    assert rc == 99, text
+    assert File.read!(calls) == "2"
+    assert File.read!(barrier) == "report-lookup-ran"
+    assert File.dir?(private)
+    assert text =~ "private-current-state=inspection-error"
+    assert retained_path(text, "owned-private-location") == "UNKNOWN"
+    assert text =~ "published=false"
+    assert text =~ "automatic-cleanup-attempted=false"
+  end
+
   test "stable finalization publishes exactly the requested output path" do
     c = mutating_repo_fixture(:stable)
     output = Path.join(tmp("stable-output-parent"), "candidate")
@@ -258,8 +350,21 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert text =~ "receipt=#{output}/app-0.1.0-governed.tar.gz.receipt.json"
     assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz"))
     assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz.receipt.json"))
-    assert File.dir?(retained_path(text, "retained-work-artifact"))
+    work = retained_path(text, "retained-work-residue")
+    assert File.dir?(work)
+    assert owner_only_directory?(work)
+    assert text =~ "retained-work-residue-owner-only=true"
+    assert text =~ "retained-work-residue-published=true"
+    assert text =~ "retained-work-residue-run-task=tsk-20260813T111813Z-19e119cb"
+    assert text =~ "retained-work-residue-run-transaction=txn"
+    assert text =~ "retained-work-residue-cleanup-policy=bounded-governed-cleanup-required"
+    refute text =~ "published=false"
+    refute text =~ "automatic-cleanup-attempted="
+    refute text =~ "private-current-state="
     refute text =~ "retained-private-output-artifact="
+    assert owner_only_directory?(output)
+    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.gz"))
+    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.gz.receipt.json"))
   end
 
   test "caller-created final output collision refuses publication and preserves sentinel" do
@@ -272,7 +377,10 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert rc == 2, text
     assert text =~ "output directory appeared before publication"
     assert File.read!(sentinel) == "foreign"
-    assert File.dir?(retained_path(text, "retained-private-output-artifact"))
+    private = retained_path(text, "private-last-known-path")
+    assert File.dir?(private)
+    assert failure_status(text, output, "same-object")
+    assert text =~ "requested-final-path-current-state=present"
   end
 
   test "mid-build source mutation refuses publication and reports retained artifacts" do
@@ -286,8 +394,9 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert File.exists?(c.marker)
     assert File.read!(Path.join(c.root, "tracked")) == "mutated during build\n"
     refute File.exists?(output)
-    assert File.dir?(retained_path(text, "retained-work-artifact"))
-    assert File.dir?(retained_path(text, "retained-private-output-artifact"))
+    assert File.dir?(retained_path(text, "retained-work-residue"))
+    assert File.dir?(retained_path(text, "private-last-known-path"))
+    assert failure_status(text, output, "same-object")
   end
 
   test "receipt source mutation refuses publication and clean classification" do
@@ -314,8 +423,9 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
            observed
 
     assert text =~ "source changed during build; unpublished private artifacts retained"
-    assert File.dir?(retained_path(text, "retained-work-artifact"))
-    assert File.dir?(retained_path(text, "retained-private-output-artifact"))
+    assert File.dir?(retained_path(text, "retained-work-residue"))
+    assert File.dir?(retained_path(text, "private-last-known-path"))
+    assert failure_status(text, output, "same-object")
   end
 
   test "validator refuses missing inventory by default and artifact-only is explicit" do
@@ -481,6 +591,29 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
         {"SPRUCE_GOOSE_OUTPUT_DIR", output}
       ]
     }
+  end
+
+  defp failure_status(text, output, current_state) do
+    recorded = retained_path(text, "recorded-private-identity")
+
+    text =~ "published=false" and
+      text =~ "automatic-cleanup-attempted=false" and
+      text =~ "requested-final-path=#{output}" and
+      text =~ "private-current-state=#{current_state}" and
+      text =~ "recorded-private-identity=#{recorded}" and
+      text =~ "invocation did not publish output to requested final path: #{output}" and
+      text =~ "automatic recursive cleanup was not attempted" and
+      recorded =~ ~r/^\d+:\d+$/
+  end
+
+  defp owner_only_directory?(path) do
+    stat = File.stat!(path)
+    stat.type == :directory and Bitwise.band(stat.mode, 0o777) == 0o700
+  end
+
+  defp owner_only_regular_file?(path) do
+    stat = File.stat!(path)
+    stat.type == :regular and Bitwise.band(stat.mode, 0o777) == 0o600
   end
 
   defp retained_path(text, key) do
