@@ -149,6 +149,25 @@ defmodule SpruceGoose.ReleaseValidatorTest do
              validate(f, destination_inventory: inventory, artifact_only: false)
   end
 
+  test "validator boundary requires exactly one inventory mode", context do
+    f = fixture(context)
+    inventory = write_inventory(context.root, context.migrations)
+
+    assert {:error, message} =
+             validate(f, artifact_only: false, destination_inventory: nil)
+
+    assert message =~ "destination migration inventory is required"
+
+    assert {:error, "destination inventory and artifact-only are mutually exclusive"} =
+             validate(f, artifact_only: true, destination_inventory: inventory)
+
+    assert {:ok, %{mode: "artifact-only"}} =
+             validate(f, artifact_only: true, destination_inventory: nil)
+
+    assert {:ok, %{mode: "destination-inventory"}} =
+             validate(f, artifact_only: false, destination_inventory: inventory)
+  end
+
   test "destination behind ahead and different reject precisely", context do
     f = fixture(context)
     behind = write_inventory(context.root, Enum.take(context.migrations, 1), "behind.json")

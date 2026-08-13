@@ -92,6 +92,109 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     refute File.exists?(output)
   end
 
+  test "foreign output created during private output creation is never deleted" do
+    c = repo_fixture(false)
+    output = Path.join(tmp("creation-race-parent"), "candidate")
+    sentinel = Path.join(output, "foreign-sentinel")
+    real_mktemp = System.find_executable("mktemp")
+    real_mkdir = System.find_executable("mkdir")
+
+    File.write!(
+      Path.join(c.fake_bin, "mkdir"),
+      """
+      #!/usr/bin/env bash
+      if [[ $* == *'#{output}'* ]]; then
+        '#{real_mkdir}' -p '#{output}'
+        printf foreign >'#{sentinel}'
+      fi
+      exec '#{real_mkdir}' "$@"
+      """
+    )
+
+    File.write!(
+      Path.join(c.fake_bin, "mktemp"),
+      """
+      #!/usr/bin/env bash
+      if [[ $* == *'.spruce-goose-output.'* ]]; then
+        mkdir -p '#{output}'
+        printf foreign >'#{sentinel}'
+      fi
+      exec '#{real_mktemp}' "$@"
+      """
+    )
+
+    for fake <- ["mkdir", "mktemp"], do: File.chmod!(Path.join(c.fake_bin, fake), 0o700)
+    git(c.root, ["add", "fake-bin/mkdir", "fake-bin/mktemp"])
+    git(c.root, ["commit", "-qm", "creation-race-fixture"])
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    assert rc == 99, text
+    assert File.read!(sentinel) == "foreign"
+  end
+
+  test "foreign output substituted after private creation is never deleted" do
+    c = repo_fixture(false)
+    output = Path.join(tmp("substitution-parent"), "candidate")
+    sentinel = Path.join(output, "foreign-sentinel")
+
+    File.write!(
+      Path.join(c.fake_bin, "mix"),
+      """
+      #!/usr/bin/env bash
+      private=$(find '#{Path.dirname(output)}' -maxdepth 1 -type d -name '.spruce-goose-output.*' -print -quit)
+      target=${private:-'#{output}'}
+      mv "$target" "$target-owned-away"
+      mkdir -p "$target"
+      printf foreign >"$target/foreign-sentinel"
+      exit 99
+      """
+    )
+
+    File.chmod!(Path.join(c.fake_bin, "mix"), 0o700)
+    git(c.root, ["add", "fake-bin/mix"])
+    git(c.root, ["commit", "-qm", "substitution-fixture"])
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    foreign =
+      Path.dirname(output)
+      |> File.ls!()
+      |> Enum.filter(&String.starts_with?(&1, ".spruce-goose-output."))
+      |> Enum.map(&Path.join([Path.dirname(output), &1, "foreign-sentinel"]))
+      |> then(&[sentinel | &1])
+      |> Enum.filter(&File.exists?/1)
+
+    assert rc == 99, text
+    assert length(foreign) == 1
+    assert File.read!(hd(foreign)) == "foreign"
+  end
+
+  test "stable finalization publishes exactly the requested output path" do
+    c = mutating_repo_fixture(:stable)
+    output = Path.join(tmp("stable-output-parent"), "candidate")
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    assert rc == 0, text
+    assert text =~ "archive=#{output}/app-0.1.0-governed.tar.gz"
+    assert text =~ "receipt=#{output}/app-0.1.0-governed.tar.gz.receipt.json"
+    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz"))
+    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz.receipt.json"))
+  end
+
+  test "caller-created final output collision refuses publication and preserves sentinel" do
+    c = mutating_repo_fixture(:collision)
+    output = Path.join(tmp("collision-output-parent"), "candidate")
+    sentinel = Path.join(output, "foreign-sentinel")
+
+    {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
+
+    assert rc == 2, text
+    assert text =~ "output directory appeared before publication"
+    assert File.read!(sentinel) == "foreign"
+  end
+
   test "mid-build source mutation refuses and removes archive receipt and output" do
     c = mutating_repo_fixture(:release)
     output = Path.join(tmp("mutation-output-parent"), "candidate")
@@ -147,9 +250,7 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
 
     {default_text, default_rc} = run(@validate, base, System.tmp_dir!(), [])
     assert default_rc == 2
-
-    assert default_text =~
-             "destination migration inventory is required; use --artifact-only explicitly"
+    assert default_text =~ "usage: validate-governed-release"
 
     {artifact_text, artifact_rc} =
       run(@validate, base ++ ["--artifact-only"], System.tmp_dir!(), [])
@@ -157,6 +258,31 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     assert artifact_rc == 2
     refute artifact_text =~ "destination migration inventory is required"
     assert artifact_text =~ "no such file" or artifact_text =~ "enoent"
+  end
+
+  test "validator parser rejects selecting destination inventory and artifact-only together" do
+    commit = String.duplicate("a", 40)
+    tree = String.duplicate("b", 40)
+
+    args = [
+      "/absent/archive.tar.gz",
+      "--receipt",
+      "/absent/receipt.json",
+      "--expected-commit",
+      commit,
+      "--expected-tree",
+      tree,
+      "--destination-inventory",
+      "/absent/inventory.json",
+      "--artifact-only"
+    ]
+
+    {text, rc} = run(@validate, args, System.tmp_dir!(), [])
+
+    assert rc == 2
+    assert text =~ "usage: validate-governed-release"
+    refute text =~ "no such file"
+    refute text =~ "enoent"
   end
 
   test "inspector is boot-free and performs no recursive workspace writes" do
@@ -220,6 +346,10 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
         printf '{}\\n' >"$SG_RECEIPT"
         if [[ '#{stage}' == receipt ]]; then
           printf 'mutated during receipt\\n' >'#{Path.join(root, "tracked")}'
+        elif [[ '#{stage}' == collision ]]; then
+          final=${SPRUCE_GOOSE_OUTPUT_DIR%/.spruce-goose-output.*}/candidate
+          mkdir -p "$final"
+          printf foreign >"$final/foreign-sentinel"
         fi
       else
         printf '{}\\n' >"$SG_PROVENANCE"
@@ -259,6 +389,7 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
 
     %{
       root: root,
+      fake_bin: fake_bin,
       marker: marker,
       output: output,
       env: [

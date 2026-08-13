@@ -130,7 +130,12 @@ defmodule SpruceGoose.ReleaseValidator do
   defp inventory_mode(nil, false),
     do: {:error, "destination migration inventory is required; use --artifact-only explicitly"}
 
-  defp inventory_mode(_, _), do: :ok
+  defp inventory_mode(nil, true), do: :ok
+  defp inventory_mode(path, false) when is_binary(path), do: :ok
+
+  defp inventory_mode(path, true) when is_binary(path),
+    do: {:error, "destination inventory and artifact-only are mutually exclusive"}
+
   defp validate_inventory(nil, true, _), do: {:ok, "artifact-only"}
 
   defp validate_inventory(path, _, expected) do

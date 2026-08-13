@@ -49,7 +49,10 @@ case "$output" in
   "$repo"|"$repo"/*) fail "output directory must be outside repository" ;;
 esac
 [[ ! -e $output && ! -L $output ]] || fail "output directory must not exist"
-SPRUCE_GOOSE_OUTPUT_DIR=$output
+output_parent=$(dirname -- "$output")
+[[ -d $output_parent && ! -L $output_parent ]] || fail "output directory parent must be an existing directory"
+output_name=$(basename -- "$output")
+final_output=$output
 
 commit=$(git rev-parse HEAD)
 tree=$(git rev-parse HEAD^{tree})
@@ -63,13 +66,22 @@ verify_source_identity() {
     fail "source changed during build; output removed"
   fi
 }
-mkdir -p "$SPRUCE_GOOSE_OUTPUT_DIR"
-output_created=true
+private_output=$(mktemp -d "$output_parent/.spruce-goose-output.XXXXXXXXXX") ||
+  fail "cannot create private output directory"
+private_identity=$(stat -Lc '%d:%i' -- "$private_output") || fail "cannot identify private output directory"
+SPRUCE_GOOSE_OUTPUT_DIR=$private_output
 success=false
 work=$(mktemp -d "${TMPDIR:-/tmp}/spruce-goose-release.XXXXXX")
+cleanup_private_output() {
+  local current_identity
+  [[ -n ${private_output:-} && -d $private_output && ! -L $private_output ]] || return 0
+  current_identity=$(stat -Lc '%d:%i' -- "$private_output") || return 0
+  [[ $current_identity == "$private_identity" ]] || return 0
+  rm -rf -- "$private_output"
+}
 cleanup() {
   rm -rf -- "$work"
-  if $output_created && ! $success; then rm -rf -- "$SPRUCE_GOOSE_OUTPUT_DIR"; fi
+  if ! $success; then cleanup_private_output; fi
 }
 trap cleanup EXIT
 
@@ -110,5 +122,15 @@ provenance_sha=$(sha256sum "$provenance" | cut -d' ' -f1)
 export SG_ARCHIVE_NAME="$archive_name" SG_ARCHIVE_SHA="$archive_sha" SG_PROVENANCE_SHA="$provenance_sha" SG_RECEIPT="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name.receipt.json"
 elixir -r lib/spruce_goose/release_provenance.ex -e 'r=%{"archive"=>%{"filename"=>System.fetch_env!("SG_ARCHIVE_NAME"),"sha256"=>System.fetch_env!("SG_ARCHIVE_SHA")},"provenance_sha256"=>System.fetch_env!("SG_PROVENANCE_SHA"),"schema"=>SpruceGoose.ReleaseProvenance.receipt_schema()}; {:ok,b}=SpruceGoose.ReleaseProvenance.encode_receipt(r); File.write!(System.fetch_env!("SG_RECEIPT"),b,[:exclusive])'
 verify_source_identity
+
+# GNU mv -Tn performs a no-replace rename; verify that it actually moved the owned object.
+mv -Tn -- "$private_output" "$final_output" || fail "output directory appeared before publication"
+final_identity=$(stat -Lc '%d:%i' -- "$final_output" 2>/dev/null || true)
+if [[ -e $private_output || -L $private_output || $final_identity != "$private_identity" ]]; then
+  fail "output directory appeared before publication"
+fi
+SPRUCE_GOOSE_OUTPUT_DIR=$final_output
+archive="$final_output/$archive_name"
+SG_RECEIPT="$final_output/$archive_name.receipt.json"
 success=true
 printf 'archive=%s\nreceipt=%s\nclassification=%s\n' "$archive" "$SG_RECEIPT" "$($dirty && printf non-transferable-dirty-evidence || printf clean-source-candidate)"
