@@ -10,9 +10,11 @@ defmodule SpruceGoose.ActorsTest do
 
   use SpruceGoose.DataCase, async: false
 
-  alias SpruceGoose.Actors.{Actor, Grant, Resolver, Scope}
+  alias SpruceGoose.Actors.{Actor, Grant, Registry, Resolver, Scope}
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
+
+  @genesis_roles ~w(admin approver artifact_verifier author operator proposer reader)a
 
   describe "genesis" do
     test "an empty registry creates its first actor as a global admin" do
@@ -26,6 +28,110 @@ defmodule SpruceGoose.ActorsTest do
       assert genesis.created_by == "genesis"
       assert %{role: :admin, scope: "*"} = hd(genesis.grants)
       assert genesis.note =~ "registry was empty"
+    end
+
+    test "concurrent first-actor requests admit exactly one complete genesis actor" do
+      empty_registry()
+      parent = self()
+
+      contenders =
+        for index <- 1..64 do
+          Elixir.Task.async(fn ->
+            send(parent, {:ready, self()})
+
+            receive do
+              :go ->
+                Executor.run(
+                  {:add_actor,
+                   %{name: "genesis-#{index}", kind: :human, description: "concurrent genesis"}}
+                )
+            end
+          end)
+        end
+
+      pids =
+        for _ <- contenders do
+          assert_receive {:ready, pid}, 5_000
+          pid
+        end
+
+      Enum.each(pids, &send(&1, :go))
+      results = Enum.map(contenders, &Elixir.Task.await(&1, 15_000))
+      actors = Ash.read!(Actor, authorize?: false)
+      grants = Ash.read!(Grant, authorize?: false)
+
+      assert Enum.count(results, &match?({:ok, %{genesis: true}}, &1)) == 1
+      assert length(actors) == 1
+
+      assert grants
+             |> Enum.map(&{&1.role, &1.scope, &1.actor_id, &1.granted_by})
+             |> Enum.sort() ==
+               Enum.map(
+                 @genesis_roles,
+                 &{&1, "*", hd(actors).id, "genesis"}
+               )
+               |> Enum.sort()
+    end
+
+    test "a Genesis grant failure rolls back the actor and every grant" do
+      empty_registry()
+
+      Repo.query!("""
+      CREATE FUNCTION corr7_reject_approver_grant() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NEW.role = 'approver' THEN
+          RAISE EXCEPTION 'injected Genesis grant failure';
+        END IF;
+        RETURN NEW;
+      END
+      $$
+      """)
+
+      Repo.query!("""
+      CREATE TRIGGER corr7_reject_approver_grant
+      BEFORE INSERT ON actor_grants
+      FOR EACH ROW EXECUTE FUNCTION corr7_reject_approver_grant()
+      """)
+
+      assert {:error, _error} =
+               Executor.run(
+                 {:add_actor,
+                  %{name: "rollback-genesis", kind: :human, description: "must not persist"}}
+               )
+
+      assert Ash.read!(Actor, authorize?: false) == []
+      assert Ash.read!(Grant, authorize?: false) == []
+    end
+
+    test "a configured Genesis identity rejects every other first actor" do
+      empty_registry()
+      previous = Application.get_env(:spruce_goose, :expected_genesis_actor)
+      Application.put_env(:spruce_goose, :expected_genesis_actor, "expected-genesis")
+
+      on_exit(fn ->
+        if previous do
+          Application.put_env(:spruce_goose, :expected_genesis_actor, previous)
+        else
+          Application.delete_env(:spruce_goose, :expected_genesis_actor)
+        end
+      end)
+
+      assert {:error, message} =
+               Executor.run(
+                 {:add_actor,
+                  %{name: "wrong-genesis", kind: :human, description: "must be refused"}}
+               )
+
+      assert message =~ "expected Genesis actor expected-genesis"
+      assert Ash.read!(Actor, authorize?: false) == []
+      assert Ash.read!(Grant, authorize?: false) == []
+
+      assert {:ok, %{actor: "expected-genesis", genesis: true}} =
+               Executor.run(
+                 {:add_actor,
+                  %{name: "expected-genesis", kind: :human, description: "configured authority"}}
+               )
     end
 
     test "the first actor must be human, because an empty registry holds nobody accountable" do
@@ -59,6 +165,43 @@ defmodule SpruceGoose.ActorsTest do
       assert added.created_by == system()
       refute Map.has_key?(added, :genesis)
     end
+
+    test "a stale resolved admin cannot register an actor after being disabled" do
+      actor("backup-admin", :human, admin: "*")
+      assert {:ok, stale_admin} = Resolver.resolve(system())
+
+      assert {:ok, _disabled} =
+               Executor.run(
+                 {:disable_actor, system(), "authorization revoked during request"},
+                 "backup-admin"
+               )
+
+      assert {:error, message} =
+               Registry.add(
+                 %{name: "late-actor", kind: :agent, description: nil},
+                 stale_admin
+               )
+
+      assert message =~ "is disabled"
+      refute Enum.any?(Ash.read!(Actor, authorize?: false), &(&1.name == "late-actor"))
+    end
+
+    test "a stale resolved admin cannot register an actor after admin is revoked" do
+      actor("backup-admin", :human, admin: "*")
+      assert {:ok, stale_admin} = Resolver.resolve(system())
+
+      assert {:ok, _revoked} =
+               Executor.run({:revoke_role, system(), "admin", "*"}, "backup-admin")
+
+      assert {:error, message} =
+               Registry.add(
+                 %{name: "late-actor", kind: :agent, description: nil},
+                 stale_admin
+               )
+
+      assert message =~ "does not hold admin"
+      refute Enum.any?(Ash.read!(Actor, authorize?: false), &(&1.name == "late-actor"))
+    end
   end
 
   describe "the registry gate" do
@@ -84,6 +227,23 @@ defmodule SpruceGoose.ActorsTest do
                Executor.run({:grant_role, system(), "proposer", "project:nope"}, system())
 
       assert message =~ ~s(no project "nope")
+    end
+
+    test "a disabled backup admin does not permit revoking the last active global admin" do
+      actor("disabled-backup-admin", :human, admin: "*")
+
+      assert {:ok, _disabled} =
+               Executor.run(
+                 {:disable_actor, "disabled-backup-admin", "not available for recovery"},
+                 system()
+               )
+
+      assert {:error, message} =
+               Executor.run({:revoke_role, system(), "admin", "*"}, system())
+
+      assert message =~ "last active global admin"
+      assert {:ok, current_admin} = Resolver.resolve(system())
+      assert Scope.holds?(current_admin, :admin, "*")
     end
 
     test "the last global admin grant cannot be revoked" do

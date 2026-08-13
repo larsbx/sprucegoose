@@ -1,17 +1,12 @@
 defmodule SpruceGoose.Web.ActorPlug do
   @moduledoc """
-  Map an authenticated MCP client to a registered actor.
+  Map an authenticated MCP OAuth client to a registered actor through an
+  administrator-governed immutable-ID binding.
 
-  `BearerPlug` has already established *which OAuth client* is calling; this
-  turns that into *which actor*, by matching the client name against the actor
-  registry. AshAi reads the actor straight off the connection
-  (`Ash.PlugHelpers.get_actor/1`), so the read-only tools inherit exactly the
-  same project scoping the CLI gets, with no change to the tool list.
-
-  Unlike the CLI's `--as`, this side is genuinely authenticated: the caller had
-  to present a valid bearer token to reach here. A client with no matching
-  actor is refused rather than defaulted — an unregistered caller is not an
-  anonymous one, it is one nobody granted anything.
+  `BearerPlug` establishes which OAuth client is calling. This plug resolves
+  that client's immutable ID through `:oauth_client_actor_bindings`, whose
+  values are immutable actor IDs. Registration metadata such as `client_name`
+  is never an authority input. An unbound client is refused.
   """
 
   @behaviour Plug
@@ -27,41 +22,41 @@ defmodule SpruceGoose.Web.ActorPlug do
 
   @impl Plug
   def call(conn, _opts) do
-    case client_name(conn) do
-      nil -> refuse(conn, "the bearer token names no client")
-      name -> assign_actor(conn, name)
+    with client_id when is_binary(client_id) <- client_id(conn),
+         {:ok, actor_id} <- actor_binding(client_id) do
+      assign_actor(conn, client_id, actor_id)
+    else
+      nil -> refuse(conn, "the bearer token has no verified OAuth client ID")
+      :error -> refuse(conn, "no actor binding exists for this OAuth client ID")
     end
   end
 
-  defp assign_actor(conn, name) do
+  defp assign_actor(conn, client_id, actor_id) do
     Actor
-    |> Ash.Query.filter_input(name: name)
+    |> Ash.Query.filter_input(id: actor_id)
     |> Ash.read_one(authorize?: false)
     |> case do
       {:ok, actor} when not is_nil(actor) ->
         if Actor.active?(actor) do
           Ash.PlugHelpers.set_actor(conn, actor)
         else
-          refuse(conn, "actor #{name} is disabled")
+          refuse(conn, "the actor bound to OAuth client #{client_id} is disabled")
         end
 
       _ ->
-        refuse(conn, "no actor is registered as #{inspect(name)}")
+        refuse(conn, "the actor bound to OAuth client #{client_id} does not exist")
     end
   end
 
-  # The client name is where the OAuth registration and the actor registry meet.
-  # Both are administered by hand on this fleet, so the join is a name match.
-  defp client_name(conn) do
+  defp actor_binding(client_id) do
+    :spruce_goose
+    |> Application.get_env(:oauth_client_actor_bindings, %{})
+    |> Map.fetch(client_id)
+  end
+
+  defp client_id(conn) do
     case conn.assigns do
-      %{oauth2_client: %{client_name: name}} when is_binary(name) -> name
-      _ -> subject_name(conn)
-    end
-  end
-
-  defp subject_name(conn) do
-    case Ash.PlugHelpers.get_actor(conn) do
-      %{client_name: name} when is_binary(name) -> name
+      %{oauth_claims: %{"client_id" => id}} when is_binary(id) and id != "" -> id
       _ -> nil
     end
   end

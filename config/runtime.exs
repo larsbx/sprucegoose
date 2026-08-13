@@ -19,6 +19,11 @@ config :spruce_goose,
 
 outbox_flag = System.get_env("OUTBOX_DISPATCHER_ENABLED", "false")
 outbox_enabled? = outbox_flag == "1" or outbox_flag == "true"
+oban_enabled? = System.get_env("SPRUCE_GOOSE_OBAN_ENABLED", "true") in ["1", "true"]
+
+if outbox_enabled? and not oban_enabled? do
+  raise "OUTBOX_DISPATCHER_ENABLED requires SPRUCE_GOOSE_OBAN_ENABLED"
+end
 
 outbox_handler =
   case System.get_env("OUTBOX_HANDLER") do
@@ -45,6 +50,10 @@ end
 config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler
+
+if not oban_enabled? do
+  config :spruce_goose, Oban, queues: false, plugins: false
+end
 
 config :spruce_goose,
   ledger_import_root: System.get_env("LEDGER_IMPORT_ROOT"),
@@ -119,6 +128,37 @@ if mcp_enabled? do
     end
   end
 
+  oauth_actor_bindings =
+    case System.get_env("SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS") do
+      value when is_binary(value) and value != "" ->
+        uuid = ~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/
+
+        value
+        |> String.split(",", trim: true)
+        |> Enum.reduce(%{}, fn entry, bindings ->
+          case String.split(entry, "=", parts: 2) do
+            [client_id, actor_id] ->
+              if not Regex.match?(uuid, client_id) or not Regex.match?(uuid, actor_id) do
+                raise "SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS entries must be canonical lowercase UUID=UUID pairs"
+              end
+
+              if Map.has_key?(bindings, client_id) do
+                raise "SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS contains duplicate OAuth client ID #{client_id}"
+              end
+
+              Map.put(bindings, client_id, actor_id)
+
+            _ ->
+              raise "SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS entries must be canonical lowercase UUID=UUID pairs"
+          end
+        end)
+
+      _ ->
+        raise "SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS is required when MCP is enabled"
+    end
+
+  config :spruce_goose, :oauth_client_actor_bindings, oauth_actor_bindings
+
   config :spruce_goose, SpruceGoose.Web.Endpoint,
     http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("MCP_PORT", "4000"))],
     secret_key_base: secret_key_base,
@@ -126,6 +166,14 @@ if mcp_enabled? do
 end
 
 if config_env() == :prod do
+  expected_genesis_actor =
+    case System.get_env("SPRUCE_GOOSE_EXPECTED_GENESIS_ACTOR") do
+      value when is_binary(value) and value != "" -> value
+      _ -> raise "SPRUCE_GOOSE_EXPECTED_GENESIS_ACTOR is required in production"
+    end
+
+  config :spruce_goose, :expected_genesis_actor, expected_genesis_actor
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise "DATABASE_URL is required in production"
