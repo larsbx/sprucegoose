@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
+command -v git >/dev/null || fail "git is required"
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not a git worktree"
+cd "$repo"
+
+dirty=false
+if ! git diff-index --quiet HEAD -- || test -n "$(git ls-files --others --exclude-standard)"; then dirty=true; fi
+if $dirty; then
+  if [[ ${SPRUCE_GOOSE_ALLOW_DIRTY_EVIDENCE:-} != 1 ]]; then
+    fail "dirty source rejected before output or build tool invocation"
+  fi
+  [[ -n ${SPRUCE_GOOSE_DIRTY_EVIDENCE:-} && -f ${SPRUCE_GOOSE_DIRTY_EVIDENCE} ]] ||
+    fail "dirty override requires SPRUCE_GOOSE_DIRTY_EVIDENCE file"
+  printf 'classification=non-transferable-dirty-evidence\n' >&2
+fi
+
+require_env() {
+  local name=$1
+  [[ -n ${!name:-} ]] || fail "explicit $name is required"
+}
+for name in SPRUCE_GOOSE_BUILDER SPRUCE_GOOSE_TASK SPRUCE_GOOSE_TRANSACTION SPRUCE_GOOSE_BUILD_TIME_UTC SPRUCE_GOOSE_OUTPUT_DIR SOURCE_DATE_EPOCH; do
+  require_env "$name"
+done
+[[ $SOURCE_DATE_EPOCH =~ ^[0-9]+$ ]] || fail "SOURCE_DATE_EPOCH must be integer seconds"
+[[ $SPRUCE_GOOSE_BUILD_TIME_UTC =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || fail "build time must be explicit UTC seconds"
+
+canonical_future_path() {
+  local target=$1 ancestor tail= part resolved
+  [[ $target = /* ]] || target="$PWD/$target"
+  ancestor=$target
+  tail=
+  while [[ ! -e $ancestor && ! -L $ancestor ]]; do
+    part=$(basename -- "$ancestor")
+    tail=${tail:+$part/$tail}
+    [[ -n $tail ]] || tail=$part
+    ancestor=$(dirname -- "$ancestor")
+  done
+  resolved=$(realpath -e -- "$ancestor") || fail "cannot resolve output directory ancestor"
+  realpath -m -- "$resolved${tail:+/$tail}"
+}
+
+repo=$(realpath -e -- "$repo") || fail "cannot resolve repository root"
+output=$(canonical_future_path "$SPRUCE_GOOSE_OUTPUT_DIR")
+case "$output" in
+  "$repo"|"$repo"/*) fail "output directory must be outside repository" ;;
+esac
+[[ ! -e $output && ! -L $output ]] || fail "output directory must not exist"
+output_parent=$(dirname -- "$output")
+[[ -d $output_parent && ! -L $output_parent ]] || fail "output directory parent must be an existing directory"
+output_name=$(basename -- "$output")
+final_output=$output
+
+commit=$(git rev-parse HEAD)
+tree=$(git rev-parse HEAD^{tree})
+source_status=$(git status --porcelain=v1 --untracked-files=all)
+verify_source_identity() {
+  local current_commit current_tree current_status
+  current_commit=$(git rev-parse HEAD)
+  current_tree=$(git rev-parse HEAD^{tree})
+  current_status=$(git status --porcelain=v1 --untracked-files=all)
+  if [[ $current_commit != "$commit" || $current_tree != "$tree" || $current_status != "$source_status" ]]; then
+    fail "source changed during build; unpublished private artifacts retained"
+  fi
+}
+private_output=$(mktemp -d "$output_parent/.spruce-goose-output.XXXXXXXXXX") ||
+  fail "cannot create private output directory"
+private_identity=$(stat -Lc '%d:%i' -- "$private_output") || fail "cannot identify private output directory"
+SPRUCE_GOOSE_OUTPUT_DIR=$private_output
+success=false
+work=$(mktemp -d "${TMPDIR:-/tmp}/spruce-goose-release.XXXXXX")
+report_retained_artifacts() {
+  local private_current_state private_current_identity final_current_state
+
+  printf 'retained-work-residue=%s\n' "$work" >&2
+  printf 'retained-work-residue-owner-only=true\n' >&2
+  printf 'retained-work-residue-published=%s\n' "$success" >&2
+  printf 'retained-work-residue-run-task=%s\n' "$SPRUCE_GOOSE_TASK" >&2
+  printf 'retained-work-residue-run-transaction=%s\n' "$SPRUCE_GOOSE_TRANSACTION" >&2
+  printf 'retained-work-residue-cleanup-policy=bounded-governed-cleanup-required\n' >&2
+
+  if ! $success; then
+    private_current_identity=
+    if [[ -L $private_output ]]; then
+      private_current_state=symlink
+      private_current_identity=$(stat -c '%d:%i' -- "$private_output" 2>/dev/null || true)
+    elif [[ ! -e $private_output ]]; then
+      private_current_state=absent
+    elif private_current_identity=$(stat -c '%d:%i' -- "$private_output" 2>/dev/null); then
+      if [[ -d $private_output && $private_current_identity == "$private_identity" ]]; then
+        private_current_state=same-object
+      else
+        private_current_state=different-object
+      fi
+    else
+      private_current_state=inspection-error
+    fi
+
+    if [[ -e $final_output || -L $final_output ]]; then
+      final_current_state=present
+    else
+      final_current_state=absent-at-inspection
+    fi
+
+    printf 'invocation did not publish output to requested final path: %s\n' "$final_output" >&2
+    printf 'automatic recursive cleanup was not attempted\n' >&2
+    printf 'published=false\n' >&2
+    printf 'automatic-cleanup-attempted=false\n' >&2
+    printf 'requested-final-path=%s\n' "$final_output" >&2
+    printf 'requested-final-path-current-state=%s\n' "$final_current_state" >&2
+    printf 'recorded-private-identity=%s\n' "$private_identity" >&2
+    printf 'private-last-known-path=%s\n' "$private_output" >&2
+    printf 'private-current-state=%s\n' "$private_current_state" >&2
+    [[ -z $private_current_identity ]] ||
+      printf 'private-current-identity=%s\n' "$private_current_identity" >&2
+
+    if [[ $private_current_state == same-object ]]; then
+      printf 'owned-private-location=%s\n' "$private_output" >&2
+      printf 'private-last-known-path-currently-references-recorded-object=true\n' >&2
+      printf 'future-custody-guaranteed=false\n' >&2
+    else
+      printf 'owned-private-location=UNKNOWN\n' >&2
+    fi
+  fi
+}
+# Recursive pathname cleanup cannot remain bound to an inode through the final
+# removal. Retain these private artifacts rather than risk deleting a replacement.
+trap report_retained_artifacts EXIT
+
+mix compile --warnings-as-errors
+app=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:app])')
+version=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:version])')
+elixir_version=$(elixir --version | sed -n 's/^Elixir //p' | head -1)
+erlang_version=$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().' 2>/dev/null)
+mix_version=$(mix --version | sed -n 's/^Mix //p' | head -1)
+
+migration_file="$work/migrations.term"
+: >"$migration_file"
+while IFS= read -r path; do
+  sha=$(sha256sum "$path" | cut -d' ' -f1)
+  printf '%s\t%s\n' "$path" "$sha" >>"$migration_file"
+done < <(LC_ALL=C git ls-files 'priv/repo/migrations/*.exs' | sort)
+[[ -s $migration_file ]] || fail "migration set is empty"
+
+provenance="$work/governed-provenance.json"
+export SG_COMMIT="$commit" SG_TREE="$tree" SG_DIRTY="$dirty" SG_ELIXIR="$elixir_version" SG_ERLANG="$erlang_version" SG_MIX="$mix_version" SG_MIGRATIONS="$migration_file" SG_PROVENANCE="$provenance"
+elixir -r lib/spruce_goose/release_provenance.ex -e '
+migrations = System.fetch_env!("SG_MIGRATIONS") |> File.stream!() |> Enum.map(fn line -> [p,s] = line |> String.trim_trailing() |> String.split("\t"); %{"path" => p, "sha256" => s} end)
+p = %{"build" => %{"builder" => System.fetch_env!("SPRUCE_GOOSE_BUILDER"), "time_utc" => System.fetch_env!("SPRUCE_GOOSE_BUILD_TIME_UTC")}, "governed" => %{"task" => System.fetch_env!("SPRUCE_GOOSE_TASK"), "transaction" => System.fetch_env!("SPRUCE_GOOSE_TRANSACTION")}, "migration_set_sha256" => SpruceGoose.ReleaseProvenance.migration_set_digest(migrations), "migrations" => migrations, "schema" => SpruceGoose.ReleaseProvenance.provenance_schema(), "source" => %{"commit" => System.fetch_env!("SG_COMMIT"), "dirty" => System.fetch_env!("SG_DIRTY") == "true", "tree" => System.fetch_env!("SG_TREE")}, "toolchain" => %{"elixir" => System.fetch_env!("SG_ELIXIR"), "erlang" => System.fetch_env!("SG_ERLANG"), "mix" => System.fetch_env!("SG_MIX")}}
+{:ok, bytes} = SpruceGoose.ReleaseProvenance.encode_provenance(p); File.write!(System.fetch_env!("SG_PROVENANCE"), bytes, [:exclusive])'
+
+release="$work/release"
+MIX_ENV=prod mix release "$app" --path "$release" --overwrite
+verify_source_identity
+
+install -m 0644 "$provenance" "$release/releases/$version/governed-provenance.json"
+archive_name="${app}-${version}-governed.tar.gz"
+archive="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name"
+mapfile -d '' top_entries < <(find "$release" -mindepth 1 -maxdepth 1 -printf '%f\0' | LC_ALL=C sort -z)
+((${#top_entries[@]} > 0)) || fail "release output is empty"
+TZ=UTC LC_ALL=C tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --format=gnu -C "$release" -cf - -- "${top_entries[@]}" | gzip -n -9 >"$archive"
+archive_sha=$(sha256sum "$archive" | cut -d' ' -f1)
+provenance_sha=$(sha256sum "$provenance" | cut -d' ' -f1)
+export SG_ARCHIVE_NAME="$archive_name" SG_ARCHIVE_SHA="$archive_sha" SG_PROVENANCE_SHA="$provenance_sha" SG_RECEIPT="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name.receipt.json"
+elixir -r lib/spruce_goose/release_provenance.ex -e 'r=%{"archive"=>%{"filename"=>System.fetch_env!("SG_ARCHIVE_NAME"),"sha256"=>System.fetch_env!("SG_ARCHIVE_SHA")},"provenance_sha256"=>System.fetch_env!("SG_PROVENANCE_SHA"),"schema"=>SpruceGoose.ReleaseProvenance.receipt_schema()}; {:ok,b}=SpruceGoose.ReleaseProvenance.encode_receipt(r); File.write!(System.fetch_env!("SG_RECEIPT"),b,[:exclusive])'
+verify_source_identity
+
+# GNU mv -Tn performs a no-replace rename; verify that it actually moved the owned object.
+mv -Tn -- "$private_output" "$final_output" || fail "output directory appeared before publication"
+final_identity=$(stat -Lc '%d:%i' -- "$final_output" 2>/dev/null || true)
+if [[ -e $private_output || -L $private_output || $final_identity != "$private_identity" ]]; then
+  fail "output directory appeared before publication"
+fi
+SPRUCE_GOOSE_OUTPUT_DIR=$final_output
+archive="$final_output/$archive_name"
+SG_RECEIPT="$final_output/$archive_name.receipt.json"
+success=true
+printf 'archive=%s\nreceipt=%s\nclassification=%s\n' "$archive" "$SG_RECEIPT" "$($dirty && printf non-transferable-dirty-evidence || printf clean-source-candidate)"

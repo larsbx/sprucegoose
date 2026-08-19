@@ -1,0 +1,12 @@
+#!/usr/bin/env elixir
+Code.require_file(Path.expand("../lib/spruce_goose/release_provenance.ex", __DIR__))
+Code.require_file(Path.expand("../lib/spruce_goose/release_validator.ex", __DIR__))
+
+case System.argv() do
+  [archive] ->
+    case SpruceGoose.ReleaseValidator.inspect_archive(archive) do
+      {:ok, result} -> IO.binwrite(result.provenance_bytes)
+      {:error, reason} -> IO.puts(:stderr, reason); System.halt(2)
+    end
+  _ -> IO.puts(:stderr, "usage: inspect-governed-release ARCHIVE"); System.halt(2)
+end
