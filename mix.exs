@@ -13,7 +13,29 @@ defmodule SpruceGoose.MixProject do
         path: System.get_env("SPRUCE_GOOSE_ESCRIPT_PATH", "sprucegoose")
       ],
       test_ignore_filters: [~r|^test/fixtures/|],
+      releases: releases(),
       deps: deps()
+    ]
+  end
+
+  # Minimal release declaration only. Without it `mix release spruce_goose`
+  # aborts with "Unknown release", so governed provenance can never reach the
+  # success path that embeds provenance into an assembled release.
+  #
+  # This declares release identity and nothing else: the application is named
+  # explicitly as :permanent rather than inferred. Output path, ERTS inclusion,
+  # cookies, runtime config providers, overlays, and every other deployment
+  # concern are deliberately absent. scripts/build-governed-release supplies
+  # --path per invocation so the release never materializes inside the
+  # repository, which would falsify clean-source classification.
+  #
+  # Full CI/CD release configuration is scoped to successor task
+  # tsk-20260813T140419Z-d8dbffc5 and must not be added here.
+  defp releases do
+    [
+      spruce_goose: [
+        applications: [spruce_goose: :permanent]
+      ]
     ]
   end
 
