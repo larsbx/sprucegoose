@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Verify the RUNNING toolchain matches the declared pin in .tool-versions.
+#
+# Governing task: tsk-20260813T141153Z-336632d6
+#
+# An earlier revision of the CI job grepped .tool-versions for the expected
+# strings and then merely PRINTED the running versions. Grepping a file for
+# its own contents proves nothing about the machine executing the job, so a
+# runner on the wrong OTP would have passed. The 2026-08-13 provenance
+# candidate was built on OTP 27 against a 28.3.1 pin and nothing caught it.
+#
+# This script compares and exits non-zero on mismatch. It reads versions and
+# writes nothing.
+
+set -euo pipefail
+
+export ERL_CRASH_DUMP_SECONDS=0
+
+readonly SCRIPT_NAME="${0##*/}"
+readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly PIN_FILE="$ROOT/.tool-versions"
+
+# .tool-versions names an OTP release; the runtime reports OTP release and
+# ERTS version. Map declared -> expected running values here so the mapping
+# is reviewable rather than implicit.
+declare -A ERTS_FOR_OTP=(
+  ["28.3.1"]="16.2"
+)
+
+die() {
+  printf '%s: FAIL: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 1
+}
+
+[[ -f "$PIN_FILE" ]] || die "no .tool-versions at $PIN_FILE"
+
+pinned_erlang="$(awk '$1=="erlang"{print $2}' "$PIN_FILE")"
+pinned_elixir="$(awk '$1=="elixir"{print $2}' "$PIN_FILE")"
+
+[[ -n "$pinned_erlang" ]] || die ".tool-versions does not pin erlang"
+[[ -n "$pinned_elixir" ]] || die ".tool-versions does not pin elixir"
+
+# Declared OTP major, e.g. 28.3.1 -> 28
+expected_otp="${pinned_erlang%%.*}"
+expected_erts="${ERTS_FOR_OTP[$pinned_erlang]:-}"
+
+# Declared elixir, e.g. 1.19.5-otp-28 -> 1.19.5
+expected_elixir="${pinned_elixir%%-otp-*}"
+
+command -v erl >/dev/null 2>&1 || die "erl not found on PATH"
+command -v elixir >/dev/null 2>&1 || die "elixir not found on PATH"
+
+# Read-only interrogation of the runtime. No application is started.
+actual_otp="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().')"
+actual_erts="$(erl -noshell -eval 'io:format("~s",[erlang:system_info(version)]),halt().')"
+actual_elixir="$(elixir --short-version)"
+
+printf 'pinned:  erlang=%s (otp %s, erts %s)  elixir=%s\n' \
+  "$pinned_erlang" "$expected_otp" "${expected_erts:-unmapped}" "$expected_elixir"
+printf 'running: otp=%s erts=%s elixir=%s\n' \
+  "$actual_otp" "$actual_erts" "$actual_elixir"
+
+status=0
+
+if [[ "$actual_otp" != "$expected_otp" ]]; then
+  printf '%s: FAIL: OTP %s running, pin declares %s\n' \
+    "$SCRIPT_NAME" "$actual_otp" "$expected_otp" >&2
+  status=1
+fi
+
+if [[ -n "$expected_erts" && "$actual_erts" != "$expected_erts" ]]; then
+  printf '%s: FAIL: ERTS %s running, pin %s implies %s\n' \
+    "$SCRIPT_NAME" "$actual_erts" "$pinned_erlang" "$expected_erts" >&2
+  status=1
+fi
+
+if [[ -z "$expected_erts" ]]; then
+  printf '%s: FAIL: no ERTS mapping declared for erlang %s\n' \
+    "$SCRIPT_NAME" "$pinned_erlang" >&2
+  printf '%s:       add it to ERTS_FOR_OTP rather than skipping the check\n' \
+    "$SCRIPT_NAME" >&2
+  status=1
+fi
+
+if [[ "$actual_elixir" != "$expected_elixir" ]]; then
+  printf '%s: FAIL: Elixir %s running, pin declares %s\n' \
+    "$SCRIPT_NAME" "$actual_elixir" "$expected_elixir" >&2
+  status=1
+fi
+
+if [[ "$status" -eq 0 ]]; then
+  printf '%s: OK: running toolchain matches the declared pin\n' "$SCRIPT_NAME"
+fi
+
+exit "$status"

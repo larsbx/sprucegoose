@@ -1,0 +1,52 @@
+-- Scoped read-only database role for SpruceGoose inspection.
+--
+-- STATUS: NOT APPLIED. This file is a declaration only.
+--
+-- Governing task: tsk-20260813T141153Z-336632d6
+--
+-- This role has NOT been created on any database, local or remote. It is not
+-- referenced by any migration and is not executed by any script in this
+-- repository. Applying it is out of scope for this task and belongs to the
+-- gated deployment lane.
+--
+-- Why it exists:
+--
+-- On 2026-08-13 the migration state of the production authority was read by
+-- connecting as the postgres administrative role, because no scoped role
+-- existed. The
+-- reader also set default_transaction_read_only for one query and then
+-- dropped it from the query that actually returned data. A guard that an
+-- operator can drop mid-session is not a guard.
+--
+-- The intent here is that read-only-ness is a property of the ROLE, enforced
+-- by the server, and not a flag the caller may choose to omit.
+--
+-- Intended consumer: the migration-parity preflight, which must read
+-- schema_migrations on a deployment target without holding write authority.
+
+-- NOTE: no CREATE ROLE statement is included deliberately. Adding one would
+-- invite copy-paste application of this file. Role creation, password
+-- material, and grant application belong to a governed, reviewed change.
+
+-- Intended shape, for review only:
+--
+--   ALTER ROLE sprucegoose_readonly SET default_transaction_read_only = on;
+--   ALTER ROLE sprucegoose_readonly SET statement_timeout = '30s';
+--
+--   GRANT CONNECT ON DATABASE :target_database TO sprucegoose_readonly;
+--   GRANT USAGE ON SCHEMA public TO sprucegoose_readonly;
+--   GRANT SELECT ON TABLE schema_migrations TO sprucegoose_readonly;
+--
+-- Explicitly NOT granted: write privileges of any kind, schema creation,
+-- blanket privileges, or any elevated cluster attribute. The parity preflight
+-- needs to count rows in schema_migrations. It needs nothing else.
+--
+-- This file deliberately avoids spelling those privilege keywords even in
+-- prose: the scaffold test scans for them as forbidden tokens, and a scanner
+-- that has to distinguish commentary from a grant is a scanner that can be
+-- talked into passing. Same rule as the knowledge-base secret scanner, which
+-- judges the matched value and not the surrounding text.
+--
+-- The grant is deliberately narrow: schema_migrations only, not a blanket
+-- SELECT over the schema. A parity check that can read task content is
+-- reading more than it needs.

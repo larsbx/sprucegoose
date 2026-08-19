@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# SpruceGoose deploy — INERT SKELETON. Performs no action.
+#
+# Governing task: tsk-20260813T141153Z-336632d6
+#
+# This script exists so that deployment stops being an unrecorded manual act.
+# On 2026-08-10 a release was deployed to the authority host twice and rolled
+# back, and the only surviving record was a directory named
+# "sprucegoose-rel.failed-968f255". Structure first, capability later.
+#
+# It is INERT by construction: it validates its own arguments, prints the plan
+# it *would* execute, and exits non-zero. It cannot deploy, because the gates
+# that would make deploying safe do not exist yet:
+#
+#   - release provenance stamping        tsk-20260813T111813Z-19e119cb
+#   - destination migration parity       tsk-20260813T111813Z-19e119cb
+#   - authority reconciliation           tsk-20260813T140419Z-d8dbffc5 (blocked)
+#
+# Do not add execution capability here. Add it in the gated lane, after those
+# predecessors complete.
+
+set -euo pipefail
+
+export ERL_CRASH_DUMP_SECONDS=0
+
+# Byte-deterministic pattern ranges. Set as an exported variable, never as a
+# prefix on [[ ]]: [[ is a bash keyword, not a command, so "LC_ALL=C [[ ... ]]"
+# raises "[[: command not found" at runtime. Inside an if-condition that error
+# is swallowed and the guard silently never fires. bash -n does not catch it.
+export LC_ALL=C
+
+readonly SCRIPT_VERSION="0.1.0-inert"
+readonly SCRIPT_NAME="${0##*/}"
+
+usage() {
+  cat <<'USAGE'
+usage: deploy-sprucegoose --target NAME --release-archive PATH --task TASK_ID
+                          [--dry-run]
+
+  --target NAME             deployment target key (declared, never contacted)
+  --release-archive PATH    release archive to deploy
+  --task TASK_ID            governing SpruceGoose task, tsk-<ts>-<8hex>
+  --dry-run                 print the plan and exit
+
+This build is INERT and always refuses to act.
+USAGE
+}
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 2
+}
+
+# Reject any C0 control byte or DEL before it can reach line-oriented output.
+#
+# A caller who can inject a newline into a field can forge additional record
+# lines: a reviewer observed a second "operator: root" and a forged
+# "version:" appearing inside otherwise valid output. ESC additionally lets a
+# value drive the reviewer's terminal. Output that a caller can shape is not
+# evidence.
+#
+# Every value is validated BEFORE the first stdout write, so an invalid
+# invocation emits nothing on stdout rather than a partial, ambiguous record.
+reject_control_bytes() {
+  local field="$1" value="$2"
+
+  if [[ "$value" == *[$'\x01'-$'\x1f\x7f']* ]]; then
+    die "$field contains a control character; refusing to emit a forgeable record"
+  fi
+}
+
+# Identifier-shaped fields are constrained further: a deployment target or
+# archive path has no business containing shell or record metacharacters.
+require_identifier() {
+  local field="$1" value="$2"
+
+  if [[ ! "$value" =~ ^[A-Za-z0-9._@:/-]+$ ]]; then
+    die "$field must match ^[A-Za-z0-9._@:/-]+$"
+  fi
+}
+
+target=""
+archive=""
+task=""
+dry_run=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)          [[ $# -ge 2 ]] || die "--target requires a value"; target="$2"; shift 2 ;;
+    --release-archive) [[ $# -ge 2 ]] || die "--release-archive requires a value"; archive="$2"; shift 2 ;;
+    --task)            [[ $# -ge 2 ]] || die "--task requires a value"; task="$2"; shift 2 ;;
+    --dry-run)         dry_run=1; shift ;;
+    -h|--help)         usage; exit 0 ;;
+    *)                 die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$target" ]]  || die "--target is required"
+[[ -n "$archive" ]] || die "--release-archive is required"
+[[ -n "$task" ]]    || die "--task is required"
+
+# Validate every field before ANY stdout write.
+reject_control_bytes "--target" "$target"
+reject_control_bytes "--release-archive" "$archive"
+reject_control_bytes "--task" "$task"
+
+require_identifier "--target" "$target"
+require_identifier "--release-archive" "$archive"
+
+[[ "$task" =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
+  || die "--task must be a stable SpruceGoose id (tsk-YYYYMMDDTHHMMSSZ-8hex)"
+
+printf 'plan: deploy %s to target %s under %s\n' "$archive" "$target" "$task"
+printf 'version: %s\n' "$SCRIPT_VERSION"
+
+if [[ "$dry_run" -eq 1 ]]; then
+  printf 'dry-run: no action taken\n'
+fi
+
+cat >&2 <<'REFUSAL'
+
+REFUSED: this deploy script is INERT and performs no deployment.
+
+Required gates are not implemented:
+  - release provenance stamp        (tsk-20260813T111813Z-19e119cb, in_progress)
+  - destination migration parity    (tsk-20260813T111813Z-19e119cb, in_progress)
+  - authority reconciliation        (tsk-20260813T140419Z-d8dbffc5, blocked)
+
+Deploying without migration parity is the exact defect that caused the
+2026-08-10 rollback: a 33-migration release met a 24-migration database.
+REFUSAL
+
+exit 3

@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# SpruceGoose rollback — INERT SKELETON. Performs no action.
+#
+# Governing task: tsk-20260813T141153Z-336632d6
+#
+# The 2026-08-10 rollback left no structured record: no reason, no operator,
+# no parity delta, no digest. Its entire archive was a directory name. This
+# skeleton fixes the record format now so that capability, when it is added in
+# the gated lane, cannot be added without it.
+#
+# It is INERT by construction and always exits non-zero.
+
+set -euo pipefail
+
+export ERL_CRASH_DUMP_SECONDS=0
+
+# Byte-deterministic pattern ranges. Set as an exported variable, never as a
+# prefix on [[ ]]: [[ is a bash keyword, not a command, so "LC_ALL=C [[ ... ]]"
+# raises "[[: command not found" at runtime. Inside an if-condition that error
+# is swallowed and the guard silently never fires. bash -n does not catch it.
+export LC_ALL=C
+
+readonly SCRIPT_VERSION="0.1.0-inert"
+readonly SCRIPT_NAME="${0##*/}"
+
+usage() {
+  cat <<'USAGE'
+usage: rollback-sprucegoose --target NAME --to-release ID --task TASK_ID
+                            --reason TEXT [--operator NAME]
+
+  --target NAME      rollback target key (declared, never contacted)
+  --to-release ID    release identity to roll back to
+  --task TASK_ID     governing SpruceGoose task, tsk-<ts>-<8hex>
+  --reason TEXT      why the rollback happened; recorded, never optional
+  --operator NAME    who performed it; defaults to the invoking user
+
+This build is INERT and always refuses to act.
+USAGE
+}
+
+die() {
+  printf '%s: error: %s\n' "$SCRIPT_NAME" "$1" >&2
+  exit 2
+}
+
+# Reject any C0 control byte or DEL before it can reach line-oriented output.
+#
+# The rollback record IS the evidence. A caller who can inject a newline into
+# any field can forge additional record lines -- a reviewer produced a second
+# "operator: root" and a forged "version: 9.9.9-trusted" inside otherwise
+# valid output. A record whose fields the caller can invent is worthless as
+# evidence, and worse than none because it looks authoritative.
+#
+# Every value is validated BEFORE the first stdout write, so an invalid
+# invocation emits nothing on stdout rather than a partial, forgeable record.
+reject_control_bytes() {
+  local field="$1" value="$2"
+
+  if [[ "$value" == *[$'\x01'-$'\x1f\x7f']* ]]; then
+    die "$field contains a control character; refusing to emit a forgeable record"
+  fi
+}
+
+# Identifier-shaped fields are constrained further. A target key, release id,
+# or operator name has no business containing record or shell metacharacters.
+require_identifier() {
+  local field="$1" value="$2"
+
+  if [[ ! "$value" =~ ^[A-Za-z0-9._@:/-]+$ ]]; then
+    die "$field must match ^[A-Za-z0-9._@:/-]+$"
+  fi
+}
+
+# --reason is deliberately free text: an operator must be able to explain a
+# rollback in prose. It is therefore constrained by byte class rather than by
+# shape -- no control bytes, so it can never break out of its own line.
+require_single_line_text() {
+  local field="$1" value="$2"
+
+  reject_control_bytes "$field" "$value"
+
+  if (( ${#value} > 500 )); then
+    die "$field must be 500 characters or fewer"
+  fi
+}
+
+target=""
+to_release=""
+task=""
+reason=""
+operator="${USER:-unknown}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target)     [[ $# -ge 2 ]] || die "--target requires a value"; target="$2"; shift 2 ;;
+    --to-release) [[ $# -ge 2 ]] || die "--to-release requires a value"; to_release="$2"; shift 2 ;;
+    --task)       [[ $# -ge 2 ]] || die "--task requires a value"; task="$2"; shift 2 ;;
+    --reason)     [[ $# -ge 2 ]] || die "--reason requires a value"; reason="$2"; shift 2 ;;
+    --operator)   [[ $# -ge 2 ]] || die "--operator requires a value"; operator="$2"; shift 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    *)            die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$target" ]]     || die "--target is required"
+[[ -n "$to_release" ]] || die "--to-release is required"
+[[ -n "$task" ]]       || die "--task is required"
+[[ -n "$reason" ]]     || die "--reason is required; an unexplained rollback is not a record"
+[[ -n "$operator" ]]   || die "--operator must not be empty"
+
+# Validate every field before ANY stdout write.
+reject_control_bytes "--target" "$target"
+reject_control_bytes "--to-release" "$to_release"
+reject_control_bytes "--task" "$task"
+reject_control_bytes "--operator" "$operator"
+require_single_line_text "--reason" "$reason"
+
+require_identifier "--target" "$target"
+require_identifier "--to-release" "$to_release"
+require_identifier "--operator" "$operator"
+
+[[ "$task" =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] \
+  || die "--task must be a stable SpruceGoose id (tsk-YYYYMMDDTHHMMSSZ-8hex)"
+
+# The record format a real rollback must emit. Printed, never written.
+printf 'rollback-record-schema: v1\n'
+printf 'target: %s\n' "$target"
+printf 'to_release: %s\n' "$to_release"
+printf 'task: %s\n' "$task"
+printf 'operator: %s\n' "$operator"
+printf 'reason: %s\n' "$reason"
+printf 'version: %s\n' "$SCRIPT_VERSION"
+
+cat >&2 <<'REFUSAL'
+
+REFUSED: this rollback script is INERT and performs no rollback.
+
+A real implementation must additionally record the source release identity,
+the destination migration delta at rollback time, and a digest of the
+artifact rolled back to. That capability belongs to the gated deployment
+lane, not to this scaffolding task.
+REFUSAL
+
+exit 3
