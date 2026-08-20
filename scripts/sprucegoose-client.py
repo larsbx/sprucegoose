@@ -23,6 +23,17 @@ stays canonical; this client never invents, drops, or reorders reported data.
    never sent to the service. json is byte-identical to the previous behavior,
    so existing consumers are unaffected. table/plain are pure display
    transforms over the same rows: no filtering, reordering, or truncation.
+
+3. Caller actor declaration (tsk-20260820T205507Z-02e575eb)
+   The service resolves the actor from `--as`, then from SPRUCE_GOOSE_ACTOR in
+   *its own* environment. Through this socket client the service's environment
+   is the daemon's, never the caller's shell, so a caller-side
+   SPRUCE_GOOSE_ACTOR silently vanished even though the service's refusal
+   message tells the caller to set it. The client therefore translates the
+   caller's environment into the declared form: when the caller passed no
+   explicit `--as`/`--as=`, a non-empty trimmed SPRUCE_GOOSE_ACTOR is appended
+   as `--as ACTOR`. An explicit flag always wins, and with neither set the
+   request is sent unchanged so the service's fail-closed refusal is preserved.
 """
 
 import json
@@ -77,6 +88,7 @@ VALUE_OPTIONS = frozenset(
         "--task",
         "--digest",
         "--remove",
+        "--as",
     }
 )
 
@@ -205,6 +217,22 @@ def send(args, timeout, socket_path, max_bytes=MAX_RESPONSE_BYTES):
         return json.loads(payload)
     except (ValueError, json.JSONDecodeError):
         fail("invalid service response")
+
+
+def inject_declared_actor(args, environ=os.environ):
+    """Translate a caller-side SPRUCE_GOOSE_ACTOR into an explicit `--as`.
+
+    The service reads SPRUCE_GOOSE_ACTOR from its own process environment, so
+    the caller's variable never reaches it through the socket. An explicit
+    `--as`/`--as=` anywhere in the vector wins unconditionally; with neither
+    the vector is returned unchanged and the service refuses as before.
+    """
+    if any(arg == "--as" or arg.startswith("--as=") for arg in args):
+        return args
+    actor = environ.get("SPRUCE_GOOSE_ACTOR", "").strip()
+    if not actor:
+        return args
+    return args + ["--as", actor]
 
 
 def wants_auto_pagination(args):
@@ -344,6 +372,7 @@ def render(decoded, fmt):
 
 def main():
     fmt, args = extract_format(sys.argv[1:])
+    args = inject_declared_actor(args)
 
     if len(args) > 128 or any(len(arg.encode()) > 4096 for arg in args):
         fail("invalid arguments")
