@@ -29,6 +29,27 @@ defmodule SpruceGoose.ReleaseActivationScriptsTest do
     assert text =~ "service activation failed; previous release restored"
   end
 
+  test "build normalizes the release cookie to the governed placeholder before archiving" do
+    text = File.read!(Path.expand("../scripts/build-governed-release", __DIR__))
+    assert text =~ "GOVERNED-PLACEHOLDER-COOKIE-PROVISION-AT-ACTIVATION"
+    assert text =~ ~s(>"$release/releases/COOKIE")
+    assert before?(text, "GOVERNED-PLACEHOLDER-COOKIE-PROVISION-AT-ACTIVATION", "tar --sort=name")
+  end
+
+  test "activation refuses a non-placeholder cookie and provisions the real one before the swap" do
+    text = File.read!(Path.expand("../scripts/activate-sprucegoose-release", __DIR__))
+    assert text =~ "staged release must carry the governed cookie placeholder"
+    assert text =~ ~s(cp -p -- "$install_dir/releases/COOKIE" "$staged_cookie")
+
+    assert before?(
+             text,
+             "staged release must carry the governed cookie placeholder",
+             ~s(mv -T -- "$stage" "$install_dir")
+           )
+
+    assert before?(text, ~s(chmod 600 -- "$staged_cookie"), "systemctl --user restart")
+  end
+
   test "public entry points are executable thin wrappers" do
     for path <- [@deploy, @rollback] do
       assert File.exists?(path)

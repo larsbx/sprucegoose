@@ -156,6 +156,12 @@ release="$work/release"
 MIX_ENV=prod mix release "$app" --path "$release" --overwrite
 verify_source_identity
 
+# The release cookie is a runtime credential and a fresh random value on every
+# build. A transferable artifact must carry neither a credential nor
+# nondeterminism, so the archive ships an explicit placeholder; activation
+# fails closed unless it finds and replaces it on the destination.
+printf 'GOVERNED-PLACEHOLDER-COOKIE-PROVISION-AT-ACTIVATION\n' >"$release/releases/COOKIE"
+
 install -m 0644 "$provenance" "$release/releases/$version/governed-provenance.json"
 command -v xz >/dev/null || fail "xz is required for transferable release archives"
 archive_name="${app}-${version}-governed.tar.xz"

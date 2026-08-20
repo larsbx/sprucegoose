@@ -72,6 +72,22 @@ case $archive in
 esac
 [[ -x $stage/bin/spruce_goose ]] || fail "staged release lacks executable bin/spruce_goose"
 
+# Transferable archives carry a cookie placeholder, never a credential. Refuse
+# any archive that ships something else, then provision the real cookie here:
+# preserve the previous install's cookie for continuity, or mint a fresh one.
+cookie_placeholder='GOVERNED-PLACEHOLDER-COOKIE-PROVISION-AT-ACTIVATION'
+staged_cookie="$stage/releases/COOKIE"
+[[ -f $staged_cookie && $(cat "$staged_cookie") == "$cookie_placeholder" ]] ||
+  fail "staged release must carry the governed cookie placeholder"
+if [[ -f $install_dir/releases/COOKIE ]]; then
+  cp -p -- "$install_dir/releases/COOKIE" "$staged_cookie"
+else
+  fresh_cookie=$(openssl rand -base64 63 | tr -dc 'A-Za-z0-9')
+  [[ ${#fresh_cookie} -ge 56 ]] || fail "cookie generation failed"
+  printf '%s' "${fresh_cookie:0:56}" >"$staged_cookie"
+fi
+chmod 600 -- "$staged_cookie"
+
 backup="$install_dir.previous-$task"
 [[ ! -e $backup && ! -L $backup ]] || fail "rollback slot already exists"
 if [[ -e $install_dir || -L $install_dir ]]; then mv -T -- "$install_dir" "$backup"; fi
