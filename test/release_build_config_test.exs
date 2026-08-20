@@ -24,7 +24,7 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
   # predecessor worktree. Full CI/CD release configuration (paths, cookies,
   # runtime config providers, overlays, tarball/deployment shaping) is scoped to
   # successor tsk-20260813T140419Z-d8dbffc5 and must NOT appear here.
-  @permitted_release_option_keys [:applications]
+  @permitted_release_option_keys [:applications, :strip_beams]
 
   @deployment_option_keys [
     :cookie,
@@ -36,7 +36,6 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
     :rel_templates_path,
     :reboot_system_after_config,
     :runtime_config_path,
-    :strip_beams,
     :validate_compile_env,
     :version
   ]
@@ -101,6 +100,13 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
            "the release must name #{inspect(app)} explicitly as :permanent so the assembled " <>
              "release identity is declared rather than inferred. Got: " <>
              inspect(Keyword.get(opts, :applications))
+  end
+
+  test "the release preserves compile provenance chunks", %{config: config} do
+    app = Keyword.fetch!(config, :app)
+    opts = Keyword.get(config, :releases, [])[app] || []
+
+    assert Keyword.get(opts, :strip_beams) == false
   end
 
   test "the escript entry point is preserved alongside the release", %{config: config} do

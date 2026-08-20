@@ -551,7 +551,7 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
       """
     )
 
-    File.write!(Path.join(fake_bin, "erl"), "#!/usr/bin/env bash\nprintf 28\n")
+    File.write!(Path.join(fake_bin, "erl"), "#!/usr/bin/env bash\nprintf 28.3.1\n")
 
     for name <- ["mix", "elixir", "erl"], do: File.chmod!(Path.join(fake_bin, name), 0o700)
     git(root, ["add", "."])

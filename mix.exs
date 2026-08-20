@@ -34,7 +34,8 @@ defmodule SpruceGoose.MixProject do
   defp releases do
     [
       spruce_goose: [
-        applications: [spruce_goose: :permanent]
+        applications: [spruce_goose: :permanent],
+        strip_beams: false
       ]
     ]
   end

@@ -134,7 +134,7 @@ mix compile --warnings-as-errors
 app=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:app])')
 version=$(mix run --no-start --no-compile -e 'IO.write(Mix.Project.config()[:version])')
 elixir_version=$(elixir --version | sed -n 's/^Elixir //p' | head -1)
-erlang_version=$(erl -noshell -eval 'io:format("~s",[erlang:system_info(otp_release)]),halt().' 2>/dev/null)
+erlang_version=$(erl -noshell -eval 'Root=code:root_dir(), Otp=erlang:system_info(otp_release), {ok,Bytes}=file:read_file(filename:join([Root,"releases",Otp,"OTP_VERSION"])), io:put_chars(string:trim(binary_to_list(Bytes))), halt().' 2>/dev/null)
 mix_version=$(mix --version | sed -n 's/^Mix //p' | head -1)
 
 migration_file="$work/migrations.term"
