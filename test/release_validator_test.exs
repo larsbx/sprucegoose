@@ -247,10 +247,16 @@ defmodule SpruceGoose.ReleaseValidatorTest do
     receipt_value = %{
       "archive" => %{
         "filename" => Path.basename(archive),
-        "sha256" => ReleaseProvenance.sha256(archive_bytes)
+        "sha256" => ReleaseProvenance.sha256(archive_bytes),
+        "size_bytes" => byte_size(archive_bytes)
       },
+      "build_time_utc" => context.provenance["build"]["time_utc"],
+      "elixir_version" => context.provenance["toolchain"]["elixir"],
+      "migration_set_sha256" => context.provenance["migration_set_sha256"],
+      "otp_version" => context.provenance["toolchain"]["erlang"],
       "provenance_sha256" => ReleaseProvenance.sha256(bytes),
-      "schema" => ReleaseProvenance.receipt_schema()
+      "schema" => ReleaseProvenance.receipt_schema(),
+      "source" => Map.take(context.provenance["source"], ["commit", "tree"])
     }
 
     receipt = Path.join(context.root, "receipt.json")

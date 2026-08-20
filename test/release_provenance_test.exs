@@ -33,9 +33,18 @@ defmodule SpruceGoose.ReleaseProvenanceTest do
     }
 
     receipt = %{
-      "archive" => %{"filename" => "spruce-goose-0.1.0.tar.gz", "sha256" => @sha_a},
+      "archive" => %{
+        "filename" => "spruce-goose-0.1.0.tar.xz",
+        "sha256" => @sha_a,
+        "size_bytes" => 123
+      },
+      "build_time_utc" => provenance["build"]["time_utc"],
+      "elixir_version" => provenance["toolchain"]["elixir"],
+      "migration_set_sha256" => provenance["migration_set_sha256"],
+      "otp_version" => provenance["toolchain"]["erlang"],
       "provenance_sha256" => @sha_b,
-      "schema" => P.receipt_schema()
+      "schema" => P.receipt_schema(),
+      "source" => Map.take(provenance["source"], ["commit", "tree"])
     }
 
     %{provenance: provenance, receipt: receipt}
@@ -139,6 +148,7 @@ defmodule SpruceGoose.ReleaseProvenanceTest do
     end
 
     assert {:error, _} = P.encode_receipt(put_in(r, ["archive", "sha256"], "abc"))
+    assert {:error, _} = P.encode_receipt(put_in(r, ["archive", "size_bytes"], 0))
     assert {:error, _} = P.encode_receipt(%{r | "provenance_sha256" => String.duplicate("A", 64)})
     assert {:error, "malformed JSON"} = P.decode_receipt("not-json")
     assert {:ok, bytes} = P.encode_receipt(r)

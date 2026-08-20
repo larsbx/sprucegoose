@@ -18,23 +18,15 @@ defmodule SpruceGoose.MixProject do
     ]
   end
 
-  # Minimal release declaration only. Without it `mix release spruce_goose`
-  # aborts with "Unknown release", so governed provenance can never reach the
-  # success path that embeds provenance into an assembled release.
-  #
-  # This declares release identity and nothing else: the application is named
-  # explicitly as :permanent rather than inferred. Output path, ERTS inclusion,
-  # cookies, runtime config providers, overlays, and every other deployment
-  # concern are deliberately absent. scripts/build-governed-release supplies
-  # --path per invocation so the release never materializes inside the
-  # repository, which would falsify clean-source classification.
-  #
-  # Full CI/CD release configuration is scoped to successor task
-  # tsk-20260813T140419Z-d8dbffc5 and must not be added here.
+  # Keep the runtime self-contained, preserve provenance chunks, and evaluate
+  # config/runtime.exs on the destination. The governed builder supplies the
+  # external --path and the destination supplies secrets through its environment.
   defp releases do
     [
       spruce_goose: [
         applications: [spruce_goose: :permanent],
+        include_erts: true,
+        runtime_config_path: "config/runtime.exs",
         strip_beams: false
       ]
     ]

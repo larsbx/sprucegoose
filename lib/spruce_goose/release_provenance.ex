@@ -2,7 +2,7 @@ defmodule SpruceGoose.ReleaseProvenance do
   @moduledoc "Strict canonical governed release provenance and receipt codec."
 
   @provenance_schema "spruce-goose-release-provenance-v1"
-  @receipt_schema "spruce-goose-release-receipt-v1"
+  @receipt_schema "spruce-goose-release-receipt-v2"
   @sha256 ~r/\A[0-9a-f]{64}\z/
   @git_oid ~r/\A[0-9a-f]{40}\z/
   @task ~r/\Atsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\z/
@@ -53,10 +53,20 @@ defmodule SpruceGoose.ReleaseProvenance do
     with :ok <- validate_receipt(value) do
       {:ok,
        "{\"archive\":" <>
-         object(value["archive"], ["filename", "sha256"]) <>
+         object(value["archive"], ["filename", "sha256", "size_bytes"]) <>
+         ",\"build_time_utc\":" <>
+         string(value["build_time_utc"]) <>
+         ",\"elixir_version\":" <>
+         string(value["elixir_version"]) <>
+         ",\"migration_set_sha256\":" <>
+         string(value["migration_set_sha256"]) <>
+         ",\"otp_version\":" <>
+         string(value["otp_version"]) <>
          ",\"provenance_sha256\":" <>
          string(value["provenance_sha256"]) <>
-         ",\"schema\":" <> string(value["schema"]) <> "}\n"}
+         ",\"schema\":" <>
+         string(value["schema"]) <>
+         ",\"source\":" <> object(value["source"], ["commit", "tree"]) <> "}\n"}
     end
   end
 
@@ -107,12 +117,30 @@ defmodule SpruceGoose.ReleaseProvenance do
   end
 
   defp validate_receipt(value) do
-    with :ok <- keys(value, ["archive", "provenance_sha256", "schema"]),
+    with :ok <-
+           keys(value, [
+             "archive",
+             "build_time_utc",
+             "elixir_version",
+             "migration_set_sha256",
+             "otp_version",
+             "provenance_sha256",
+             "schema",
+             "source"
+           ]),
          :ok <- equal(value["schema"], @receipt_schema, "schema"),
-         :ok <- keys(value["archive"], ["filename", "sha256"]),
+         :ok <- keys(value["archive"], ["filename", "sha256", "size_bytes"]),
          :ok <- filename(value["archive"]["filename"]),
          :ok <- format(value["archive"]["sha256"], @sha256, "archive.sha256"),
-         :ok <- format(value["provenance_sha256"], @sha256, "provenance_sha256") do
+         :ok <- positive_integer(value["archive"]["size_bytes"], "archive.size_bytes"),
+         :ok <- utc(value["build_time_utc"]),
+         :ok <- nonempty(value["elixir_version"], "elixir_version"),
+         :ok <- nonempty(value["otp_version"], "otp_version"),
+         :ok <- format(value["migration_set_sha256"], @sha256, "migration_set_sha256"),
+         :ok <- format(value["provenance_sha256"], @sha256, "provenance_sha256"),
+         :ok <- keys(value["source"], ["commit", "tree"]),
+         :ok <- format(value["source"]["commit"], @git_oid, "source.commit"),
+         :ok <- format(value["source"]["tree"], @git_oid, "source.tree") do
       :ok
     end
   end
@@ -181,6 +209,8 @@ defmodule SpruceGoose.ReleaseProvenance do
   defp nonempty(_, name), do: {:error, "invalid #{name}"}
   defp bool(value, _) when is_boolean(value), do: :ok
   defp bool(_, name), do: {:error, "invalid #{name}"}
+  defp positive_integer(value, _) when is_integer(value) and value > 0, do: :ok
+  defp positive_integer(_, name), do: {:error, "invalid #{name}"}
   defp equal(a, a, _), do: :ok
   defp equal(_, _, name), do: {:error, "invalid #{name}"}
   defp exact(a, a), do: :ok
@@ -212,5 +242,6 @@ defmodule SpruceGoose.ReleaseProvenance do
 
   defp json(value) when is_binary(value), do: string(value)
   defp json(value) when is_boolean(value), do: to_string(value)
+  defp json(value) when is_integer(value), do: Integer.to_string(value)
   defp string(value), do: IO.iodata_to_binary(:json.encode(value))
 end

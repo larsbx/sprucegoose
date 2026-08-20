@@ -24,7 +24,12 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
   # predecessor worktree. Full CI/CD release configuration (paths, cookies,
   # runtime config providers, overlays, tarball/deployment shaping) is scoped to
   # successor tsk-20260813T140419Z-d8dbffc5 and must NOT appear here.
-  @permitted_release_option_keys [:applications, :strip_beams]
+  @permitted_release_option_keys [
+    :applications,
+    :include_erts,
+    :runtime_config_path,
+    :strip_beams
+  ]
 
   @deployment_option_keys [
     :cookie,
@@ -71,9 +76,10 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
              "release. Got: #{inspect(Keyword.keys(releases))}"
   end
 
-  test "the declared release stays minimal and carries no deployment configuration", %{
-    config: config
-  } do
+  test "the declared release is self-contained and evaluates destination runtime configuration",
+       %{
+         config: config
+       } do
     app = Keyword.fetch!(config, :app)
     opts = Keyword.get(config, :releases, [])[app] || []
     keys = Keyword.keys(opts)
@@ -84,12 +90,14 @@ defmodule SpruceGoose.ReleaseBuildConfigTest do
              "tsk-20260813T140419Z-d8dbffc5. Unexpected: " <>
              inspect(keys -- @permitted_release_option_keys)
 
-    for key <- @deployment_option_keys do
+    for key <- @deployment_option_keys -- [:include_erts, :runtime_config_path] do
       refute Keyword.has_key?(opts, key),
              "deployment option #{inspect(key)} is out of scope for this task"
     end
 
     refute Keyword.has_key?(config, :default_release)
+    assert Keyword.get(opts, :include_erts) == true
+    assert Keyword.get(opts, :runtime_config_path) == "config/runtime.exs"
   end
 
   test "the release names this application explicitly and permanently", %{config: config} do

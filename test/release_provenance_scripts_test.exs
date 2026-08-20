@@ -346,10 +346,10 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     {text, rc} = run(@build, [], c.root, c.env ++ required_env(output))
 
     assert rc == 0, text
-    assert text =~ "archive=#{output}/app-0.1.0-governed.tar.gz"
-    assert text =~ "receipt=#{output}/app-0.1.0-governed.tar.gz.receipt.json"
-    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz"))
-    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.gz.receipt.json"))
+    assert text =~ "archive=#{output}/app-0.1.0-governed.tar.xz"
+    assert text =~ "receipt=#{output}/app-0.1.0-governed.tar.xz.receipt.json"
+    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.xz"))
+    assert File.exists?(Path.join(output, "app-0.1.0-governed.tar.xz.receipt.json"))
     work = retained_path(text, "retained-work-residue")
     assert File.dir?(work)
     assert owner_only_directory?(work)
@@ -363,8 +363,8 @@ defmodule SpruceGoose.ReleaseProvenanceScriptsTest do
     refute text =~ "private-current-state="
     refute text =~ "retained-private-output-artifact="
     assert owner_only_directory?(output)
-    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.gz"))
-    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.gz.receipt.json"))
+    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.xz"))
+    assert owner_only_regular_file?(Path.join(output, "app-0.1.0-governed.tar.xz.receipt.json"))
   end
 
   test "caller-created final output collision refuses publication and preserves sentinel" do

@@ -6,7 +6,9 @@ defmodule SpruceGoose.ReleaseValidator do
   @inventory_schema "spruce-goose-migration-inventory-v1"
 
   def inspect_archive(path) when is_binary(path) do
-    with {:ok, bytes} <- File.read(path), do: inspect_archive_bytes(bytes)
+    with {:ok, bytes} <- File.read(path),
+         {:ok, tar_bytes} <- archive_payload(path, bytes),
+         do: inspect_archive_bytes(tar_bytes)
   end
 
   def inspect_archive_bytes(bytes) when is_binary(bytes) do
@@ -47,7 +49,10 @@ defmodule SpruceGoose.ReleaseValidator do
              receipt_value["archive"]["sha256"],
              "archive sha256"
            ),
-         {:ok, inspected} <- inspect_archive_bytes(archive_bytes),
+         :ok <-
+           equal(byte_size(archive_bytes), receipt_value["archive"]["size_bytes"], "archive size"),
+         {:ok, tar_bytes} <- archive_payload(archive, archive_bytes),
+         {:ok, inspected} <- inspect_archive_bytes(tar_bytes),
          :ok <-
            equal(
              Provenance.sha256(inspected.provenance_bytes),
@@ -57,6 +62,42 @@ defmodule SpruceGoose.ReleaseValidator do
          :ok <- dirty_policy(inspected.provenance, Keyword.get(opts, :allow_dirty, false)),
          :ok <- equal(inspected.provenance["source"]["commit"], expected_commit, "source commit"),
          :ok <- equal(inspected.provenance["source"]["tree"], expected_tree, "source tree"),
+         :ok <-
+           equal(
+             inspected.provenance["source"]["commit"],
+             receipt_value["source"]["commit"],
+             "receipt source commit"
+           ),
+         :ok <-
+           equal(
+             inspected.provenance["source"]["tree"],
+             receipt_value["source"]["tree"],
+             "receipt source tree"
+           ),
+         :ok <-
+           equal(
+             inspected.provenance["toolchain"]["erlang"],
+             receipt_value["otp_version"],
+             "receipt OTP version"
+           ),
+         :ok <-
+           equal(
+             inspected.provenance["toolchain"]["elixir"],
+             receipt_value["elixir_version"],
+             "receipt Elixir version"
+           ),
+         :ok <-
+           equal(
+             inspected.provenance["migration_set_sha256"],
+             receipt_value["migration_set_sha256"],
+             "receipt migration set"
+           ),
+         :ok <-
+           equal(
+             inspected.provenance["build"]["time_utc"],
+             receipt_value["build_time_utc"],
+             "receipt build time"
+           ),
          {:ok, mode} <-
            validate_inventory(
              destination_inventory,
@@ -109,7 +150,13 @@ defmodule SpruceGoose.ReleaseValidator do
   end
 
   defp archive_entries(bytes) do
-    case :erl_tar.extract({:binary, bytes}, [:compressed, :memory]) do
+    result =
+      case :erl_tar.extract({:binary, bytes}, [:compressed, :memory]) do
+        {:error, _} -> :erl_tar.extract({:binary, bytes}, [:memory])
+        result -> result
+      end
+
+    case result do
       {:ok, files} ->
         entries =
           Enum.map(files, fn {name, content} ->
@@ -125,6 +172,19 @@ defmodule SpruceGoose.ReleaseValidator do
       {:error, reason} ->
         {:error, "invalid archive: #{inspect(reason)}"}
     end
+  end
+
+  defp archive_payload(path, bytes) do
+    if String.ends_with?(path, ".tar.xz") do
+      case System.cmd("xz", ["-dc", path], stderr_to_stdout: true) do
+        {tar_bytes, 0} -> {:ok, tar_bytes}
+        {message, _} -> {:error, "invalid xz archive: #{String.trim(message)}"}
+      end
+    else
+      {:ok, bytes}
+    end
+  rescue
+    ErlangError -> {:error, "xz executable is required for .tar.xz archives"}
   end
 
   defp inventory_mode(nil, false),

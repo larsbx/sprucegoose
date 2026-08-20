@@ -157,15 +157,18 @@ MIX_ENV=prod mix release "$app" --path "$release" --overwrite
 verify_source_identity
 
 install -m 0644 "$provenance" "$release/releases/$version/governed-provenance.json"
-archive_name="${app}-${version}-governed.tar.gz"
+command -v xz >/dev/null || fail "xz is required for transferable release archives"
+archive_name="${app}-${version}-governed.tar.xz"
 archive="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name"
 mapfile -d '' top_entries < <(find "$release" -mindepth 1 -maxdepth 1 -printf '%f\0' | LC_ALL=C sort -z)
 ((${#top_entries[@]} > 0)) || fail "release output is empty"
-TZ=UTC LC_ALL=C tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --format=gnu -C "$release" -cf - -- "${top_entries[@]}" | gzip -n -9 >"$archive"
+TZ=UTC LC_ALL=C tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner --format=gnu -C "$release" -cf - -- "${top_entries[@]}" | xz --threads=1 -9e --check=crc64 >"$archive"
 archive_sha=$(sha256sum "$archive" | cut -d' ' -f1)
+archive_size=$(stat -Lc '%s' -- "$archive")
+((archive_size <= 67108864)) || fail "archive exceeds the 64 MiB artifact receipt limit"
 provenance_sha=$(sha256sum "$provenance" | cut -d' ' -f1)
-export SG_ARCHIVE_NAME="$archive_name" SG_ARCHIVE_SHA="$archive_sha" SG_PROVENANCE_SHA="$provenance_sha" SG_RECEIPT="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name.receipt.json"
-elixir -r lib/spruce_goose/release_provenance.ex -e 'r=%{"archive"=>%{"filename"=>System.fetch_env!("SG_ARCHIVE_NAME"),"sha256"=>System.fetch_env!("SG_ARCHIVE_SHA")},"provenance_sha256"=>System.fetch_env!("SG_PROVENANCE_SHA"),"schema"=>SpruceGoose.ReleaseProvenance.receipt_schema()}; {:ok,b}=SpruceGoose.ReleaseProvenance.encode_receipt(r); File.write!(System.fetch_env!("SG_RECEIPT"),b,[:exclusive])'
+export SG_ARCHIVE_NAME="$archive_name" SG_ARCHIVE_SHA="$archive_sha" SG_ARCHIVE_SIZE="$archive_size" SG_PROVENANCE_SHA="$provenance_sha" SG_RECEIPT="$SPRUCE_GOOSE_OUTPUT_DIR/$archive_name.receipt.json"
+elixir -r lib/spruce_goose/release_provenance.ex -e 'r=%{"archive"=>%{"filename"=>System.fetch_env!("SG_ARCHIVE_NAME"),"sha256"=>System.fetch_env!("SG_ARCHIVE_SHA"),"size_bytes"=>String.to_integer(System.fetch_env!("SG_ARCHIVE_SIZE"))},"build_time_utc"=>System.fetch_env!("SPRUCE_GOOSE_BUILD_TIME_UTC"),"elixir_version"=>System.fetch_env!("SG_ELIXIR"),"migration_set_sha256"=>SpruceGoose.ReleaseProvenance.migration_set_digest(System.fetch_env!("SG_MIGRATIONS") |> File.stream!() |> Enum.map(fn line -> [p,s] = line |> String.trim_trailing() |> String.split("\t"); %{"path"=>p,"sha256"=>s} end)),"otp_version"=>System.fetch_env!("SG_ERLANG"),"provenance_sha256"=>System.fetch_env!("SG_PROVENANCE_SHA"),"schema"=>SpruceGoose.ReleaseProvenance.receipt_schema(),"source"=>%{"commit"=>System.fetch_env!("SG_COMMIT"),"tree"=>System.fetch_env!("SG_TREE")}}; {:ok,b}=SpruceGoose.ReleaseProvenance.encode_receipt(r); File.write!(System.fetch_env!("SG_RECEIPT"),b,[:exclusive])'
 verify_source_identity
 
 # GNU mv -Tn performs a no-replace rename; verify that it actually moved the owned object.
