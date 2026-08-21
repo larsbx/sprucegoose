@@ -47,6 +47,21 @@ plane is not deployed, the dedicated isolated build runner is incomplete, and
 the full fourteen paired permit/refuse acceptance matrix has not passed as one
 release gate.
 
+## Authority-cutover status
+
+The first persistence-independent kernel seam is implemented under convergence
+task `tsk-20260821T142417Z-10cd15e2`. It provides typed SHA-256 content
+identities, certified events whose identity excludes mutable delivery
+metadata, ArtifactStore and EventLedger ports, and reference in-memory
+adapters. Focused tests prove altered-content and wrong-adapter refusal plus
+idempotent append only for byte-identical events.
+
+This seam is not a production authority cutover. The certified PostgreSQL
+EventLedger, shadow-append observation window, deterministic projection
+rebuild, dual-read parity, rollback proof, and direct-projection-write refusal
+remain required. Jimbo is excluded from the first cutover wave. A bounded
+non-Jimbo project will canary first, and `openclaw-system` will move last.
+
 ## Repository documentation policy
 
 This page is the only document that claims to describe the live overall state.
