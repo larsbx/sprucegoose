@@ -88,6 +88,9 @@ the tree or digest recorded by the Ash action. Apply validates the whole
 versioned YAML package before writing, then creates or revises its project-scoped
 roadmaps and workflows in one database transaction. Any invalid definition or
 write failure leaves both hierarchy and revision receipt unchanged.
+The production verifier reads a repository-read-only token from the owner-only
+path configured by `SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE`; it does not use the
+ICM publication credential.
 
 ```yaml
 schema_version: 1

@@ -109,7 +109,7 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
       Application.get_env(
         :spruce_goose,
         :forgejo_read_token_file,
-        "/home/admin-papa/.config/icm-forgejo/admin-token"
+        "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
       )
 
     with {:ok, stat} <- File.stat(path),

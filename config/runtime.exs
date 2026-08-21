@@ -67,6 +67,13 @@ config :spruce_goose,
   ledger_recovery_database: System.get_env("LEDGER_RECOVERY_DATABASE")
 
 config :spruce_goose,
+  forgejo_read_token_file:
+    System.get_env(
+      "SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE",
+      "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
+    )
+
+config :spruce_goose,
   artifact_store_root:
     System.get_env(
       "ARTIFACT_STORE_ROOT",
