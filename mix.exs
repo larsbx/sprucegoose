@@ -10,7 +10,7 @@ defmodule SpruceGoose.MixProject do
       escript: [
         main_module: SpruceGoose.CLI,
         name: "sprucegoose",
-        path: System.get_env("SPRUCE_GOOSE_ESCRIPT_PATH", "sprucegoose")
+        path: System.get_env("SPRUCE_GOOSE_ESCRIPT_PATH", "sprucegoose-direct")
       ],
       test_ignore_filters: [~r|^test/fixtures/|],
       releases: releases(),

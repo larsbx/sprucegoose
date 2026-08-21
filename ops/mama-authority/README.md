@@ -5,6 +5,30 @@ Evergreen retains the stopped pre-cutover database as rollback state and reaches
 the mama Unix socket through `sprucegoose-remote-client.service`. No SpruceGoose
 TCP listener is exposed and there is no application-level dual-write path.
 
+## Bounded derivation executor
+
+`derivation-executor.toml` is the constitutive deployment declaration for the
+current bounded worker. It fixes the declared actor, Oban queue, permitted
+action, and exact job envelope. The first production slice permits only
+`verify_artifact`; `test` and `build_release` remain unconfigured and fail
+closed.
+
+Install the tracked systemd drop-in on mama before activating a release that
+contains the bounded executor:
+
+```sh
+install -d -m 0700 "$HOME/.config/systemd/user/sprucegoose.service.d"
+install -m 0600 \
+  ops/mama-authority/sprucegoose.service.d/20-derivation-executor.conf \
+  "$HOME/.config/systemd/user/sprucegoose.service.d/20-derivation-executor.conf"
+systemctl --user daemon-reload
+```
+
+The database actor and grant are transitional operative records. They do not
+become normative merely because they exist. Until SpruceGoose binds grants to
+an exact constitutive root, live canaries prove only the bounded execution
+path, not complete abstract-kernel conformance.
+
 The canonical bridge unit is `sprucegoose-remote-client.service`. Install it on
 evergreen with:
 

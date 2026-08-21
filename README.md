@@ -118,8 +118,8 @@ roadmaps:
 
 ```sh
 mix escript.build
-./sprucegoose id
-./sprucegoose validate-id tsk-20260727T012351Z-ea5ba1b1
+./sprucegoose-direct id
+./sprucegoose-direct validate-id tsk-20260727T012351Z-ea5ba1b1
 
 # One-time, on an empty registry: genesis creates the first human as a
 # full-scope actor. Every later actor needs an admin to create it.
