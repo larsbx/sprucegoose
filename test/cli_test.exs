@@ -186,6 +186,47 @@ defmodule SpruceGoose.CLITest do
     end
   end
 
+  test "task instantiation requires an exact blueprint and definition key" do
+    assert {:ok, {:instantiate_task, task}} =
+             Command.parse([
+               "task",
+               "instantiate",
+               "--project",
+               "pi",
+               "--roadmap",
+               "delivery",
+               "--workflow",
+               "release-v1",
+               "--blueprint",
+               "bpr-abc",
+               "--definition",
+               "test",
+               "--priority",
+               "1"
+             ])
+
+    assert task.blueprint == "bpr-abc"
+    assert task.definition == "test"
+    assert task.priority == 1
+    assert task.task_type == :task
+
+    assert {:error, "--definition is required"} =
+             Command.parse([
+               "task",
+               "instantiate",
+               "--project",
+               "pi",
+               "--roadmap",
+               "delivery",
+               "--workflow",
+               "release-v1",
+               "--blueprint",
+               "bpr-abc",
+               "--priority",
+               "1"
+             ])
+  end
+
   test "parses full hierarchy admission commands" do
     assert {:ok, {:add_project, "dogfood", "Dogfood project"}} =
              Command.parse(["project", "add", "dogfood", "Dogfood", "project"])

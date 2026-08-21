@@ -22,6 +22,26 @@ defmodule SpruceGoose.Blueprints.Applier do
     end
   end
 
+  def task_definition(project_key, workflow_id, definition_key, bytes)
+      when is_binary(project_key) and is_binary(bytes) do
+    with {:ok, manifest} <- parse(bytes),
+         :ok <- matching_project(manifest, %{key: project_key}),
+         {:ok, roadmaps} <- normalize(manifest),
+         %{} = workflow <-
+           roadmaps
+           |> Enum.flat_map(& &1.workflows)
+           |> Enum.find(&(&1.workflow_id == workflow_id)),
+         %{} = definition <-
+           Enum.find(workflow.definition.tasks, &(&1.id == definition_key)),
+         true <- is_binary(definition.title) and is_binary(definition.definition_of_done) do
+      {:ok, definition}
+    else
+      nil -> {:error, "definition_key does not exist in the blueprint revision"}
+      false -> {:error, "definition_key is not an admissible task definition"}
+      {:error, _} = error -> error
+    end
+  end
+
   defp parse(bytes) do
     case YamlElixir.read_from_string(bytes) do
       {:ok, value} when is_map(value) -> {:ok, value}

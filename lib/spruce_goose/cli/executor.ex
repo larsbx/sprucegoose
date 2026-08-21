@@ -875,6 +875,32 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  defp dispatch({:instantiate_task, input}) do
+    with {:ok, priority} <- required_task_priority(input),
+         {:ok, project} <- read_one(Project, key: input.project),
+         {:ok, roadmap} <- read_one(Roadmap, project_id: project.id, key: input.roadmap),
+         {:ok, workflow} <-
+           read_one(Workflow, roadmap_id: roadmap.id, workflow_id: input.workflow),
+         {:ok, revision} <-
+           read_one(BlueprintRevision, project_id: project.id, revision_id: input.blueprint),
+         id = TaskId.generate(),
+         {:ok, task} <-
+           Authz.create(
+             Task,
+             %{
+               workflow_id: workflow.id,
+               task_id: id,
+               task_type: input.task_type,
+               blueprint_revision_id: revision.id,
+               definition_key: input.definition,
+               priority: priority
+             },
+             action: :instantiate
+           ) do
+      {:ok, task_json(task)}
+    end
+  end
+
   defp create_blueprint_revision(project_key, repository, commit, path, action) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, revision} <-
@@ -1532,6 +1558,8 @@ defmodule SpruceGoose.CLI.Executor do
       workflow: membership && membership.workflow,
       workflow_name: membership && membership.workflow_name,
       definition_of_done: task.definition_of_done,
+      blueprint_revision_id: task.blueprint_revision_id,
+      definition_key: task.definition_key,
       artifact_requirements: task.artifact_requirements,
       artifact_receipts: task.artifact_receipts,
       sop_gate_required: task.sop_gate_required,

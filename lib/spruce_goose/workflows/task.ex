@@ -39,6 +39,7 @@ defmodule SpruceGoose.Workflows.Task do
   attributes do
     uuid_primary_key(:id)
     attribute(:task_id, :string, allow_nil?: false, public?: true)
+    attribute(:definition_key, :string, public?: true)
 
     attribute(:task_type, SpruceGoose.Workflows.TaskType,
       allow_nil?: false,
@@ -95,6 +96,11 @@ defmodule SpruceGoose.Workflows.Task do
       public?(true)
     end
 
+    belongs_to :blueprint_revision, SpruceGoose.Workflows.BlueprintRevision do
+      attribute_writable?(true)
+      public?(true)
+    end
+
     belongs_to :board, SpruceGoose.Workflows.Board do
       attribute_writable?(true)
       public?(true)
@@ -145,6 +151,20 @@ defmodule SpruceGoose.Workflows.Task do
         :custom_fields
       ])
 
+      change(fn changeset, _context -> acknowledge_sop(changeset) end)
+    end
+
+    create :instantiate do
+      accept([
+        :workflow_id,
+        :task_id,
+        :task_type,
+        :blueprint_revision_id,
+        :definition_key,
+        :priority
+      ])
+
+      change(fn changeset, _context -> bind_definition(changeset) end)
       change(fn changeset, _context -> acknowledge_sop(changeset) end)
     end
 
@@ -271,6 +291,57 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       change(optimistic_lock(:lock_version))
+    end
+  end
+
+  defp bind_definition(changeset) do
+    workflow_id = Ash.Changeset.get_attribute(changeset, :workflow_id)
+    revision_id = Ash.Changeset.get_attribute(changeset, :blueprint_revision_id)
+    definition_key = Ash.Changeset.get_attribute(changeset, :definition_key)
+
+    with {:ok, workflow} <-
+           SpruceGoose.Authz.read_one(SpruceGoose.Workflows.Workflow, id: workflow_id),
+         {:ok, roadmap} <-
+           SpruceGoose.Authz.read_one(SpruceGoose.Workflows.Roadmap, id: workflow.roadmap_id),
+         {:ok, project} <-
+           SpruceGoose.Authz.read_one(SpruceGoose.Workflows.Project, id: roadmap.project_id),
+         {:ok, revision} <-
+           SpruceGoose.Authz.read_one(SpruceGoose.Workflows.BlueprintRevision, id: revision_id),
+         true <- revision.project_id == roadmap.project_id,
+         {:ok, %{digest: digest, bytes: bytes}} <-
+           SpruceGoose.Blueprints.SourceVerifier.verify(
+             revision.repository,
+             revision.source_commit,
+             revision.source_path
+           ),
+         true <- digest == revision.manifest_digest,
+         {:ok, definition} <-
+           SpruceGoose.Blueprints.Applier.task_definition(
+             project.key,
+             workflow.workflow_id,
+             definition_key,
+             bytes
+           ) do
+      changeset
+      |> Ash.Changeset.change_attribute(:title, definition.title)
+      |> Ash.Changeset.change_attribute(:definition_of_done, definition.definition_of_done)
+      |> Ash.Changeset.change_attribute(:runner, definition.kind)
+      |> Ash.Changeset.change_attribute(:input, definition.input)
+    else
+      false ->
+        Ash.Changeset.add_error(changeset,
+          field: :blueprint_revision_id,
+          message: "does not govern this workflow"
+        )
+
+      {:error, error} ->
+        Ash.Changeset.add_error(changeset, field: :definition_key, message: to_string(error))
+
+      _ ->
+        Ash.Changeset.add_error(changeset,
+          field: :definition_key,
+          message: "is not an admissible task definition"
+        )
     end
   end
 

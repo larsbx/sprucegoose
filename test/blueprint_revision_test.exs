@@ -3,7 +3,7 @@ defmodule SpruceGoose.BlueprintRevisionTest do
 
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Authz
-  alias SpruceGoose.Workflows.{BlueprintRevision, Project, Roadmap, Workflow}
+  alias SpruceGoose.Workflows.{BlueprintRevision, Project, Roadmap, Task, Workflow}
 
   @commit String.duplicate("a", 40)
   @tree String.duplicate("b", 40)
@@ -85,6 +85,81 @@ defmodule SpruceGoose.BlueprintRevisionTest do
     assert revision.schema_version == 1
   end
 
+  test "new task admission binds an exact blueprint task definition" do
+    project = Ash.create!(Project, %{key: "legible", name: "Legible"})
+    approver = actor_with_role("blueprint-task-approver", :approver)
+    operator = actor_with_role("blueprint-task-operator", :operator)
+
+    revision =
+      Authz.with_actor(approver, fn ->
+        {:ok, revision} = Authz.create(BlueprintRevision, attrs(project), action: :apply)
+        revision
+      end)
+
+    [workflow] = Ash.read!(Ash.Query.filter_input(Workflow, workflow_id: "release-v1"))
+
+    {:ok, mutable_definition} =
+      SpruceGoose.Workflows.Definition.parse(%{
+        schema_version: 1,
+        tasks: [
+          %{
+            id: "test",
+            kind: :oban,
+            title: "Mutable projection title",
+            definition_of_done: "Mutable projection DoD",
+            depends_on: [],
+            input: %{}
+          }
+        ]
+      })
+
+    assert {:ok, _} =
+             Authz.with_actor(approver, fn ->
+               Authz.update(workflow, %{definition: mutable_definition}, action: :revise)
+             end)
+
+    assert {:ok, task} =
+             Authz.with_actor(operator, fn ->
+               Authz.create(
+                 Task,
+                 %{
+                   workflow_id: workflow.id,
+                   task_id: "tsk-20260821T170000Z-00000001",
+                   task_type: :task,
+                   blueprint_revision_id: revision.id,
+                   definition_key: "test",
+                   priority: 1
+                 },
+                 action: :instantiate
+               )
+             end)
+
+    assert task.blueprint_revision_id == revision.id
+    assert task.definition_key == "test"
+    assert task.title == "Run tests"
+    assert task.definition_of_done == "The governed test suite passes"
+    assert task.runner == :oban
+    assert task.input == %{}
+
+    assert {:error, error} =
+             Authz.with_actor(operator, fn ->
+               Authz.create(
+                 Task,
+                 %{
+                   workflow_id: workflow.id,
+                   task_id: "tsk-20260821T170000Z-00000002",
+                   task_type: :task,
+                   blueprint_revision_id: revision.id,
+                   definition_key: "missing",
+                   priority: 1
+                 },
+                 action: :instantiate
+               )
+             end)
+
+    assert Exception.message(error) =~ "definition_key"
+  end
+
   test "apply refuses an invalid package without creating partial hierarchy or receipt" do
     Application.put_env(:spruce_goose, :blueprint_source_verifier, __MODULE__.InvalidVerifier)
     project = Ash.create!(Project, %{key: "legible", name: "Legible"})
@@ -139,10 +214,14 @@ defmodule SpruceGoose.BlueprintRevisionTest do
                 tasks:
                   - id: test
                     kind: oban
+                    title: Run tests
+                    definition_of_done: The governed test suite passes
                     depends_on: []
                     input: {}
                   - id: build
                     kind: oban
+                    title: Build release
+                    definition_of_done: A reproducible release is built
                     depends_on: [test]
                     input: {}
       """

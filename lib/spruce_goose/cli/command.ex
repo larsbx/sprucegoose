@@ -30,6 +30,7 @@ defmodule SpruceGoose.CLI.Command do
     {"task",
      [
        "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE",
+       "instantiate --project KEY --roadmap KEY --workflow ID --blueprint REVISION --definition KEY --priority N [--type task|diagnosis]",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
        "blockers ID",
@@ -643,6 +644,50 @@ defmodule SpruceGoose.CLI.Command do
       "" -> {:error, "task title is required"}
       {:error, option} -> {:error, "--#{option} is required"}
       _ -> {:error, "invalid task add arguments"}
+    end
+  end
+
+  def parse(["task", "instantiate" | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          project: :string,
+          roadmap: :string,
+          workflow: :string,
+          blueprint: :string,
+          definition: :string,
+          priority: :integer,
+          type: :string
+        ]
+      )
+
+    task_type = Keyword.get(opts, :type, "task")
+
+    with [] <- invalid,
+         [] <- rest,
+         {:ok, project} <- required(opts, :project),
+         {:ok, roadmap} <- required(opts, :roadmap),
+         {:ok, workflow} <- required(opts, :workflow),
+         {:ok, blueprint} <- required(opts, :blueprint),
+         {:ok, definition} <- required(opts, :definition),
+         {:ok, priority} <- required_priority(opts),
+         true <- task_type in ["task", "diagnosis"] do
+      {:ok,
+       {:instantiate_task,
+        %{
+          project: project,
+          roadmap: roadmap,
+          workflow: workflow,
+          blueprint: blueprint,
+          definition: definition,
+          priority: priority,
+          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task)
+        }}}
+    else
+      false -> {:error, "--type must be task or diagnosis"}
+      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
+      {:error, option} -> {:error, "--#{option} is required"}
+      _ -> {:error, "invalid task instantiate arguments"}
     end
   end
 

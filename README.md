@@ -69,8 +69,9 @@ Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
 or atomically apply its roadmap and workflow definitions. The record binds the
 project to a repository slug, commit, tree, relative path, manifest digest, and
-schema version. It has no update or destroy action and never imports tasks,
-lifecycle state, actors, grants, approvals, shell commands, or deployments.
+schema version. It has no update or destroy action. It may define reusable
+TaskDefinitions, but never imports TaskInstances, lifecycle state, actors,
+grants, approvals, shell commands, or deployments.
 
 ```sh
 ./sprucegoose blueprint register my-project root/my-project \
@@ -80,6 +81,10 @@ lifecycle state, actors, grants, approvals, shell commands, or deployments.
 ./sprucegoose blueprint apply my-project root/my-project \
   <40-hex-commit> .sprucegoose/project.yaml \
   --as release-approver
+
+./sprucegoose task instantiate \
+  --project my-project --roadmap delivery --workflow release-v1 \
+  --blueprint bpr-... --definition test --priority 1 --as operator
 
 ./sprucegoose project view my-project --as operator
 ```
@@ -94,6 +99,11 @@ the tree or digest recorded by the Ash action. Apply validates the whole
 versioned YAML package before writing, then creates or revises its project-scoped
 roadmaps and workflows in one database transaction. Any invalid definition or
 write failure leaves both hierarchy and revision receipt unchanged.
+Instantiation re-verifies the referenced commit/path bytes and copies the
+typed runner, input, title, and Definition of Done from that exact revision;
+it does not trust a mutable workflow row. Pre-cutover tasks retain null source
+bindings as the explicit grandfathered epoch rather than receiving fabricated
+repository provenance.
 The production verifier reads a repository-read-only token from the owner-only
 path configured by `SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE`; it does not use the
 ICM publication credential.
@@ -112,6 +122,8 @@ roadmaps:
           tasks:
             - id: test
               kind: oban
+              title: Run tests
+              definition_of_done: The governed test suite passes
               depends_on: []
               input: {}
 ```
