@@ -7,11 +7,12 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
-  alias SpruceGoose.{Authz, Ledger, Repo, Revise, SopGate, TaskId}
+  alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
+    BlueprintRevision,
     Dependency,
     Graph,
     InboxItem,
@@ -155,6 +156,38 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch({:show_project, key}) do
     with {:ok, project} <- read_one(Project, key: key) do
       {:ok, project_json(project)}
+    end
+  end
+
+  defp dispatch({:view_project, key}), do: Legibility.project(key)
+
+  defp dispatch({:register_blueprint, project_key, repository, commit, tree, path, digest}) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, revision} <-
+           Authz.create(
+             BlueprintRevision,
+             %{
+               project_id: project.id,
+               repository: repository,
+               source_commit: commit,
+               source_tree: tree,
+               source_path: path,
+               manifest_digest: digest,
+               schema_version: 1
+             },
+             action: :register
+           ) do
+      {:ok,
+       %{
+         id: revision.revision_id,
+         project: project_key,
+         repository: revision.repository,
+         commit: revision.source_commit,
+         tree: revision.source_tree,
+         path: revision.source_path,
+         digest: revision.manifest_digest,
+         schema_version: revision.schema_version
+       }}
     end
   end
 
@@ -1438,7 +1471,12 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp todo_admission_allowed(_task), do: :ok
 
-  defp task_json(task), do: task_json(task, %{})
+  defp task_json(task) do
+    case workflow_memberships() do
+      {:ok, memberships} -> task_json(task, memberships)
+      {:error, error} -> raise "cannot resolve task hierarchy: #{inspect(error)}"
+    end
+  end
 
   defp task_json(task, memberships) do
     membership = Map.get(memberships, task.workflow_id)

@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLITest do
 
   test "returns scoped help for every command family and rejects unknown families" do
     families =
-      ~w(id project roadmap workflow task dep todo board column filter inbox ledger outbox)
+      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger outbox)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -187,6 +187,21 @@ defmodule SpruceGoose.CLITest do
   test "parses hierarchy read commands with optional scope filters" do
     assert {:ok, :list_projects} = Command.parse(["project", "list"])
     assert {:ok, {:show_project, "pi"}} = Command.parse(["project", "show", "pi"])
+    assert {:ok, {:view_project, "pi"}} = Command.parse(["project", "view", "pi"])
+
+    assert {:ok,
+            {:register_blueprint, "pi", "root/pi", "commit", "tree", ".sprucegoose/project.yaml",
+             "digest"}} =
+             Command.parse([
+               "blueprint",
+               "register",
+               "pi",
+               "root/pi",
+               "commit",
+               "tree",
+               ".sprucegoose/project.yaml",
+               "digest"
+             ])
 
     assert {:ok, {:list_roadmaps, nil}} = Command.parse(["roadmap", "list"])
 

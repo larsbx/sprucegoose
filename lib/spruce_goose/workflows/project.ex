@@ -36,6 +36,7 @@ defmodule SpruceGoose.Workflows.Project do
 
   relationships do
     has_many(:roadmaps, SpruceGoose.Workflows.Roadmap)
+    has_many(:blueprint_revisions, SpruceGoose.Workflows.BlueprintRevision)
   end
 
   actions do

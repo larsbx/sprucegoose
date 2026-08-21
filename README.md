@@ -57,6 +57,30 @@ Definition of Done — goes through `revise`: a TOML sparse patch proposed once
 and applied only after an explicit sign-off bound to the digest of the reviewed
 bytes. See [`docs/revisions.md`](docs/revisions.md).
 
+## Legible repository blueprints and views
+
+Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
+live authority. An approver can register an immutable blueprint source identity
+for a project. The record binds the project to a repository slug, commit, tree,
+relative path, manifest digest, and schema version. It has no update or destroy
+action and does not itself transition, promote, or deploy work.
+
+```sh
+./sprucegoose blueprint register my-project root/my-project \
+  <40-hex-commit> <40-hex-tree> .sprucegoose/project.yaml <64-hex-sha256> \
+  --as release-approver
+
+./sprucegoose project view my-project --as operator
+```
+
+`project view` returns the same authorized project hierarchy in three read-only
+forms: structured data, Markdown, and Graphviz DOT. The view includes stable
+project, roadmap, workflow, task, and blueprint identifiers. Generated text is
+explicitly labeled as a projection and is never accepted as mutation input.
+Blueprint registration currently records a reviewed source receipt; fetching
+and independently verifying Forgejo bytes before registration is a separate
+adapter gate and must not be inferred from the stored receipt alone.
+
 ```sh
 mix escript.build
 ./sprucegoose id

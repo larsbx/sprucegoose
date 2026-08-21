@@ -20,6 +20,7 @@ defmodule SpruceGoose.Actors.Scope do
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
+    BlueprintRevision,
     Dependency,
     InboxItem,
     Project,
@@ -96,6 +97,11 @@ defmodule SpruceGoose.Actors.Scope do
     JOIN projects p ON p.id = r.project_id
     WHERE td.id = $1
     """,
+    BlueprintRevision => """
+    SELECT p.key FROM workflow_blueprint_revisions br
+    JOIN projects p ON p.id = br.project_id
+    WHERE br.id = $1
+    """,
     Permit => """
     SELECT p.key FROM derivation_permits dp
     JOIN workflow_tasks t ON t.id = dp.task_id
@@ -117,6 +123,7 @@ defmodule SpruceGoose.Actors.Scope do
     BoardColumn => {:board_id, Board},
     SavedFilter => {:board_id, Board},
     Todo => {:task_id, Task},
+    BlueprintRevision => {:project_id, Project},
     Permit => {:task_id, Task}
   }
 
@@ -134,6 +141,7 @@ defmodule SpruceGoose.Actors.Scope do
     Dependency => [:successor, :workflow, :roadmap, :project, :key],
     TodoDependency => [:successor, :task, :workflow, :roadmap, :project, :key],
     Revision => [:project_key],
+    BlueprintRevision => [:project, :key],
     Permit => [:task, :workflow, :roadmap, :project, :key]
   }
 

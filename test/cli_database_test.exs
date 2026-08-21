@@ -224,6 +224,10 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert created.sop_path == SopGate.path()
     assert created.sop_digest =~ ~r/^[0-9a-f]{64}$/
     assert created.sop_acknowledged_at
+    assert created.project == "pi"
+    assert created.roadmap == "sprucegoose"
+    assert created.workflow == "audit-fixes"
+    assert created.workflow_name == "Audit fixes"
     assert {:ok, shown} = Executor.run({:show_task, created.id})
     assert shown == created
   end

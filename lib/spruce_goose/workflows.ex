@@ -38,5 +38,6 @@ defmodule SpruceGoose.Workflows do
     resource(SpruceGoose.Workflows.TodoDependency)
     resource(SpruceGoose.Workflows.InboxItem)
     resource(SpruceGoose.Workflows.Revision)
+    resource(SpruceGoose.Workflows.BlueprintRevision)
   end
 end

@@ -6,7 +6,9 @@ defmodule SpruceGoose.CLI.Command do
   # so drift is visible in one screen rather than across two files.
   @usage [
     {"id", ["id", "validate-id ID"]},
-    {"project", ["add KEY NAME", "list", "show KEY", "rename KEY NAME", "remove KEY"]},
+    {"project",
+     ["add KEY NAME", "list", "show KEY", "view KEY", "rename KEY NAME", "remove KEY"]},
+    {"blueprint", ["register PROJECT REPOSITORY COMMIT TREE PATH DIGEST"]},
     {"roadmap",
      [
        "add PROJECT KEY NAME",
@@ -194,11 +196,16 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["project", "list"]), do: {:ok, :list_projects}
   def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
+  def parse(["project", "view", key]), do: {:ok, {:view_project, key}}
 
   def parse(["project", "rename", key | name]) when name != [],
     do: {:ok, {:rename_project, key, Enum.join(name, " ")}}
 
   def parse(["project", "remove", key]), do: {:ok, {:remove_project, key}}
+
+  def parse(["blueprint", "register", project, repository, commit, tree, path, digest]) do
+    {:ok, {:register_blueprint, project, repository, commit, tree, path, digest}}
+  end
 
   def parse(["roadmap", "add", project, key | name]) when name != [],
     do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
