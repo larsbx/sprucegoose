@@ -30,6 +30,15 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
     assert before?(text, "mix hex.audit", "mix compile --warnings-as-errors")
   end
 
+  test "CI creates, migrates, and removes an isolated pipeline test database" do
+    text = File.read!(@script)
+    assert text =~ ~s(SPRUCE_GOOSE_TEST_DATABASE="spruce_goose_ci_${ci_db_suffix}")
+    assert before?(text, "mix ecto.create", "mix ash.migrate")
+    assert before?(text, "mix ash.migrate", "mix test")
+    assert text =~ "trap cleanup_test_database EXIT"
+    assert text =~ "mix ecto.drop --force --quiet"
+  end
+
   test "CI accounts for workspace writes and preserves any crash before refusing" do
     text = File.read!(@script)
     assert text =~ ~s(export ERL_CRASH_DUMP="$crash" ERL_CRASH_DUMP_SECONDS=0)
