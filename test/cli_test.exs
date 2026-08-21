@@ -7,7 +7,8 @@ defmodule SpruceGoose.CLITest do
   alias SpruceGoose.TaskId
 
   test "returns scoped help for every command family and rejects unknown families" do
-    families = ~w(id project roadmap workflow task dep todo board column filter inbox ledger)
+    families =
+      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger outbox derivation)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -17,6 +18,10 @@ defmodule SpruceGoose.CLITest do
     end
 
     assert {:ok, task_help} = CLI.run(["task", "--help"])
+
+    refute Enum.any?(task_help.forms, &String.starts_with?(&1, "add "))
+
+    assert "instantiate --project KEY --roadmap KEY --workflow ID --blueprint REVISION --definition KEY --priority N [--type task|diagnosis]" in task_help.forms
 
     assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
 
@@ -37,74 +42,99 @@ defmodule SpruceGoose.CLITest do
     refute TaskId.valid?("114")
   end
 
-  test "task admission requires typed membership, DoD, type, and title" do
-    assert {:ok, {:add_task, task}} =
+  test "parses failed-event inspection and replay commands" do
+    assert {:ok, :list_failed_outbox} = Command.parse(["outbox", "failed"])
+
+    assert {:ok, {:replay_outbox, "ad6cb708-3d90-47de-a701-19a45689f7ee"}} =
+             Command.parse(["outbox", "replay", "ad6cb708-3d90-47de-a701-19a45689f7ee"])
+
+    assert {:error, :usage} = Command.parse(["outbox", "replay"])
+  end
+
+  test "parses typed derivation admission and inspection" do
+    digest = String.duplicate("d", 64)
+
+    assert {:ok, {:admit_derivation, attrs}} =
+             Command.parse([
+               "derivation",
+               "admit",
+               "--task",
+               "tsk-20260821T120000Z-1234abcd",
+               "--source-event",
+               "forgejo:delivery-1",
+               "--forge-instance",
+               "mama-forgejo",
+               "--repository",
+               "root/sprucegoose",
+               "--commit",
+               String.duplicate("a", 40),
+               "--tree",
+               String.duplicate("b", 40),
+               "--ref",
+               "refs/heads/staging",
+               "--pipeline-digest",
+               String.duplicate("c", 64),
+               "--action",
+               "verify_artifact",
+               "--input-artifact",
+               digest
+             ])
+
+    assert attrs.action == :verify_artifact
+    assert attrs.input_artifact_digest == digest
+
+    assert {:ok, {:show_derivation, "drv-abc"}} =
+             Command.parse(["derivation", "show", "drv-abc"])
+
+    assert {:error, "invalid derivation admit arguments"} =
+             Command.parse(["derivation", "admit", "--action", "shell"])
+  end
+
+  test "unbound task add is retired from the public command surface" do
+    assert {:error, message} = Command.parse(["task", "add", "Legacy task"])
+    assert message =~ "retired"
+    assert message =~ "task instantiate"
+  end
+
+  test "task instantiation requires an exact blueprint and definition key" do
+    assert {:ok, {:instantiate_task, task}} =
              Command.parse([
                "task",
-               "add",
+               "instantiate",
                "--project",
                "pi",
                "--roadmap",
-               "buzz-agent-collaboration-plane",
+               "delivery",
                "--workflow",
-               "buzz-integration",
-               "--dod",
-               "focused checks pass",
-               "--sop",
-               SopGate.path(),
-               "--type",
-               "diagnosis",
-               "Diagnose",
-               "the",
-               "boundary"
+               "release-v1",
+               "--blueprint",
+               "bpr-abc",
+               "--definition",
+               "test",
+               "--priority",
+               "1"
              ])
 
-    assert task.project == "pi"
-    assert task.roadmap == "buzz-agent-collaboration-plane"
-    assert task.workflow == "buzz-integration"
-    assert task.definition_of_done == "focused checks pass"
-    assert task.sop_path == SopGate.path()
-    assert task.task_type == :diagnosis
-    assert task.title == "Diagnose the boundary"
+    assert task.blueprint == "bpr-abc"
+    assert task.definition == "test"
+    assert task.priority == 1
+    assert task.task_type == :task
 
-    assert {:ok, {:add_task, %{task_type: :task}}} =
+    assert {:error, "--definition is required"} =
              Command.parse([
                "task",
-               "add",
+               "instantiate",
                "--project",
                "pi",
                "--roadmap",
-               "buzz-agent-collaboration-plane",
+               "delivery",
                "--workflow",
-               "buzz-integration",
-               "--dod",
-               "focused checks pass",
-               "--sop",
-               SopGate.path(),
-               "Default task"
+               "release-v1",
+               "--blueprint",
+               "bpr-abc",
+               "--priority",
+               "1"
              ])
-
-    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
-      args =
-        [
-          "task",
-          "add",
-          "--project",
-          "pi",
-          "--roadmap",
-          "roadmap",
-          "--workflow",
-          "workflow",
-          "--dod",
-          "done",
-          "--sop",
-          SopGate.path(),
-          "title"
-        ]
-        |> drop_option("--#{missing}")
-
-      assert {:error, _} = Command.parse(args)
-    end
   end
 
   test "parses full hierarchy admission commands" do
@@ -147,6 +177,27 @@ defmodule SpruceGoose.CLITest do
   test "parses hierarchy read commands with optional scope filters" do
     assert {:ok, :list_projects} = Command.parse(["project", "list"])
     assert {:ok, {:show_project, "pi"}} = Command.parse(["project", "show", "pi"])
+    assert {:ok, {:view_project, "pi"}} = Command.parse(["project", "view", "pi"])
+
+    assert {:ok, {:register_blueprint, "pi", "root/pi", "commit", ".sprucegoose/project.yaml"}} =
+             Command.parse([
+               "blueprint",
+               "register",
+               "pi",
+               "root/pi",
+               "commit",
+               ".sprucegoose/project.yaml"
+             ])
+
+    assert {:ok, {:apply_blueprint, "pi", "root/pi", "commit", ".sprucegoose/project.yaml"}} =
+             Command.parse([
+               "blueprint",
+               "apply",
+               "pi",
+               "root/pi",
+               "commit",
+               ".sprucegoose/project.yaml"
+             ])
 
     assert {:ok, {:list_roadmaps, nil}} = Command.parse(["roadmap", "list"])
 
@@ -184,6 +235,25 @@ defmodule SpruceGoose.CLITest do
              ])
   end
 
+  test "parses dependency graph query commands" do
+    task_id = "tsk-20260810T142243Z-66915779"
+
+    assert {:ok, {:task_blockers, ^task_id}} =
+             Command.parse(["task", "blockers", task_id])
+
+    assert {:ok, {:task_impact, ^task_id}} =
+             Command.parse(["task", "impact", task_id])
+
+    assert {:ok, {:workflow_critical_path, "openclaw-system", "convergence", "v1"}} =
+             Command.parse([
+               "workflow",
+               "critical-path",
+               "openclaw-system",
+               "convergence",
+               "v1"
+             ])
+  end
+
   test "hierarchy read commands reject stray arguments and unknown options" do
     assert {:error, :usage} = Command.parse(["project", "list", "extra"])
     assert {:error, :usage} = Command.parse(["project", "show"])
@@ -196,7 +266,7 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["workflow", "list", "--bogus", "x"])
   end
 
-  test "rejects unknown task types and missing titles" do
+  test "retired task add refuses every legacy argument shape" do
     base = [
       "task",
       "add",
@@ -206,16 +276,19 @@ defmodule SpruceGoose.CLITest do
       "roadmap",
       "--workflow",
       "workflow",
+      "--priority",
+      "3",
       "--dod",
       "done",
       "--sop",
       SopGate.path()
     ]
 
-    assert {:error, "task title is required"} = Command.parse(base)
-
-    assert {:error, "--type must be task or diagnosis"} =
-             Command.parse(base ++ ["--type", "shell", "x"])
+    for args <- [base, base ++ ["--type", "shell", "x"]] do
+      assert {:error, message} = Command.parse(args)
+      assert message =~ "task add is retired"
+      assert message =~ "task instantiate"
+    end
   end
 
   test "parses operator lifecycle commands" do
@@ -243,6 +316,16 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["task", "acknowledge-sop", id, SopGate.path()])
 
     assert sop_path == SopGate.path()
+
+    assert {:ok, {:record_artifact_receipt, ^id, "prototype", "/tmp/prototype", "telegram:6680"}} =
+             Command.parse([
+               "task",
+               "artifact-receipt",
+               id,
+               "prototype",
+               "/tmp/prototype",
+               "telegram:6680"
+             ])
 
     assert {:ok, {:transition_task, ^id, :completed, nil}} = Command.parse(["task", "done", id])
 
@@ -381,48 +464,9 @@ defmodule SpruceGoose.CLITest do
     assert {:ok, {:drop_inbox, "inbox-abc", "not actionable"}} =
              Command.parse(["inbox", "drop", "inbox-abc", "not", "actionable"])
 
-    assert {:ok, {:promote_inbox, "inbox-abc", promoted}} =
-             Command.parse([
-               "inbox",
-               "promote",
-               "inbox-abc",
-               "--project",
-               "pi",
-               "--roadmap",
-               "buzz-agent-collaboration-plane",
-               "--workflow",
-               "buzz-integration",
-               "--dod",
-               "triage closes",
-               "--sop",
-               SopGate.path()
-             ])
-
-    assert promoted.project == "pi"
-    assert promoted.definition_of_done == "triage closes"
-    assert promoted.task_type == :task
-    assert promoted.title == nil
-
-    assert {:ok, {:promote_inbox, "inbox-abc", %{title: "Explicit title", task_type: :diagnosis}}} =
-             Command.parse([
-               "inbox",
-               "promote",
-               "inbox-abc",
-               "--project",
-               "pi",
-               "--roadmap",
-               "r",
-               "--workflow",
-               "w",
-               "--dod",
-               "d",
-               "--sop",
-               SopGate.path(),
-               "--type",
-               "diagnosis",
-               "--title",
-               "Explicit title"
-             ])
+    assert {:error, message} = Command.parse(["inbox", "promote", "inbox-abc"])
+    assert message =~ "retired"
+    assert message =~ "task instantiate"
   end
 
   test "inbox triage commands fail closed on malformed arguments" do
@@ -430,30 +474,8 @@ defmodule SpruceGoose.CLITest do
     assert {:error, :usage} = Command.parse(["inbox", "drop", "inbox-abc"])
     assert {:error, "invalid list arguments"} = Command.parse(["inbox", "list", "stray"])
 
-    base = [
-      "inbox",
-      "promote",
-      "inbox-abc",
-      "--project",
-      "pi",
-      "--roadmap",
-      "r",
-      "--workflow",
-      "w",
-      "--dod",
-      "d",
-      "--sop",
-      SopGate.path()
-    ]
-
-    assert {:error, "--type must be task or diagnosis"} =
-             Command.parse(base ++ ["--type", "shell"])
-
-    assert {:error, "invalid inbox promote arguments"} = Command.parse(base ++ ["stray"])
-
-    for missing <- ["project", "roadmap", "workflow", "dod", "sop"] do
-      assert {:error, _} = Command.parse(drop_option(base, "--#{missing}"))
-    end
+    assert {:error, message} = Command.parse(["inbox", "promote", "inbox-abc", "stray"])
+    assert message =~ "retired"
   end
 
   test "parses subordinate TODO commands" do
@@ -466,12 +488,5 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, {:complete_todo, ^id, "todo-abc"}} =
              Command.parse(["todo", "done", id, "todo-abc"])
-  end
-
-  defp drop_option(args, option) do
-    case Enum.split_while(args, &(&1 != option)) do
-      {left, [_option, _value | right]} -> left ++ right
-      _ -> args
-    end
   end
 end

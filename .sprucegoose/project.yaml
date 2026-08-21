@@ -1,0 +1,71 @@
+schema_version: 1
+project: openclaw-system
+roadmaps:
+  - key: sprucegoose-control-plane-convergence
+    name: SpruceGoose Control Plane Convergence
+    workflows:
+      - id: sprucegoose-convergence-v1
+        name: SpruceGoose Convergence v1
+        definition:
+          schema_version: 1
+          tasks:
+            - id: authority-contract
+              kind: openclaw
+              title: Establish the authority contract
+              definition_of_done: The constitutive, operative, evidentiary, and projection authorities are explicit and reviewed.
+              depends_on: []
+              input: {}
+            - id: knowledge-projection
+              kind: openclaw
+              title: Project constitutive knowledge
+              definition_of_done: Repository definitions are verified and materialized with exact immutable source bindings.
+              depends_on: [authority-contract]
+              input: {}
+            - id: artifact-boundary-signer
+              kind: openclaw
+              title: Establish immutable artifact custody and independent signing
+              definition_of_done: Content-addressed artifact storage and a signer isolated from derivation executors pass positive, substitution-refusal, overwrite-refusal, secret-custody, recovery, and repository-publication checks without granting deployment authority.
+              depends_on: [knowledge-projection]
+              input: {}
+            - id: repository-relevance-sweep
+              kind: openclaw
+              title: Sweep stale SpruceGoose repository material
+              definition_of_done: Every tracked file is classified against current source and live state; stale audits and superseded documents are deleted or moved into an explicit non-authoritative archive with Git recovery; current-state documentation is updated; focused and full checks pass; scoped commits are pushed with exact local/remote parity.
+              depends_on: [knowledge-projection]
+              input: {}
+            - id: ooda-shadow
+              kind: openclaw
+              title: Shadow the Pi OODA path
+              definition_of_done: Pi decisions run in shadow mode with parity and refusal evidence.
+              depends_on: [knowledge-projection]
+              input: {}
+            - id: taskflow-shadow
+              kind: openclaw
+              title: Shadow TaskFlow execution
+              definition_of_done: TaskFlow execution is shadowed by SpruceGoose with resumability and parity evidence.
+              depends_on: [authority-contract]
+              input: {}
+            - id: sprucegoose-sole-writer
+              kind: openclaw
+              title: Make SpruceGoose the sole writer
+              definition_of_done: New governed task admission and lifecycle writes occur only through SpruceGoose.
+              depends_on: [ooda-shadow, taskflow-shadow]
+              input: {}
+            - id: runtime-capability-transfer
+              kind: openclaw
+              title: Transfer bounded runtime capabilities
+              definition_of_done: Typed bounded executors replace generic runtime authority and pass positive and refusal canaries.
+              depends_on: [sprucegoose-sole-writer]
+              input: {}
+            - id: canary-cutover
+              kind: openclaw
+              title: Canary the authority cutover
+              definition_of_done: Forward event authority and deterministic projections pass replay, recovery, and parity canaries.
+              depends_on: [runtime-capability-transfer]
+              input: {}
+            - id: legacy-retirement
+              kind: openclaw
+              title: Retire legacy writers
+              definition_of_done: Superseded writers are disabled after rollback-safe cutover evidence is retained.
+              depends_on: [canary-cutover]
+              input: {}

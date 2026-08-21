@@ -1,0 +1,17 @@
+#!/usr/bin/env elixir
+Code.require_file(Path.expand("../lib/spruce_goose/release_provenance.ex", __DIR__))
+Code.require_file(Path.expand("../lib/spruce_goose/release_validator.ex", __DIR__))
+
+{opts, rest, invalid} = OptionParser.parse(System.argv(), strict: [receipt: :string, expected_commit: :string, expected_tree: :string, destination_inventory: :string, artifact_only: :boolean, allow_dirty: :boolean])
+required = [:receipt, :expected_commit, :expected_tree]
+destination_mode = Keyword.has_key?(opts, :destination_inventory)
+artifact_mode = Keyword.get(opts, :artifact_only, false)
+
+if length(rest) != 1 or invalid != [] or not Enum.all?(required, &Keyword.has_key?(opts, &1)) or destination_mode == artifact_mode do
+  IO.puts(:stderr, "usage: validate-governed-release ARCHIVE --receipt PATH --expected-commit OID --expected-tree OID (--destination-inventory PATH|--artifact-only) [--allow-dirty]")
+  System.halt(2)
+end
+case SpruceGoose.ReleaseValidator.validate(Keyword.put(opts, :archive, hd(rest))) do
+  {:ok, result} -> IO.puts("validated mode=#{result.mode} classification=#{result.classification} member=#{result.member}")
+  {:error, reason} -> IO.puts(:stderr, reason); System.halt(2)
+end

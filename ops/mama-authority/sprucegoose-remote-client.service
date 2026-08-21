@@ -1,0 +1,30 @@
+[Unit]
+Description=SpruceGoose CLI bridge to mama authority
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+RuntimeDirectory=sprucegoose
+RuntimeDirectoryMode=0700
+ExecStartPre=-/usr/bin/rm -f %t/sprucegoose/cli.sock
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StreamLocalBindUnlink=yes -L %t/sprucegoose/cli.sock:%t/sprucegoose/cli.sock mama
+ExecStartPost=/usr/bin/bash -c 'for i in $(seq 1 30); do test -S %t/sprucegoose/cli.sock && exit 0; sleep 1; done; exit 1'
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=30
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=~@mount @swap @reboot @module @raw-io @cpu-emulation @obsolete
+
+[Install]
+WantedBy=default.target

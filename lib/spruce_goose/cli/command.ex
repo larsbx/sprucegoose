@@ -6,7 +6,10 @@ defmodule SpruceGoose.CLI.Command do
   # so drift is visible in one screen rather than across two files.
   @usage [
     {"id", ["id", "validate-id ID"]},
-    {"project", ["add KEY NAME", "list", "show KEY", "rename KEY NAME", "remove KEY"]},
+    {"project",
+     ["add KEY NAME", "list", "show KEY", "view KEY", "rename KEY NAME", "remove KEY"]},
+    {"blueprint",
+     ["register PROJECT REPOSITORY COMMIT PATH", "apply PROJECT REPOSITORY COMMIT PATH"]},
     {"roadmap",
      [
        "add PROJECT KEY NAME",
@@ -20,20 +23,24 @@ defmodule SpruceGoose.CLI.Command do
        "add --project KEY --roadmap KEY --definition JSON ID NAME",
        "list [--project KEY] [--roadmap KEY]",
        "show PROJECT ROADMAP ID",
+       "critical-path PROJECT ROADMAP ID",
        "rename PROJECT ROADMAP ID NAME",
        "remove PROJECT ROADMAP ID"
      ]},
     {"task",
      [
-       "add --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--type task|diagnosis] TITLE",
+       "instantiate --project KEY --roadmap KEY --workflow ID --blueprint REVISION --definition KEY --priority N [--type task|diagnosis]",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
+       "blockers ID",
+       "impact ID",
        "propose|queue|ready|start|done ID",
        "wait ID REASON",
        "cancel ID REASON",
        "link ID KIND VALUE",
        "link ID --remove KIND VALUE",
        "acknowledge-sop ID PATH",
+       "artifact-receipt ID NAME SOURCE_PATH SOURCE_IDENTITY",
        "move ID BOARD COLUMN RANK",
        "metadata ID JSON"
      ]},
@@ -68,11 +75,46 @@ defmodule SpruceGoose.CLI.Command do
        "add TEXT",
        "list [--state pending|resolved|dropped|all]",
        "done CAPTURE_ID",
-       "drop CAPTURE_ID REASON",
-       "promote CAPTURE_ID --project KEY --roadmap KEY --workflow ID --dod TEXT --sop PATH [--title T]"
+       "drop CAPTURE_ID REASON"
+     ]},
+    {"revise",
+     [
+       "propose --file ABSOLUTE_PATH",
+       "list [--state pending|applied|withdrawn|all] [--target REF]",
+       "show REVISION",
+       "approve REVISION --task TASK_ID --digest SHA256 [--self]",
+       "withdraw REVISION REASON"
+     ]},
+    {"actor",
+     [
+       "add NAME --kind human|agent [--description TEXT]",
+       "list [--kind human|agent|system]",
+       "show NAME",
+       "disable NAME REASON",
+       "enable NAME"
+     ]},
+    {"grant",
+     [
+       "add NAME --role ROLE --scope '*'|project:KEY",
+       "list [--actor NAME] [--role ROLE]",
+       "remove NAME --role ROLE --scope SCOPE"
      ]},
     {"ledger", ["import PATH", "parity PATH"]},
-    {"meta", ["version", "help"]}
+    {"outbox", ["failed", "replay EVENT_ID"]},
+    {"derivation",
+     [
+       "admit --task ID --source-event ID --forge-instance ID --repository OWNER/REPO --commit OID --tree OID --ref REF --pipeline-digest SHA256 --action test|build_release|verify_artifact [--input-artifact SHA256]",
+       "show PERMIT_ID"
+     ]},
+    {"release",
+     [
+       "inspect-provenance ARCHIVE",
+       "validate-provenance ARCHIVE --receipt PATH --expected-commit OID --expected-tree OID (--destination-inventory PATH|--artifact-only) [--allow-dirty]"
+     ]},
+    # Nounless verbs. `whoami` sits here rather than under its own noun because
+    # it takes no subcommand, and because it answers a question about the caller
+    # rather than about the work.
+    {"meta", ["version", "help", "whoami"]}
   ]
   @help_nouns @usage |> Enum.map(&elem(&1, 0)) |> List.delete("meta")
 
@@ -127,6 +169,30 @@ defmodule SpruceGoose.CLI.Command do
   def parse([noun, help]) when noun in @help_nouns and help in ["help", "--help", "-h"],
     do: {:ok, {:help, noun}}
 
+  def parse(["release", "inspect-provenance", archive]),
+    do: {:ok, {:inspect_release_provenance, archive}}
+
+  def parse(["release", "validate-provenance", archive | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          receipt: :string,
+          expected_commit: :string,
+          expected_tree: :string,
+          destination_inventory: :string,
+          artifact_only: :boolean,
+          allow_dirty: :boolean
+        ]
+      )
+
+    if rest == [] and invalid == [] and
+         Enum.all?([:receipt, :expected_commit, :expected_tree], &Keyword.has_key?(opts, &1)) do
+      {:ok, {:validate_release_provenance, archive, opts}}
+    else
+      {:error, "invalid release validate-provenance arguments"}
+    end
+  end
+
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}
 
@@ -135,11 +201,20 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["project", "list"]), do: {:ok, :list_projects}
   def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
+  def parse(["project", "view", key]), do: {:ok, {:view_project, key}}
 
   def parse(["project", "rename", key | name]) when name != [],
     do: {:ok, {:rename_project, key, Enum.join(name, " ")}}
 
   def parse(["project", "remove", key]), do: {:ok, {:remove_project, key}}
+
+  def parse(["blueprint", "register", project, repository, commit, path]) do
+    {:ok, {:register_blueprint, project, repository, commit, path}}
+  end
+
+  def parse(["blueprint", "apply", project, repository, commit, path]) do
+    {:ok, {:apply_blueprint, project, repository, commit, path}}
+  end
 
   def parse(["roadmap", "add", project, key | name]) when name != [],
     do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
@@ -166,6 +241,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["workflow", "show", project, roadmap, workflow_id]),
     do: {:ok, {:show_workflow, project, roadmap, workflow_id}}
 
+  def parse(["workflow", "critical-path", project, roadmap, workflow_id]),
+    do: {:ok, {:workflow_critical_path, project, roadmap, workflow_id}}
+
   def parse(["workflow", "rename", project, roadmap, workflow_id | name]) when name != [],
     do: {:ok, {:rename_workflow, project, roadmap, workflow_id, Enum.join(name, " ")}}
 
@@ -191,6 +269,8 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
+  def parse(["task", "blockers", id]), do: {:ok, {:task_blockers, id}}
+  def parse(["task", "impact", id]), do: {:ok, {:task_impact, id}}
 
   def parse(["task", "list" | args]) do
     case OptionParser.parse(args,
@@ -202,8 +282,11 @@ defmodule SpruceGoose.CLI.Command do
              type: :string,
              label: :string,
              assignee: :string,
-             priority: :integer,
-             text: :string
+             priority: :string,
+             text: :string,
+             limit: :integer,
+             offset: :integer,
+             sort: :string
            ]
          ) do
       {opts, [], []} -> {:ok, {:list_tasks, Map.new(opts)}}
@@ -231,6 +314,9 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["task", "acknowledge-sop", id, sop_path]),
     do: {:ok, {:acknowledge_sop, id, sop_path}}
+
+  def parse(["task", "artifact-receipt", id, name, source_path, source_identity]),
+    do: {:ok, {:record_artifact_receipt, id, name, source_path, source_identity}}
 
   def parse(["dep", "list", task_id]), do: {:ok, {:list_dependencies, task_id}}
 
@@ -260,46 +346,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["inbox", "drop", capture_id | reason]) when reason != [],
     do: {:ok, {:drop_inbox, capture_id, Enum.join(reason, " ")}}
 
-  def parse(["inbox", "promote", capture_id | args]) do
-    {opts, rest, invalid} =
-      OptionParser.parse(args,
-        strict: [
-          project: :string,
-          roadmap: :string,
-          workflow: :string,
-          dod: :string,
-          sop: :string,
-          type: :string,
-          title: :string
-        ]
-      )
-
-    task_type = Keyword.get(opts, :type, "task")
-
-    with [] <- invalid,
-         [] <- rest,
-         {:ok, project} <- required(opts, :project),
-         {:ok, roadmap} <- required(opts, :roadmap),
-         {:ok, workflow} <- required(opts, :workflow),
-         {:ok, dod} <- required(opts, :dod),
-         {:ok, sop_path} <- required(opts, :sop),
-         true <- task_type in ["task", "diagnosis"] do
-      {:ok,
-       {:promote_inbox, capture_id,
-        %{
-          project: project,
-          roadmap: roadmap,
-          workflow: workflow,
-          definition_of_done: dod,
-          sop_path: sop_path,
-          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
-          title: Keyword.get(opts, :title)
-        }}}
-    else
-      false -> {:error, "--type must be task or diagnosis"}
-      {:error, option} -> {:error, "--#{option} is required"}
-      _ -> {:error, "invalid inbox promote arguments"}
-    end
+  def parse(["inbox", "promote" | _args]) do
+    {:error,
+     "inbox promote is retired; commit a TaskDefinition, apply its blueprint, then use task instantiate"}
   end
 
   def parse(["todo", "list", task_id]), do: {:ok, {:list_todos, task_id}}
@@ -361,18 +410,167 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["filter", "apply", filter_id]), do: {:ok, {:apply_filter, filter_id}}
   def parse(["filter", "remove", filter_id]), do: {:ok, {:remove_filter, filter_id}}
 
+  def parse(["revise", "propose" | args]) do
+    with {:ok, opts} <- revise_options(args, file: :string),
+         {:ok, file} <- required(opts, :file) do
+      {:ok, {:propose_revision, file}}
+    else
+      {:error, option} when is_atom(option) -> {:error, "--#{option} is required"}
+      error -> error
+    end
+  end
+
+  def parse(["revise", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, state: :string, target: :string) do
+      {:ok, {:list_revisions, Keyword.get(opts, :state), Keyword.get(opts, :target)}}
+    end
+  end
+
+  def parse(["revise", "show", revision_id]), do: {:ok, {:show_revision, revision_id}}
+
+  # Every flag is required, --digest above all: quoting back the digest that
+  # `revise show` printed is what makes approval a sign-off rather than a
+  # second keystroke.
+  def parse(["revise", "approve", revision_id | args]) do
+    with {:ok, opts} <- revise_options(args, task: :string, digest: :string, self: :boolean),
+         {:ok, task} <- required(opts, :task),
+         {:ok, digest} <- required(opts, :digest) do
+      {:ok, {:approve_revision, revision_id, task, digest, Keyword.get(opts, :self, false)}}
+    else
+      {:error, option} when is_atom(option) -> {:error, "--#{option} is required"}
+      error -> error
+    end
+  end
+
+  def parse(["revise", "withdraw", revision_id | reason]) when reason != [],
+    do: {:ok, {:withdraw_revision, revision_id, Enum.join(reason, " ")}}
+
+  def parse(["whoami"]), do: {:ok, :whoami}
+
+  def parse(["actor", "add", name | args]) do
+    with {:ok, opts} <- revise_options(args, kind: :string, description: :string),
+         {:ok, kind} <- required(opts, :kind),
+         true <- kind in SpruceGoose.Actors.Registry.valid_kinds() do
+      {:ok,
+       {:add_actor,
+        %{
+          name: name,
+          kind: String.to_existing_atom(kind),
+          description: Keyword.get(opts, :description)
+        }}}
+    else
+      false -> {:error, "--kind must be one of human, agent, system"}
+      {:error, option} when is_atom(option) -> {:error, "--#{option} is required"}
+      error -> error
+    end
+  end
+
+  def parse(["actor", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, kind: :string) do
+      {:ok, {:list_actors, Keyword.get(opts, :kind)}}
+    end
+  end
+
+  def parse(["actor", "show", name]), do: {:ok, {:show_actor, name}}
+
+  def parse(["actor", "disable", name | reason]) when reason != [],
+    do: {:ok, {:disable_actor, name, Enum.join(reason, " ")}}
+
+  def parse(["actor", "enable", name]), do: {:ok, {:enable_actor, name}}
+
+  def parse(["grant", "add", name | args]) do
+    with {:ok, opts} <- revise_options(args, role: :string, scope: :string),
+         {:ok, role} <- required(opts, :role),
+         {:ok, scope} <- required(opts, :scope) do
+      {:ok, {:grant_role, name, role, scope}}
+    else
+      {:error, option} when is_atom(option) -> {:error, "--#{option} is required"}
+      error -> error
+    end
+  end
+
+  def parse(["grant", "list" | args]) do
+    with {:ok, opts} <- scope_options(args, actor: :string, role: :string) do
+      {:ok, {:list_grants, Keyword.get(opts, :actor), Keyword.get(opts, :role)}}
+    end
+  end
+
+  def parse(["grant", "remove", name | args]) do
+    with {:ok, opts} <- revise_options(args, role: :string, scope: :string),
+         {:ok, role} <- required(opts, :role),
+         {:ok, scope} <- required(opts, :scope) do
+      {:ok, {:revoke_role, name, role, scope}}
+    else
+      {:error, option} when is_atom(option) -> {:error, "--#{option} is required"}
+      error -> error
+    end
+  end
+
   def parse(["ledger", "import", path]), do: {:ok, {:import_ledger, path}}
   def parse(["ledger", "parity", path]), do: {:ok, {:parity_ledger, path}}
+  def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
+  def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 
-  def parse(["task", "add" | args]) do
-    {opts, title, invalid} =
+  def parse(["derivation", "show", permit_id]), do: {:ok, {:show_derivation, permit_id}}
+
+  def parse(["derivation", "admit" | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          task: :string,
+          source_event: :string,
+          forge_instance: :string,
+          repository: :string,
+          commit: :string,
+          tree: :string,
+          ref: :string,
+          pipeline_digest: :string,
+          action: :string,
+          input_artifact: :string
+        ]
+      )
+
+    required =
+      ~w(task source_event forge_instance repository commit tree ref pipeline_digest action)a
+
+    with [] <- rest,
+         [] <- invalid,
+         true <- Enum.all?(required, &Keyword.has_key?(opts, &1)),
+         {:ok, action} <- derivation_action(Keyword.fetch!(opts, :action)) do
+      {:ok,
+       {:admit_derivation,
+        %{
+          task_id: Keyword.fetch!(opts, :task),
+          source_event_id: Keyword.fetch!(opts, :source_event),
+          forge_instance: Keyword.fetch!(opts, :forge_instance),
+          repository: Keyword.fetch!(opts, :repository),
+          commit_sha: Keyword.fetch!(opts, :commit),
+          tree_sha: Keyword.fetch!(opts, :tree),
+          ref: Keyword.fetch!(opts, :ref),
+          pipeline_digest: Keyword.fetch!(opts, :pipeline_digest),
+          input_artifact_digest: Keyword.get(opts, :input_artifact),
+          action: action
+        }}}
+    else
+      _ -> {:error, "invalid derivation admit arguments"}
+    end
+  end
+
+  def parse(["task", "add" | _args]) do
+    {:error,
+     "task add is retired for executable work; commit a TaskDefinition, apply its blueprint, then use task instantiate"}
+  end
+
+  def parse(["task", "instantiate" | args]) do
+    {opts, rest, invalid} =
       OptionParser.parse(args,
         strict: [
           project: :string,
           roadmap: :string,
           workflow: :string,
-          dod: :string,
-          sop: :string,
+          blueprint: :string,
+          definition: :string,
+          priority: :integer,
           type: :string
         ]
       )
@@ -380,33 +578,39 @@ defmodule SpruceGoose.CLI.Command do
     task_type = Keyword.get(opts, :type, "task")
 
     with [] <- invalid,
+         [] <- rest,
          {:ok, project} <- required(opts, :project),
          {:ok, roadmap} <- required(opts, :roadmap),
          {:ok, workflow} <- required(opts, :workflow),
-         {:ok, dod} <- required(opts, :dod),
-         {:ok, sop_path} <- required(opts, :sop),
-         true <- task_type in ["task", "diagnosis"],
-         title when title != "" <- Enum.join(title, " ") do
+         {:ok, blueprint} <- required(opts, :blueprint),
+         {:ok, definition} <- required(opts, :definition),
+         {:ok, priority} <- required_priority(opts),
+         true <- task_type in ["task", "diagnosis"] do
       {:ok,
-       {:add_task,
+       {:instantiate_task,
         %{
           project: project,
           roadmap: roadmap,
           workflow: workflow,
-          definition_of_done: dod,
-          sop_path: sop_path,
-          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
-          title: title
+          blueprint: blueprint,
+          definition: definition,
+          priority: priority,
+          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task)
         }}}
     else
       false -> {:error, "--type must be task or diagnosis"}
-      "" -> {:error, "task title is required"}
+      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
       {:error, option} -> {:error, "--#{option} is required"}
-      _ -> {:error, "invalid task add arguments"}
+      _ -> {:error, "invalid task instantiate arguments"}
     end
   end
 
   def parse(_args), do: {:error, :usage}
+
+  defp derivation_action("test"), do: {:ok, :test}
+  defp derivation_action("build_release"), do: {:ok, :build_release}
+  defp derivation_action("verify_artifact"), do: {:ok, :verify_artifact}
+  defp derivation_action(_), do: {:error, :invalid_action}
 
   defp dependency_option(args) do
     case OptionParser.parse(args, strict: [after: :string]) do
@@ -421,6 +625,32 @@ defmodule SpruceGoose.CLI.Command do
     end
   end
 
+  @doc """
+  Pop a global `--as NAME` (or `--as=NAME`) out of the argument list.
+
+  Returns `{name_or_nil, remaining_args}`. Done before `parse/1` because every
+  verb parses with `strict:`, so a flag that is not declared on that specific
+  verb is an error rather than a global option.
+  """
+  def extract_actor(args), do: extract_actor(args, nil, [])
+
+  defp extract_actor([], name, seen), do: {name, Enum.reverse(seen)}
+
+  defp extract_actor(["--as", name | rest], _previous, seen),
+    do: extract_actor(rest, name, seen)
+
+  defp extract_actor(["--as=" <> name | rest], _previous, seen),
+    do: extract_actor(rest, name, seen)
+
+  defp extract_actor([arg | rest], name, seen), do: extract_actor(rest, name, [arg | seen])
+
+  defp revise_options(args, strict) do
+    case OptionParser.parse(args, strict: strict) do
+      {opts, [], []} -> {:ok, opts}
+      _ -> {:error, "invalid revise arguments"}
+    end
+  end
+
   defp scope_options(args, strict) do
     case OptionParser.parse(args, strict: strict) do
       {opts, [], []} -> {:ok, opts}
@@ -432,6 +662,14 @@ defmodule SpruceGoose.CLI.Command do
     case Keyword.get(opts, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
       _ -> {:error, key}
+    end
+  end
+
+  defp required_priority(opts) do
+    case Keyword.fetch(opts, :priority) do
+      {:ok, priority} when priority in 0..5 -> {:ok, priority}
+      {:ok, _priority} -> {:error, :priority_range}
+      :error -> {:error, :priority}
     end
   end
 end

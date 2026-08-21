@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export ERL_CRASH_DUMP_SECONDS=0
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
+mode=${1:-}; shift || true
+[[ $mode == deploy || $mode == rollback ]] || fail "internal mode must be deploy or rollback"
+
+target= archive= receipt= commit= tree= inventory= install_dir= record= task= reason=
+activate=false confirmation= previous_record=
+while (($#)); do
+  case $1 in
+    --target) target=${2:-}; shift 2;;
+    --release-archive) archive=${2:-}; shift 2;;
+    --receipt) receipt=${2:-}; shift 2;;
+    --expected-commit) commit=${2:-}; shift 2;;
+    --expected-tree) tree=${2:-}; shift 2;;
+    --destination-inventory) inventory=${2:-}; shift 2;;
+    --install-dir) install_dir=${2:-}; shift 2;;
+    --activation-record) record=${2:-}; shift 2;;
+    --previous-activation-record) previous_record=${2:-}; shift 2;;
+    --task) task=${2:-}; shift 2;;
+    --reason) reason=${2:-}; shift 2;;
+    --activate) activate=true; shift;;
+    --confirm-activation) confirmation=${2:-}; shift 2;;
+    --dry-run) shift;;
+    *) fail "unknown argument: $1";;
+  esac
+done
+
+for pair in target:$target archive:$archive receipt:$receipt commit:$commit tree:$tree inventory:$inventory install_dir:$install_dir record:$record task:$task; do
+  [[ -n ${pair#*:} ]] || fail "--${pair%%:*} is required"
+done
+[[ $task =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || fail "invalid task id"
+[[ $commit =~ ^[0-9a-f]{40}$ && $tree =~ ^[0-9a-f]{40}$ ]] || fail "expected commit and tree must be full lowercase OIDs"
+for value in "$target" "$archive" "$receipt" "$inventory" "$install_dir" "$record" "$task" "$reason"; do
+  [[ $value != *$'\n'* && $value != *$'\r'* ]] || fail "control characters are forbidden"
+done
+[[ -f $archive ]] || fail "release archive is missing"
+[[ -f $receipt ]] || fail "transferable receipt is missing"
+[[ -f $inventory ]] || fail "destination migration inventory is missing"
+if [[ $mode == rollback ]]; then
+  [[ -n $reason ]] || fail "rollback requires --reason"
+  [[ -n $previous_record && -f $previous_record ]] || fail "rollback requires an existing --previous-activation-record"
+fi
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not a git worktree"
+cd "$repo"
+git diff-index --quiet HEAD -- || fail "dirty worktree refused"
+[[ -z $(git ls-files --others --exclude-standard) ]] || fail "dirty worktree refused"
+
+scripts/validate-governed-release "$archive" --receipt "$receipt" \
+  --expected-commit "$commit" --expected-tree "$tree" --destination-inventory "$inventory" >/dev/null
+
+expected="ACTIVATE:${target}:${task}"
+if ! $activate; then
+  printf 'validated=true\nmode=%s\ntarget=%s\ncommit=%s\ntree=%s\naction=dry-run\n' "$mode" "$target" "$commit" "$tree"
+  exit 0
+fi
+[[ $confirmation == "$expected" ]] || fail "activation requires --confirm-activation $expected"
+[[ $install_dir = /* && $record = /* ]] || fail "activation paths must be absolute"
+[[ ! -e $record && ! -L $record ]] || fail "activation record already exists"
+
+parent=$(dirname -- "$install_dir")
+[[ -d $parent && ! -L $parent ]] || fail "install parent must be an existing non-symlink directory"
+stage=$(mktemp -d "$parent/.sprucegoose-stage.XXXXXXXX")
+case $archive in
+  *.tar.gz|*.tgz) tar -xzf "$archive" -C "$stage";;
+  *.tar.xz) tar -xJf "$archive" -C "$stage";;
+  *) fail "unsupported release archive format";;
+esac
+[[ -x $stage/bin/spruce_goose ]] || fail "staged release lacks executable bin/spruce_goose"
+
+# Transferable archives carry a cookie placeholder, never a credential. Refuse
+# any archive that ships something else, then provision the real cookie here:
+# preserve the previous install's cookie for continuity, or mint a fresh one.
+cookie_placeholder='GOVERNED-PLACEHOLDER-COOKIE-PROVISION-AT-ACTIVATION'
+staged_cookie="$stage/releases/COOKIE"
+[[ -f $staged_cookie && $(cat "$staged_cookie") == "$cookie_placeholder" ]] ||
+  fail "staged release must carry the governed cookie placeholder"
+if [[ -f $install_dir/releases/COOKIE ]]; then
+  cp -p -- "$install_dir/releases/COOKIE" "$staged_cookie"
+else
+  fresh_cookie=$(openssl rand -base64 63 | tr -dc 'A-Za-z0-9')
+  [[ ${#fresh_cookie} -ge 56 ]] || fail "cookie generation failed"
+  printf '%s' "${fresh_cookie:0:56}" >"$staged_cookie"
+fi
+chmod 600 -- "$staged_cookie"
+
+backup="$install_dir.previous-$task"
+[[ ! -e $backup && ! -L $backup ]] || fail "rollback slot already exists"
+if [[ -e $install_dir || -L $install_dir ]]; then mv -T -- "$install_dir" "$backup"; fi
+mv -T -- "$stage" "$install_dir"
+
+archive_sha=$(sha256sum "$archive" | cut -d' ' -f1)
+mkdir -p -- "$(dirname -- "$record")"
+printf '{"archive_sha256":"%s","commit":"%s","mode":"%s","previous_release":"%s","schema":"spruce-goose-activation-v1","target":"%s","task":"%s","tree":"%s"}\n' \
+  "$archive_sha" "$commit" "$mode" "$backup" "$target" "$task" "$tree" >"$record"
+
+if ! systemctl --user restart sprucegoose.service; then
+  failed="$install_dir.failed-$task"
+  mv -T -- "$install_dir" "$failed"
+  if [[ -e $backup ]]; then mv -T -- "$backup" "$install_dir"; fi
+  systemctl --user restart sprucegoose.service || true
+  fail "service activation failed; previous release restored"
+fi
+printf 'activated=true\nmode=%s\ntarget=%s\ncommit=%s\ntree=%s\nrecord=%s\n' "$mode" "$target" "$commit" "$tree" "$record"

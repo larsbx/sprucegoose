@@ -28,11 +28,6 @@ defmodule SpruceGoose.Knowledge.Node do
     )
   end
 
-  identities do
-    identity(:unique_node_per_generation, [:generation_id, :id])
-    identity(:unique_node_position, [:generation_id, :position])
-  end
-
   actions do
     defaults([:read])
 
@@ -40,5 +35,10 @@ defmodule SpruceGoose.Knowledge.Node do
       primary?(true)
       accept([:generation_id, :id, :label, :source_file, :source_location, :origin, :position])
     end
+  end
+
+  identities do
+    identity(:unique_node_per_generation, [:generation_id, :id])
+    identity(:unique_node_position, [:generation_id, :position])
   end
 end

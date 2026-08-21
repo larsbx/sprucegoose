@@ -1,0 +1,6 @@
+schema = "sprucegoose-derivation-executor-v1"
+actor = "sprucegoose-derivation-v1"
+queue = "derivations"
+actions = ["verify_artifact"]
+job_arguments = ["permit_id"]
+

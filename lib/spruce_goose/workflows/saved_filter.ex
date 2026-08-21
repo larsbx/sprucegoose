@@ -1,7 +1,10 @@
 defmodule SpruceGoose.Workflows.SavedFilter do
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   @allowed_keys MapSet.new(["assignee", "column", "label", "priority", "state", "text"])
   @states ~w(inbox proposed queued ready in_progress waiting blocked completed failed cancelled)
@@ -11,10 +14,25 @@ defmodule SpruceGoose.Workflows.SavedFilter do
     repo(SpruceGoose.Repo)
   end
 
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    policy action_type([:create, :destroy]) do
+      authorize_if(HasRole.author())
+    end
+
+    policy action(:revise) do
+      authorize_if(HasRole.approver())
+    end
+  end
+
   attributes do
     uuid_primary_key(:id)
     attribute(:name, :string, allow_nil?: false, public?: true)
     attribute(:criteria, :map, allow_nil?: false, default: %{}, public?: true)
+    attribute(:lock_version, :integer, allow_nil?: false, default: 1, public?: true)
     timestamps()
   end
 
@@ -26,16 +44,13 @@ defmodule SpruceGoose.Workflows.SavedFilter do
     end
   end
 
-  identities do
-    identity(:unique_filter_name_per_board, [:board_id, :name])
-  end
-
   actions do
     defaults([:read])
 
     update :revise do
       require_atomic?(false)
       accept([:name, :criteria])
+      change(optimistic_lock(:lock_version))
     end
 
     destroy :destroy do
@@ -46,6 +61,10 @@ defmodule SpruceGoose.Workflows.SavedFilter do
       primary?(true)
       accept([:board_id, :name, :criteria])
     end
+  end
+
+  identities do
+    identity(:unique_filter_name_per_board, [:board_id, :name])
   end
 
   validations do

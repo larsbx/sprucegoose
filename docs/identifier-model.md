@@ -1,7 +1,9 @@
 # Identifier Model
 
-Status: **specified, not implemented.** Recorded by diagnosis
-`tsk-20260729T130158Z-4fabcd8e`. Remediation is a separate governed task.
+Status: **implemented for originated and derived identifiers.** The original
+diagnosis was `tsk-20260729T130158Z-4fabcd8e`. Golden vectors and BLAKE3
+known-answer tests protect the encoding and derivation contract. Class I
+upstream-imported identifiers remain deliberately excluded as described below.
 
 ## Principle
 

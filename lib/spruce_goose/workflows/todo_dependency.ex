@@ -11,7 +11,10 @@ defmodule SpruceGoose.Workflows.TodoDependency do
   """
   use Ash.Resource,
     domain: SpruceGoose.Workflows,
-    data_layer: AshPostgres.DataLayer
+    data_layer: AshPostgres.DataLayer,
+    authorizers: [Ash.Policy.Authorizer]
+
+  alias SpruceGoose.Checks.{HasRole, Readable}
 
   postgres do
     table("task_todo_dependencies")
@@ -22,6 +25,16 @@ defmodule SpruceGoose.Workflows.TodoDependency do
         check: "predecessor_id <> successor_id",
         message: "a TODO cannot depend on itself"
       )
+    end
+  end
+
+  policies do
+    policy action_type(:read) do
+      authorize_if(Readable)
+    end
+
+    policy action_type([:create, :update, :destroy]) do
+      authorize_if(HasRole.operator())
     end
   end
 
@@ -45,10 +58,6 @@ defmodule SpruceGoose.Workflows.TodoDependency do
     end
   end
 
-  identities do
-    identity(:unique_todo_dependency, [:predecessor_id, :successor_id])
-  end
-
   actions do
     defaults([:read])
 
@@ -60,5 +69,9 @@ defmodule SpruceGoose.Workflows.TodoDependency do
     destroy :destroy do
       primary?(true)
     end
+  end
+
+  identities do
+    identity(:unique_todo_dependency, [:predecessor_id, :successor_id])
   end
 end
