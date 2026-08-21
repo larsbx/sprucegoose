@@ -60,7 +60,10 @@ bytes. See [`docs/revisions.md`](docs/revisions.md).
 ## Legible repository blueprints and views
 
 The normative, operative, evidentiary, and projection boundaries are defined
-in [`docs/authority-planes.md`](docs/authority-planes.md).
+in [`docs/authority-planes.md`](docs/authority-planes.md). The current kernel
+conformance gaps and dependency-ordered remediation are recorded in the
+[`v0.2 audit`](docs/audits/2026-08-21-abstract-deontic-kernel-v0.2.md) and
+[`remediation plan`](docs/abstract-kernel-remediation-plan.md).
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
