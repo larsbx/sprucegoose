@@ -7,7 +7,10 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
   @script Path.expand("../scripts/ci-governed-release", __DIR__)
 
   test "Woodpecker delegates the governed release lane to the repository script" do
-    assert File.read!(@pipeline) =~ "scripts/ci-governed-release"
+    pipeline = File.read!(@pipeline)
+    assert pipeline =~ "scripts/ci-governed-release"
+    assert pipeline =~ "image: bash"
+    assert pipeline =~ "event: push"
     assert executable?(@script)
   end
 

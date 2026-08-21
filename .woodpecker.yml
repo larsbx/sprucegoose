@@ -1,5 +1,7 @@
 steps:
   - name: governed-release
+    image: bash
     commands:
       - scripts/ci-governed-release
-
+    when:
+      - event: push
