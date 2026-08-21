@@ -1,0 +1,5 @@
+steps:
+  - name: governed-release
+    commands:
+      - scripts/ci-governed-release
+
