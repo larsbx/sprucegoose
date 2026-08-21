@@ -140,7 +140,7 @@ defmodule SpruceGoose.Artifacts.Store do
   defp persist(digest, bytes) do
     destination = artifact_path(digest)
 
-    :ok = File.mkdir_p(Path.dirname(destination))
+    :ok = ensure_store_directory(Path.dirname(destination))
 
     if File.exists?(destination) do
       verify_existing(destination, digest, byte_size(bytes))
@@ -158,7 +158,7 @@ defmodule SpruceGoose.Artifacts.Store do
 
         with :ok <- result,
              :ok <- sync,
-             :ok <- File.chmod(destination, 0o400),
+             :ok <- File.chmod(destination, 0o440),
              do: :ok
 
       {:error, :eexist} ->
@@ -176,6 +176,13 @@ defmodule SpruceGoose.Artifacts.Store do
       :ok
     else
       _ -> {:error, "content-addressed artifact collision or corruption"}
+    end
+  end
+
+  defp ensure_store_directory(directory) do
+    with :ok <- File.mkdir_p(directory),
+         :ok <- File.chmod(directory, 0o2750) do
+      :ok
     end
   end
 

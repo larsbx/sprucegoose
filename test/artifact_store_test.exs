@@ -23,6 +23,16 @@ defmodule SpruceGoose.ArtifactStoreTest do
     assert receipt.size == 16
     assert {:ok, ^receipt} = Store.verify(receipt.digest)
     assert {:ok, ^receipt} = Store.put_bytes("bounded evidence")
+
+    path =
+      Path.join([
+        Application.fetch_env!(:spruce_goose, :artifact_store_root),
+        "sha256",
+        receipt.digest
+      ])
+
+    assert File.stat!(path).mode |> Bitwise.band(0o777) == 0o440
+    assert File.stat!(Path.dirname(path)).mode |> Bitwise.band(0o7777) == 0o2750
   end
 
   test "verification refuses corrupted bytes" do
