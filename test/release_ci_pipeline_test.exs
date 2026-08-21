@@ -11,6 +11,7 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
     assert pipeline =~ "scripts/ci-governed-release"
     assert pipeline =~ "image: bash"
     assert pipeline =~ "event: push"
+    assert pipeline =~ "lfs: false"
     assert executable?(@script)
   end
 
