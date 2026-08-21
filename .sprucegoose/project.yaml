@@ -33,6 +33,12 @@ roadmaps:
               definition_of_done: Every tracked file is classified against current source and live state; stale audits and superseded documents are deleted or moved into an explicit non-authoritative archive with Git recovery; current-state documentation is updated; focused and full checks pass; scoped commits are pushed with exact local/remote parity.
               depends_on: [knowledge-projection]
               input: {}
+            - id: current-state-audit
+              kind: openclaw
+              title: Audit current SpruceGoose authority-plane state
+              definition_of_done: An evidence-backed, read-only audit compares the current repository, deployed service, constitutive bindings, operative ledger, projections, and legacy epoch against the governed authority contract; findings include severity, proof, limitations, and separately governed remediation boundaries.
+              depends_on: [authority-contract]
+              input: {}
             - id: ooda-shadow
               kind: openclaw
               title: Shadow the Pi OODA path
