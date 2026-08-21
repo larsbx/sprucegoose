@@ -27,6 +27,12 @@ roadmaps:
               definition_of_done: Content-addressed artifact storage and a signer isolated from derivation executors pass positive, substitution-refusal, overwrite-refusal, secret-custody, recovery, and repository-publication checks without granting deployment authority.
               depends_on: [knowledge-projection]
               input: {}
+            - id: repository-relevance-sweep
+              kind: openclaw
+              title: Sweep stale SpruceGoose repository material
+              definition_of_done: Every tracked file is classified against current source and live state; stale audits and superseded documents are deleted or moved into an explicit non-authoritative archive with Git recovery; current-state documentation is updated; focused and full checks pass; scoped commits are pushed with exact local/remote parity.
+              depends_on: [knowledge-projection]
+              input: {}
             - id: ooda-shadow
               kind: openclaw
               title: Shadow the Pi OODA path
