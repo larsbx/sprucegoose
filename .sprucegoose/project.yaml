@@ -1,0 +1,43 @@
+schema_version: 1
+project: openclaw-system
+roadmaps:
+  - key: sprucegoose-control-plane-convergence
+    name: SpruceGoose Control Plane Convergence
+    workflows:
+      - id: sprucegoose-convergence-v1
+        name: SpruceGoose Convergence v1
+        definition:
+          schema_version: 1
+          tasks:
+            - id: authority-contract
+              kind: openclaw
+              depends_on: []
+              input: {}
+            - id: knowledge-projection
+              kind: openclaw
+              depends_on: [authority-contract]
+              input: {}
+            - id: ooda-shadow
+              kind: openclaw
+              depends_on: [knowledge-projection]
+              input: {}
+            - id: taskflow-shadow
+              kind: openclaw
+              depends_on: [authority-contract]
+              input: {}
+            - id: sprucegoose-sole-writer
+              kind: openclaw
+              depends_on: [ooda-shadow, taskflow-shadow]
+              input: {}
+            - id: runtime-capability-transfer
+              kind: openclaw
+              depends_on: [sprucegoose-sole-writer]
+              input: {}
+            - id: canary-cutover
+              kind: openclaw
+              depends_on: [runtime-capability-transfer]
+              input: {}
+            - id: legacy-retirement
+              kind: openclaw
+              depends_on: [canary-cutover]
+              input: {}
