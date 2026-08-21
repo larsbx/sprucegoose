@@ -12,6 +12,7 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
     assert pipeline =~ "image: bash"
     assert pipeline =~ "event: push"
     assert pipeline =~ "lfs: false"
+    assert pipeline =~ "docker.io/woodpeckerci/plugin-git:2.9.2"
     assert executable?(@script)
   end
 
