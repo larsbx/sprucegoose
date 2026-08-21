@@ -33,9 +33,14 @@ contract.
 - Existing PostgreSQL workflow rows remain operational authority until a full
   event replay produces byte-for-byte-equivalent projections and recovery is
   proven.
-- Existing history is never upgraded into certified history by inventing
-  constitutional roots. It receives an explicit legacy-import or genesis
-  event with preserved provenance, or remains quarantined.
+- Existing TaskInstances and lifecycle history are grandfathered as one
+  pre-ledger legacy epoch. They are not remediated row by row and never receive
+  invented constitutional roots. Cutover records a content-addressed baseline
+  snapshot plus one `GrandfatheredStateAccepted` event that establishes a
+  forward-replay starting point without certifying each legacy fact's origin.
+- New activity after the declared cutover epoch must use repository-authored
+  definitions and certified events. Grandfathering is immutable and cannot be
+  selected for newly admitted work.
 - Repository manifests contain Project, Roadmap, Workflow, and reusable
   TaskDefinition authority. They never contain runtime lifecycle, approvals,
   outcomes, queues, assignments, or claims that an effect occurred.
@@ -54,7 +59,7 @@ contract.
 | --- | --- | --- | --- |
 | 0 | Adopt the exact v0.2 candidate plus a versioned SpruceGoose amendment artifact | F-01, F-10 | Exact bytes, hashes, review commit, successor/adoption identity, and Forgejo parity |
 | 1 | Kernel ports and constitutional value types | F-02, F-05 | Pure tests for ContentID, ArtifactStore, EventLedger, KernelContext, Certificate, CertifiedEvent, EventIdentity; no database migration |
-| 2 | Repository TaskDefinitions and immutable source bindings | F-03 | New TaskInstances require definition key plus BlueprintRevision; unbound admission refuses; legacy rows are explicitly classified |
+| 2 | Repository TaskDefinitions and immutable source bindings | F-03 | New TaskInstances require definition key plus BlueprintRevision; unbound admission refuses; existing TaskInstances are classified under one grandfathered epoch without individual remediation |
 | 3 | Minimal vertical constitutional slice | F-01, F-06, F-08, F-09 | One exact OntologyVersion → Proposition → Claim/Evidence → Justification → Norm/Grant → Resolution → Authorization chain replays deterministically |
 | 4 | Bounded effect execution | F-07 | Executor accepts only a valid EffectIntent/permit, has no arbitrary-command input, records success/failure receipts, and cannot promote or deploy |
 | 5 | Certified PostgreSQL EventLedger in shadow mode | F-02, F-04 | Transactional append, total stream position, idempotency key, immutable content, root verification, refusal tests, and retained legacy authority |
@@ -104,11 +109,14 @@ cutover:
 1. Make TaskDefinition a first-class constitutive identity in the blueprint.
 2. Bind TaskInstance to BlueprintRevision and definition key.
 3. Refuse ad-hoc task content on the supported admission path.
-4. Generate, review, commit, push, and apply manifests for durable projects.
+4. Generate, review, commit, push, and apply manifests for definitions that
+   remain active or may admit new TaskInstances; do not reconstruct every past
+   task as repository content.
 5. Route the multi-repository `openclaw-system` project through an explicit
    roadmap-to-repository map.
-6. Mark dogfood and unverifiable rows legacy/quarantined without fabricated
-   source revisions.
+6. Admit the verified operational baseline into one grandfathered legacy
+   epoch; quarantine excluded dogfood and fixtures without fabricated source
+   revisions.
 7. Retain a temporary, logged legacy-admission path only for rollback; block
    it from creating new durable definitions.
 
@@ -206,6 +214,8 @@ Cut over one bounded project first. Required production gates:
 
 - hashed pre-migration backup and tested restore path;
 - exact deployed source and migration provenance;
+- one immutable grandfathered baseline snapshot, its digest and schema, the
+  exact final legacy position, and a `GrandfatheredStateAccepted` event;
 - shadow append completeness for a defined observation window;
 - dual projection parity under concurrent workload;
 - successful empty-state rebuild and restart;
@@ -215,6 +225,10 @@ Cut over one bounded project first. Required production gates:
 
 Only after the canary passes may additional projects move. The broad
 `openclaw-system` project moves last.
+
+Replay begins from the accepted baseline and applies only certified events
+after its cutover position. No conformance claim extends backward across the
+grandfathering boundary.
 
 ## TDD contract for every phase
 

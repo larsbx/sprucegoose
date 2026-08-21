@@ -90,9 +90,17 @@ constitutive TaskDefinition. The current PostgreSQL adapter stores these
 runtime facts. Inbox capture is a non-authoritative request surface; it does
 not define work.
 
-Historical dogfood and migration fixtures without provable repository
-ownership remain explicitly quarantined. Migration must never assign them an
-invented repository or backfill a source revision nobody reviewed.
+Existing TaskInstances and their lifecycle history are grandfathered as a
+pre-ledger legacy epoch. They are not individually remediated, assigned
+invented repositories, or backfilled with source revisions nobody reviewed.
+The cutover records one content-addressed baseline snapshot and an explicit
+`GrandfatheredStateAccepted` event. That event establishes the starting state
+for forward replay; it does not certify the provenance or constitutional
+licensing of each fact inside the snapshot.
+
+Dogfood and migration fixtures that must not enter the operational baseline
+remain quarantined. New TaskInstances admitted after the cutover epoch must
+bind an exact constitutive TaskDefinition and produce certified events.
 
 ## Current implementation boundary
 
@@ -105,11 +113,13 @@ complete append-only EventLedger adapter.
 Until the migration is complete, SpruceGoose must not claim full event-sourced
 authority. The required sequence is:
 
-1. Bind all durable definitions to exact repository revisions.
+1. Bind all new and actively maintained durable definitions to exact
+   repository revisions; do not remediate historical TaskInstances one by one.
 2. Introduce repository-authored TaskDefinitions and require them for new
    TaskInstances.
-3. Project verified durable constitutive definitions into their designated
-   repositories and quarantine unverifiable historical fixtures.
+3. Project maintained constitutive definitions into their designated
+   repositories, accept the verified legacy baseline once, and quarantine
+   excluded fixtures.
 4. Introduce certified append-only historical events with constitutive and
    evidentiary roots.
 5. Rebuild current state from those events and demote mutable aggregate rows
