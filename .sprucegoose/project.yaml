@@ -21,6 +21,12 @@ roadmaps:
               definition_of_done: Repository definitions are verified and materialized with exact immutable source bindings.
               depends_on: [authority-contract]
               input: {}
+            - id: artifact-boundary-signer
+              kind: openclaw
+              title: Establish immutable artifact custody and independent signing
+              definition_of_done: Content-addressed artifact storage and a signer isolated from derivation executors pass positive, substitution-refusal, overwrite-refusal, secret-custody, recovery, and repository-publication checks without granting deployment authority.
+              depends_on: [knowledge-projection]
+              input: {}
             - id: ooda-shadow
               kind: openclaw
               title: Shadow the Pi OODA path
