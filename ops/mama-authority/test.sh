@@ -19,6 +19,8 @@ test -f "$executor_dropin"
 grep -Fxq '[Service]' "$executor_dropin"
 grep -Fxq 'Environment=SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR=sprucegoose-derivation-v1' "$executor_dropin"
 grep -Fxq 'Environment=SPRUCE_GOOSE_OBAN_ENABLED=true' "$executor_dropin"
+grep -Fxq 'ExecStart=' "$executor_dropin"
+grep -Fxq 'ExecStart=/usr/bin/env SPRUCE_GOOSE_OBAN_ENABLED=true SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR=sprucegoose-derivation-v1 /home/admin-papa/sprucegoose-rel/bin/spruce_goose start' "$executor_dropin"
 
 grep -Fq 'RuntimeDirectoryMode=0700' "$unit"
 grep -Fq 'BatchMode=yes' "$unit"

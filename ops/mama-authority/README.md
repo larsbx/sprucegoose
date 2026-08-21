@@ -26,8 +26,9 @@ systemctl --user daemon-reload
 
 The drop-in also enables Oban explicitly. A secret-bearing `service.env` may
 retain an older `SPRUCE_GOOSE_OBAN_ENABLED=false` assignment; the tracked
-systemd environment setting must override it so the declared `derivations`
-queue actually consumes admitted permits.
+`ExecStart` environment must override it so the declared `derivations` queue
+actually consumes admitted permits. A plain systemd `Environment=` assignment
+is insufficient because values loaded from `EnvironmentFile=` take precedence.
 
 The database actor and grant are transitional operative records. They do not
 become normative merely because they exist. Until SpruceGoose binds grants to
