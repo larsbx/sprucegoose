@@ -9,6 +9,17 @@ defmodule SpruceGoose.BlueprintRevisionTest do
   @tree String.duplicate("b", 40)
   @digest String.duplicate("c", 64)
 
+  setup do
+    previous = Application.get_env(:spruce_goose, :blueprint_source_verifier)
+    Application.put_env(:spruce_goose, :blueprint_source_verifier, __MODULE__.Verifier)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:spruce_goose, :blueprint_source_verifier, previous),
+        else: Application.delete_env(:spruce_goose, :blueprint_source_verifier)
+    end)
+  end
+
   test "an approver registers one immutable exact-source blueprint revision" do
     project = Ash.create!(Project, %{key: "legible", name: "Legible"})
     approver = actor_with_role("blueprint-approver", :approver)
@@ -19,7 +30,8 @@ defmodule SpruceGoose.BlueprintRevisionTest do
                Authz.create(BlueprintRevision, attrs, action: :register)
              end)
 
-    assert revision.revision_id == BlueprintRevision.deterministic_id(attrs)
+    expected = Map.merge(attrs, %{source_tree: @tree, manifest_digest: @digest})
+    assert revision.revision_id == BlueprintRevision.deterministic_id(expected)
     assert revision.project_id == project.id
     assert revision.source_commit == @commit
     assert Ash.Resource.Info.action(BlueprintRevision, :update) == nil
@@ -59,9 +71,7 @@ defmodule SpruceGoose.BlueprintRevisionTest do
       project_id: project.id,
       repository: "root/legible",
       source_commit: @commit,
-      source_tree: @tree,
       source_path: ".sprucegoose/project.yaml",
-      manifest_digest: @digest,
       schema_version: 1
     }
   end
@@ -74,5 +84,14 @@ defmodule SpruceGoose.BlueprintRevisionTest do
     )
 
     actor
+  end
+
+  defmodule Verifier do
+    @behaviour SpruceGoose.Blueprints.SourceVerifier
+
+    @impl true
+    def verify(_repository, _commit, _path) do
+      {:ok, %{tree: String.duplicate("b", 40), digest: String.duplicate("c", 64)}}
+    end
   end
 end

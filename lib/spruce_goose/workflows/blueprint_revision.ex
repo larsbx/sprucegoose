@@ -12,6 +12,7 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
+  alias SpruceGoose.Blueprints.SourceVerifier
 
   @hex40 ~r/\A[0-9a-f]{40}\z/
   @hex64 ~r/\A[0-9a-f]{64}\z/
@@ -63,12 +64,11 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
         :project_id,
         :repository,
         :source_commit,
-        :source_tree,
         :source_path,
-        :manifest_digest,
         :schema_version
       ])
 
+      change(fn changeset, _context -> verify_source(changeset) end)
       validate(fn changeset, _context -> validate_source(changeset) end)
 
       change(fn changeset, _context ->
@@ -123,6 +123,22 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
         do: false,
         else: {:error, field: field, message: "is invalid"}
     end)
+  end
+
+  defp verify_source(changeset) do
+    repository = Ash.Changeset.get_attribute(changeset, :repository)
+    commit = Ash.Changeset.get_attribute(changeset, :source_commit)
+    path = Ash.Changeset.get_attribute(changeset, :source_path)
+
+    case SourceVerifier.verify(repository, commit, path) do
+      {:ok, %{tree: tree, digest: digest}} ->
+        changeset
+        |> Ash.Changeset.change_attribute(:source_tree, tree)
+        |> Ash.Changeset.change_attribute(:manifest_digest, digest)
+
+      {:error, error} ->
+        Ash.Changeset.add_error(changeset, field: :source_path, message: to_string(error))
+    end
   end
 
   defp validate_schema(changeset) do

@@ -161,7 +161,7 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp dispatch({:view_project, key}), do: Legibility.project(key)
 
-  defp dispatch({:register_blueprint, project_key, repository, commit, tree, path, digest}) do
+  defp dispatch({:register_blueprint, project_key, repository, commit, path}) do
     with {:ok, project} <- read_one(Project, key: project_key),
          {:ok, revision} <-
            Authz.create(
@@ -170,9 +170,7 @@ defmodule SpruceGoose.CLI.Executor do
                project_id: project.id,
                repository: repository,
                source_commit: commit,
-               source_tree: tree,
                source_path: path,
-               manifest_digest: digest,
                schema_version: 1
              },
              action: :register

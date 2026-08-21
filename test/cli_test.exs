@@ -189,18 +189,14 @@ defmodule SpruceGoose.CLITest do
     assert {:ok, {:show_project, "pi"}} = Command.parse(["project", "show", "pi"])
     assert {:ok, {:view_project, "pi"}} = Command.parse(["project", "view", "pi"])
 
-    assert {:ok,
-            {:register_blueprint, "pi", "root/pi", "commit", "tree", ".sprucegoose/project.yaml",
-             "digest"}} =
+    assert {:ok, {:register_blueprint, "pi", "root/pi", "commit", ".sprucegoose/project.yaml"}} =
              Command.parse([
                "blueprint",
                "register",
                "pi",
                "root/pi",
                "commit",
-               "tree",
-               ".sprucegoose/project.yaml",
-               "digest"
+               ".sprucegoose/project.yaml"
              ])
 
     assert {:ok, {:list_roadmaps, nil}} = Command.parse(["roadmap", "list"])
