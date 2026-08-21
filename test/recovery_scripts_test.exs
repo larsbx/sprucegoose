@@ -344,9 +344,11 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     refute actor =~ "grep -Fxq 'registry-lock-held'"
   end
 
-  test "recovery ICM documents exact hardened rehearsal and production blocker" do
+  test "recovery record is historical and current state names the live deviation" do
     document = File.read!(Path.join(@root, "README.md"))
+    current = File.read!(Path.expand("../../../docs/current-state.md", @root))
 
+    assert document =~ "Historical rehearsal and recovery record"
     assert document =~ "e96b374d6ccb0d068b058a64ed03764594b104d46662aa07c2351d8a8ed107e6"
     assert document =~ "d07cc14bff1d4384176f829d9c130a09e82425bc7326fe5370ffc9785ad6b9b9"
     assert document =~ "probe-rehearsal-signal-cleanup.sh clone \"$signal\""
@@ -357,7 +359,6 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert document =~ "registry_write_lock_probe=PASS"
     assert document =~ "`admin-papa` as the sole production Genesis human"
     assert document =~ "host authentication is rejected"
-    assert document =~ "production cutover is still blocked"
     assert document =~ "PostgreSQL 19 as **Beta 2**"
     assert document =~ "PostgreSQL 18.4 is the current supported GA major"
     assert document =~ "beta2 rehearsal must not be promoted"
@@ -365,6 +366,10 @@ defmodule SpruceGoose.RecoveryScriptsTest do
     assert document =~ "/home/admin-papa/sprucegoose-production-backups/corr-7"
     assert document =~ "no bind mount or same-path assumption is permitted"
     assert document =~ "not a backup or restore receipt"
+
+    assert current =~ "PostgreSQL 19 Beta 2"
+    assert current =~ "Assured Mode is **not** claimed"
+    assert current =~ "651ee5baa7624a076a5d7ce60da96ff56bae6f09"
   end
 
   defp before?(body, first, second) do

@@ -2,9 +2,13 @@
 
 ## Status and authority
 
-This procedure governs recovery from the actor-aware release/schema/bootstrap mismatch. It is not standing authorization to change production.
+> **Historical rehearsal and recovery record.** This document captures the
+> verified 2026-08-10 pre-cutover baseline and remains useful for rollback
+> reasoning. It does not describe the live production state; see
+> [`../../../docs/current-state.md`](../../../docs/current-state.md).
 
-Production remains on the schema-compatible pre-actor release until all of the following exist together:
+At that baseline, production remained on the schema-compatible pre-actor
+release until all of the following existed together:
 
 1. a reviewed exact application/recovery tree;
 2. a verified PostgreSQL 19 installation artifact;

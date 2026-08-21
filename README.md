@@ -1,7 +1,7 @@
 # SpruceGoose
 
-This app is the proving ground for the authoritative Postgres/Ash orchestration
-DSL. Ash resources and actions model:
+SpruceGoose is the authoritative Postgres/Ash task and orchestration control
+plane. Ash resources and actions model:
 
 `Project → Roadmap → Workflow → Task → TODO`
 
@@ -30,20 +30,19 @@ MIX_ENV=prod mix release --overwrite
 install -m 0755 scripts/sprucegoose-client.py ./sprucegoose
 ```
 
-The retained `sprucegoose-direct` escript is break-glass recovery only. Normal
-automation uses `./sprucegoose`, which preserves the governed task ID schema
-and admits work through the running Ash application:
+Normal automation uses `./sprucegoose`. The separately built
+`sprucegoose-direct` escript is retained only as a recovery artifact and must
+refuse execution while the authority marker names Mama. Recovery activation is
+an explicit operator procedure; there is no automatic cold-start fallback.
 
-Rollback is explicit: stop and disable `sprucegoose.service`, then install the
-retained `sprucegoose-direct` artifact back to `./sprucegoose`. Direct mode
-requires the production database and signing environment and restores the old
-cold-start latency; it is recovery, not an automatic fallback.
-
-The live authority moved from evergreen to mama on 2026-08-02. See
+The live authority moved from evergreen to Mama on 2026-08-02. See
 [`ops/mama-authority/README.md`](ops/mama-authority/README.md) for the
 versioned bridge, backup, restart, and rollback procedure and
 [`ops/mama-authority/MIGRATION_PROGRESS.md`](ops/mama-authority/MIGRATION_PROGRESS.md)
 for the cutover evidence.
+
+See [`docs/current-state.md`](docs/current-state.md) for the exact production
+release, database baseline, artifact boundary, and open architecture gaps.
 
 Every command acts as a named actor and is authorized against that actor's
 scoped grants. A store with an empty actor registry bootstraps its first
@@ -133,10 +132,6 @@ roadmaps:
 ```
 
 ```sh
-mix escript.build
-./sprucegoose-direct id
-./sprucegoose-direct validate-id tsk-20260727T012351Z-ea5ba1b1
-
 # One-time, on an empty registry: genesis creates the first human as a
 # full-scope actor. Every later actor needs an admin to create it.
 ./sprucegoose actor add lars --kind human --description operator
@@ -188,11 +183,6 @@ named task or workflow through Ash before executing workflow-scoped SQL. The
 relational task and dependency tables remain authoritative; graph queries do
 not transition tasks or change edges. See
 [`docs/property-graph-queries.md`](docs/property-graph-queries.md).
-
-For the integrated nine-migration architecture, actor and custody boundaries,
-snapshot rehearsal workflow, production gate, and exported DAG visuals, see
-[`docs/system-additions.md`](docs/system-additions.md). The visual exports are
-versioned under [`docs/diagrams/`](docs/diagrams/).
 
 Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still
