@@ -14,7 +14,10 @@ config :spruce_goose,
        :systemwide_sop_path,
        System.get_env(
          "SYSTEMWIDE_SOP_PATH",
-         "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
+         if(config_env() == :test,
+           do: Path.expand("../test/fixtures/systemwide-sop.md", __DIR__),
+           else: "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
+         )
        )
 
 outbox_flag = System.get_env("OUTBOX_DISPATCHER_ENABLED", "false")

@@ -17,6 +17,10 @@ config :bcrypt_elixir, log_rounds: 1
 config :spruce_goose, :default_actor, "test-system"
 config :spruce_goose, :authority_host_marker, "/nonexistent/sprucegoose-test-authority-marker"
 
+config :spruce_goose,
+       :systemwide_sop_path,
+       Path.expand("../test/fixtures/systemwide-sop.md", __DIR__)
+
 # Loopback-only test endpoint; not started unless a test asks for it.
 config :spruce_goose, SpruceGoose.Web.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
