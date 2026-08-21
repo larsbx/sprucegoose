@@ -114,9 +114,12 @@ defmodule SpruceGoose.DerivationsTest do
     operator = actor_with_role("operator-bounded-executor", :operator)
     executor = actor_with_role("executor-bounded-executor", :derivation_executor)
 
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
     on_exit(fn ->
-      Application.delete_env(:spruce_goose, :derivation_executor_actor)
-      Application.delete_env(:spruce_goose, :derivation_handlers)
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
     end)
 
     Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
@@ -145,9 +148,12 @@ defmodule SpruceGoose.DerivationsTest do
     operator = actor_with_role("operator-missing-handler", :operator)
     executor = actor_with_role("executor-missing-handler", :derivation_executor)
 
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
     on_exit(fn ->
-      Application.delete_env(:spruce_goose, :derivation_executor_actor)
-      Application.delete_env(:spruce_goose, :derivation_handlers)
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
     end)
 
     Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
@@ -170,7 +176,8 @@ defmodule SpruceGoose.DerivationsTest do
     task = in_progress_task("missing-executor")
     operator = actor_with_role("operator-missing-executor", :operator)
 
-    on_exit(fn -> Application.delete_env(:spruce_goose, :derivation_executor_actor) end)
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    on_exit(fn -> restore_env(:derivation_executor_actor, previous_actor) end)
     Application.delete_env(:spruce_goose, :derivation_executor_actor)
 
     {:ok, permit} =
@@ -187,9 +194,12 @@ defmodule SpruceGoose.DerivationsTest do
     operator = actor_with_role("operator-handler-exception", :operator)
     executor = actor_with_role("executor-handler-exception", :derivation_executor)
 
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
     on_exit(fn ->
-      Application.delete_env(:spruce_goose, :derivation_executor_actor)
-      Application.delete_env(:spruce_goose, :derivation_handlers)
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
     end)
 
     Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
@@ -204,6 +214,79 @@ defmodule SpruceGoose.DerivationsTest do
     failed = Ash.get!(Permit, permit.id, authorize?: false)
     assert failed.state == :failed
     assert failed.failure_reason == "bounded handler failed"
+  end
+
+  test "the fixed verify_artifact handler verifies CAS input and stores deterministic evidence" do
+    root = Path.join(System.tmp_dir!(), "sprucegoose-verify-handler-#{System.unique_integer()}")
+    previous_root = Application.fetch_env!(:spruce_goose, :artifact_store_root)
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+    executor = actor_with_role("executor-fixed-verify", :derivation_executor)
+
+    Application.put_env(:spruce_goose, :artifact_store_root, root)
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+
+    Application.put_env(:spruce_goose, :derivation_handlers, %{
+      verify_artifact: SpruceGoose.Derivations.VerifyArtifact
+    })
+
+    on_exit(fn ->
+      Application.put_env(:spruce_goose, :artifact_store_root, previous_root)
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
+      File.rm_rf!(root)
+    end)
+
+    {:ok, input} = SpruceGoose.Artifacts.Store.put_bytes("artifact bytes")
+    task = in_progress_task("fixed-verify")
+    operator = actor_with_role("operator-fixed-verify", :operator)
+
+    attrs =
+      task
+      |> permit_attrs()
+      |> Map.merge(%{action: :verify_artifact, input_artifact_digest: input.digest})
+
+    {:ok, permit} = as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
+
+    assert {:ok, first} = SpruceGoose.Derivations.VerifyArtifact.run(permit)
+    assert {:ok, ^first} = SpruceGoose.Derivations.VerifyArtifact.run(permit)
+    assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    completed = Ash.get!(Permit, permit.id, authorize?: false)
+    assert completed.state == :succeeded
+    assert completed.artifact_digest == input.digest
+
+    assert {:ok, %{digest: evidence}} =
+             SpruceGoose.Artifacts.Store.verify(completed.evidence_digest)
+
+    assert evidence == completed.evidence_digest
+  end
+
+  test "verify_artifact admission requires a typed input content id" do
+    task = in_progress_task("verify-input")
+    operator = actor_with_role("operator-verify-input", :operator)
+    attrs = Map.put(permit_attrs(task), :action, :verify_artifact)
+
+    assert {:error, error} =
+             as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
+
+    assert Exception.message(error) =~ "input_artifact_digest"
+  end
+
+  test "PostgreSQL refuses action-input mismatches outside Ash" do
+    task = in_progress_task("sql-input-guard")
+    operator = actor_with_role("operator-sql-input-guard", :operator)
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:error, %Postgrex.Error{postgres: %{constraint: "typed_derivation_input"}}} =
+             Ecto.Adapters.SQL.query(
+               SpruceGoose.Repo,
+               "UPDATE derivation_permits SET input_artifact_digest = $1 WHERE id = $2::text::uuid",
+               [String.duplicate("e", 64), permit.id],
+               mode: :savepoint
+             )
   end
 
   defp permit_attrs(task) do
@@ -232,6 +315,9 @@ defmodule SpruceGoose.DerivationsTest do
   end
 
   defp as_actor(actor, fun), do: Authz.with_actor(actor, fun)
+
+  defp restore_env(key, nil), do: Application.delete_env(:spruce_goose, key)
+  defp restore_env(key, value), do: Application.put_env(:spruce_goose, key, value)
 
   defp in_progress_task(suffix) do
     Enum.reduce([:proposed, :queued, :ready, :in_progress], task(suffix), fn state, current ->

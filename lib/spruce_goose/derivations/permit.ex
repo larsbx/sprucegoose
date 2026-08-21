@@ -24,6 +24,15 @@ defmodule SpruceGoose.Derivations.Permit do
   postgres do
     table("derivation_permits")
     repo(SpruceGoose.Repo)
+
+    check_constraints do
+      check_constraint([:action, :input_artifact_digest], "typed_derivation_input",
+        check:
+          "(action = 'verify_artifact' AND input_artifact_digest ~ '^[0-9a-f]{64}$') OR " <>
+            "(action <> 'verify_artifact' AND input_artifact_digest IS NULL)",
+        message: "action input does not match the typed derivation"
+      )
+    end
   end
 
   policies do
@@ -50,6 +59,7 @@ defmodule SpruceGoose.Derivations.Permit do
     attribute(:tree_sha, :string, allow_nil?: false, public?: true)
     attribute(:ref, :string, allow_nil?: false, public?: true)
     attribute(:pipeline_digest, :string, allow_nil?: false, public?: true)
+    attribute(:input_artifact_digest, :string, public?: true)
 
     attribute(:action, :atom,
       allow_nil?: false,
@@ -96,10 +106,12 @@ defmodule SpruceGoose.Derivations.Permit do
         :tree_sha,
         :ref,
         :pipeline_digest,
+        :input_artifact_digest,
         :action
       ])
 
       validate(fn changeset, _context -> validate_source(changeset) end)
+      validate(fn changeset, _context -> validate_action_input(changeset) end)
       validate(fn changeset, _context -> validate_task(changeset) end)
 
       change(fn changeset, _context ->
@@ -187,6 +199,7 @@ defmodule SpruceGoose.Derivations.Permit do
         value(attrs, :tree_sha),
         value(attrs, :ref),
         value(attrs, :pipeline_digest),
+        value(attrs, :input_artifact_digest),
         value(attrs, :action)
       ]
       |> Enum.map_join("\n", &to_string/1)
@@ -224,6 +237,22 @@ defmodule SpruceGoose.Derivations.Permit do
 
       _ ->
         {:error, field: :task_id, message: "does not identify a governed task"}
+    end
+  end
+
+  defp validate_action_input(changeset) do
+    action = Ash.Changeset.get_attribute(changeset, :action)
+    digest = Ash.Changeset.get_attribute(changeset, :input_artifact_digest)
+
+    cond do
+      action == :verify_artifact and not (is_binary(digest) and Regex.match?(@hex64, digest)) ->
+        {:error, field: :input_artifact_digest, message: "is required for verify_artifact"}
+
+      action != :verify_artifact and not is_nil(digest) ->
+        {:error, field: :input_artifact_digest, message: "is only valid for verify_artifact"}
+
+      true ->
+        :ok
     end
   end
 

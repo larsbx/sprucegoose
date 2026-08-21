@@ -135,6 +135,15 @@ intent nor database stores a command string. The executor:
 - stores content-addressed receipts and captured external observations;
 - cannot approve, promote, deploy, expand capability, or rewrite derivations.
 
+Implemented boundary: the Oban worker accepts only a permit ID and selects an
+allowlisted action handler. The first fixed handler verifies one declared
+content ID in the local artifact store and writes a deterministic,
+content-addressed evidence record. PostgreSQL rejects a missing artifact input
+for `verify_artifact` and rejects artifact inputs for other action types.
+`test` and `build_release` remain fail-closed until a bounded checkout and
+sandbox contract can execute their repository-derived mechanics without
+restoring arbitrary worker authority.
+
 Woodpecker may remain a scheduler/status adapter only if it cannot reintroduce
 repository-controlled arbitrary execution. Otherwise remove it after canary
 parity.
@@ -232,4 +241,3 @@ The remediation is complete only when:
 - bounded execution has replaced arbitrary repository-controlled execution;
 - production backup, restore, replay, canary, rollback, and remote parity are
   all proven.
-

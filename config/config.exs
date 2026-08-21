@@ -51,7 +51,11 @@ config :spruce_goose, Oban,
 config :spruce_goose, :start_outbox_dispatcher, false
 config :spruce_goose, :outbox_handler, nil
 config :spruce_goose, :derivation_executor_actor, nil
-config :spruce_goose, :derivation_handlers, %{}
+
+config :spruce_goose, :derivation_handlers, %{
+  verify_artifact: SpruceGoose.Derivations.VerifyArtifact
+}
+
 config :spruce_goose, :outbox_delivery_timeout_ms, 30_000
 config :spruce_goose, :ledger_import_root, nil
 config :spruce_goose, :ledger_max_bytes, 1_048_576

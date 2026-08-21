@@ -4,6 +4,48 @@ defmodule SpruceGoose.Artifacts.Store do
   """
 
   @chunk 65_536
+  @hex64 ~r/\A[0-9a-f]{64}\z/
+
+  def put_bytes(bytes) when is_binary(bytes) do
+    max = Application.fetch_env!(:spruce_goose, :artifact_max_bytes)
+
+    cond do
+      bytes == "" ->
+        {:error, "artifact bytes must not be empty"}
+
+      byte_size(bytes) > max ->
+        {:error, "artifact bytes exceed #{max} bytes"}
+
+      true ->
+        digest = sha256(bytes)
+
+        with :ok <- persist(digest, bytes) do
+          {:ok, receipt(digest, byte_size(bytes))}
+        end
+    end
+  end
+
+  def put_bytes(_), do: {:error, "artifact bytes are required"}
+
+  def verify(digest) when is_binary(digest) do
+    if Regex.match?(@hex64, digest) do
+      path = artifact_path(digest)
+
+      with {:ok, %{type: :regular, size: size}} <- File.lstat(path),
+           true <- size > 0 and size <= Application.fetch_env!(:spruce_goose, :artifact_max_bytes),
+           {:ok, bytes} <- File.read(path),
+           true <- byte_size(bytes) == size and sha256(bytes) == digest do
+        {:ok, receipt(digest, size)}
+      else
+        {:error, :enoent} -> {:error, "content-addressed artifact does not exist"}
+        _ -> {:error, "content-addressed artifact is corrupt"}
+      end
+    else
+      {:error, "content digest must be lowercase 64-hex"}
+    end
+  end
+
+  def verify(_), do: {:error, "content digest is required"}
 
   def retrieve(name, source_path, source_identity, verifier) do
     with :ok <- bounded(name, 128, "artifact name"),
@@ -96,10 +138,7 @@ defmodule SpruceGoose.Artifacts.Store do
         before_stat.mtime == after_stat.mtime and before_stat.inode == after_stat.inode
 
   defp persist(digest, bytes) do
-    destination =
-      Application.fetch_env!(:spruce_goose, :artifact_store_root)
-      |> Path.join("sha256")
-      |> Path.join(digest)
+    destination = artifact_path(digest)
 
     :ok = File.mkdir_p(Path.dirname(destination))
 
@@ -139,4 +178,16 @@ defmodule SpruceGoose.Artifacts.Store do
       _ -> {:error, "content-addressed artifact collision or corruption"}
     end
   end
+
+  defp artifact_path(digest) do
+    Application.fetch_env!(:spruce_goose, :artifact_store_root)
+    |> Path.join("sha256")
+    |> Path.join(digest)
+  end
+
+  defp receipt(digest, size),
+    do: %{digest: digest, locator: "cas:sha256:" <> digest, size: size}
+
+  defp sha256(bytes),
+    do: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower)
 end
