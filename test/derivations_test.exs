@@ -3,12 +3,22 @@ defmodule SpruceGoose.DerivationsTest do
 
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Authz
-  alias SpruceGoose.Derivations.{Domain, Permit}
+  alias SpruceGoose.Derivations.{Domain, Executor, Permit}
   alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
 
   @commit String.duplicate("a", 40)
   @tree String.duplicate("b", 40)
   @pipeline String.duplicate("c", 64)
+
+  defmodule SuccessfulHandler do
+    def run(%Permit{action: :test}) do
+      {:ok, %{evidence_digest: String.duplicate("d", 64)}}
+    end
+  end
+
+  defmodule RaisingHandler do
+    def run(%Permit{}), do: raise("bounded handler failed")
+  end
 
   test "the domain exposes one typed authority resource" do
     assert Ash.Domain.Info.resources(Domain) == [Permit]
@@ -97,6 +107,103 @@ defmodule SpruceGoose.DerivationsTest do
              as_actor(executor, fn ->
                Authz.update(succeeded, %{failure_reason: "late rewrite"}, action: :fail)
              end)
+  end
+
+  test "the bounded Oban executor accepts only a permit id and records a typed outcome" do
+    task = in_progress_task("bounded-executor")
+    operator = actor_with_role("operator-bounded-executor", :operator)
+    executor = actor_with_role("executor-bounded-executor", :derivation_executor)
+
+    on_exit(fn ->
+      Application.delete_env(:spruce_goose, :derivation_executor_actor)
+      Application.delete_env(:spruce_goose, :derivation_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: SuccessfulHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert {:ok, completed} =
+             as_actor(executor, fn -> Authz.read_one(Permit, permit_id: permit.permit_id) end)
+
+    assert completed.state == :succeeded
+    assert completed.executor_id == executor.name
+    assert completed.evidence_digest == String.duplicate("d", 64)
+
+    assert {:discard, "expected exactly one permit_id"} =
+             Executor.perform(%Oban.Job{
+               args: %{"permit_id" => permit.permit_id, "command" => "mix test"}
+             })
+  end
+
+  test "the bounded executor fails closed when an action has no configured handler" do
+    task = in_progress_task("missing-handler")
+    operator = actor_with_role("operator-missing-handler", :operator)
+    executor = actor_with_role("executor-missing-handler", :derivation_executor)
+
+    on_exit(fn ->
+      Application.delete_env(:spruce_goose, :derivation_executor_actor)
+      Application.delete_env(:spruce_goose, :derivation_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:discard, "no handler configured for test"} =
+             Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert {:ok, failed} =
+             as_actor(executor, fn -> Authz.read_one(Permit, permit_id: permit.permit_id) end)
+
+    assert failed.state == :failed
+    assert failed.failure_reason == "no handler configured for test"
+  end
+
+  test "the bounded executor refuses an unconfigured actor without claiming the permit" do
+    task = in_progress_task("missing-executor")
+    operator = actor_with_role("operator-missing-executor", :operator)
+
+    on_exit(fn -> Application.delete_env(:spruce_goose, :derivation_executor_actor) end)
+    Application.delete_env(:spruce_goose, :derivation_executor_actor)
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:discard, "derivation executor actor is not configured"} =
+             Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+  end
+
+  test "a handler exception becomes a typed failed outcome" do
+    task = in_progress_task("handler-exception")
+    operator = actor_with_role("operator-handler-exception", :operator)
+    executor = actor_with_role("executor-handler-exception", :derivation_executor)
+
+    on_exit(fn ->
+      Application.delete_env(:spruce_goose, :derivation_executor_actor)
+      Application.delete_env(:spruce_goose, :derivation_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: RaisingHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:discard, "bounded handler failed"} =
+             Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    failed = Ash.get!(Permit, permit.id, authorize?: false)
+    assert failed.state == :failed
+    assert failed.failure_reason == "bounded handler failed"
   end
 
   defp permit_attrs(task) do
