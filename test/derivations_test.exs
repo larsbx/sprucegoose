@@ -3,6 +3,7 @@ defmodule SpruceGoose.DerivationsTest do
 
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Authz
+  alias SpruceGoose.CLI.Executor, as: CLIExecutor
   alias SpruceGoose.Derivations.{Domain, Executor, Permit}
   alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
 
@@ -287,6 +288,27 @@ defmodule SpruceGoose.DerivationsTest do
                [String.duplicate("e", 64), permit.id],
                mode: :savepoint
              )
+  end
+
+  test "the CLI atomically admits and schedules one opaque permit job" do
+    task = in_progress_task("cli-admit")
+    operator = actor_with_role("operator-cli-admit", :operator)
+    attrs = task |> permit_attrs() |> Map.put(:task_id, task.task_id)
+
+    assert {:ok, admitted} = CLIExecutor.run({:admit_derivation, attrs}, operator.name)
+    assert admitted.state == :admitted
+    assert admitted.action == :test
+    assert admitted.task_id == task.task_id
+
+    assert %Oban.Job{args: %{"permit_id" => permit_id}} =
+             SpruceGoose.Repo.one!(from(job in Oban.Job, where: job.queue == "derivations"))
+
+    assert permit_id == admitted.permit_id
+    assert {:ok, shown} = CLIExecutor.run({:show_derivation, permit_id}, operator.name)
+    assert shown == admitted
+
+    assert {:error, _duplicate} = CLIExecutor.run({:admit_derivation, attrs}, operator.name)
+    assert SpruceGoose.Repo.aggregate(Oban.Job, :count) == 1
   end
 
   defp permit_attrs(task) do

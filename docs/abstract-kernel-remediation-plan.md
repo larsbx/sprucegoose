@@ -140,6 +140,11 @@ allowlisted action handler. The first fixed handler verifies one declared
 content ID in the local artifact store and writes a deterministic,
 content-addressed evidence record. PostgreSQL rejects a missing artifact input
 for `verify_artifact` and rejects artifact inputs for other action types.
+The supported CLI now admits and schedules the permit in one database
+transaction, exposes a policy-filtered permit read, and passes only the opaque
+permit ID to Oban. Production selects the declared executor identity through
+`SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR`; an absent or disabled actor still
+fails closed without claiming work.
 `test` and `build_release` remain fail-closed until a bounded checkout and
 sandbox contract can execute their repository-derived mechanics without
 restoring arbitrary worker authority.

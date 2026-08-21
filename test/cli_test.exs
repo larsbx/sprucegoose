@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLITest do
 
   test "returns scoped help for every command family and rejects unknown families" do
     families =
-      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger outbox)
+      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger outbox derivation)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -47,6 +47,45 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["outbox", "replay", "ad6cb708-3d90-47de-a701-19a45689f7ee"])
 
     assert {:error, :usage} = Command.parse(["outbox", "replay"])
+  end
+
+  test "parses typed derivation admission and inspection" do
+    digest = String.duplicate("d", 64)
+
+    assert {:ok, {:admit_derivation, attrs}} =
+             Command.parse([
+               "derivation",
+               "admit",
+               "--task",
+               "tsk-20260821T120000Z-1234abcd",
+               "--source-event",
+               "forgejo:delivery-1",
+               "--forge-instance",
+               "mama-forgejo",
+               "--repository",
+               "root/sprucegoose",
+               "--commit",
+               String.duplicate("a", 40),
+               "--tree",
+               String.duplicate("b", 40),
+               "--ref",
+               "refs/heads/staging",
+               "--pipeline-digest",
+               String.duplicate("c", 64),
+               "--action",
+               "verify_artifact",
+               "--input-artifact",
+               digest
+             ])
+
+    assert attrs.action == :verify_artifact
+    assert attrs.input_artifact_digest == digest
+
+    assert {:ok, {:show_derivation, "drv-abc"}} =
+             Command.parse(["derivation", "show", "drv-abc"])
+
+    assert {:error, "invalid derivation admit arguments"} =
+             Command.parse(["derivation", "admit", "--action", "shell"])
   end
 
   test "task admission requires typed membership, DoD, type, and title" do

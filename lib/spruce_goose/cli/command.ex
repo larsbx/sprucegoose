@@ -102,6 +102,11 @@ defmodule SpruceGoose.CLI.Command do
      ]},
     {"ledger", ["import PATH", "parity PATH"]},
     {"outbox", ["failed", "replay EVENT_ID"]},
+    {"derivation",
+     [
+       "admit --task ID --source-event ID --forge-instance ID --repository OWNER/REPO --commit OID --tree OID --ref REF --pipeline-digest SHA256 --action test|build_release|verify_artifact [--input-artifact SHA256]",
+       "show PERMIT_ID"
+     ]},
     {"release",
      [
        "inspect-provenance ARCHIVE",
@@ -548,6 +553,51 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 
+  def parse(["derivation", "show", permit_id]), do: {:ok, {:show_derivation, permit_id}}
+
+  def parse(["derivation", "admit" | args]) do
+    {opts, rest, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          task: :string,
+          source_event: :string,
+          forge_instance: :string,
+          repository: :string,
+          commit: :string,
+          tree: :string,
+          ref: :string,
+          pipeline_digest: :string,
+          action: :string,
+          input_artifact: :string
+        ]
+      )
+
+    required =
+      ~w(task source_event forge_instance repository commit tree ref pipeline_digest action)a
+
+    with [] <- rest,
+         [] <- invalid,
+         true <- Enum.all?(required, &Keyword.has_key?(opts, &1)),
+         {:ok, action} <- derivation_action(Keyword.fetch!(opts, :action)) do
+      {:ok,
+       {:admit_derivation,
+        %{
+          task_id: Keyword.fetch!(opts, :task),
+          source_event_id: Keyword.fetch!(opts, :source_event),
+          forge_instance: Keyword.fetch!(opts, :forge_instance),
+          repository: Keyword.fetch!(opts, :repository),
+          commit_sha: Keyword.fetch!(opts, :commit),
+          tree_sha: Keyword.fetch!(opts, :tree),
+          ref: Keyword.fetch!(opts, :ref),
+          pipeline_digest: Keyword.fetch!(opts, :pipeline_digest),
+          input_artifact_digest: Keyword.get(opts, :input_artifact),
+          action: action
+        }}}
+    else
+      _ -> {:error, "invalid derivation admit arguments"}
+    end
+  end
+
   def parse(["task", "add" | args]) do
     {opts, title, invalid} =
       OptionParser.parse(args,
@@ -597,6 +647,11 @@ defmodule SpruceGoose.CLI.Command do
   end
 
   def parse(_args), do: {:error, :usage}
+
+  defp derivation_action("test"), do: {:ok, :test}
+  defp derivation_action("build_release"), do: {:ok, :build_release}
+  defp derivation_action("verify_artifact"), do: {:ok, :verify_artifact}
+  defp derivation_action(_), do: {:error, :invalid_action}
 
   defp dependency_option(args) do
     case OptionParser.parse(args, strict: [after: :string]) do

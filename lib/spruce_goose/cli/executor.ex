@@ -7,6 +7,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
+  alias SpruceGoose.Derivations.{Executor, Permit}
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
@@ -136,6 +137,39 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch(:generate_id), do: {:ok, %{id: TaskId.generate()}}
   defp dispatch(:list_failed_outbox), do: OutboxOperator.list_failed()
   defp dispatch({:replay_outbox, event_id}), do: OutboxOperator.replay(event_id)
+
+  defp dispatch({:show_derivation, permit_id}) do
+    with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
+         {:ok, task} <- Authz.read_one(Task, id: permit.task_id) do
+      {:ok, derivation_json(permit, task.task_id)}
+    end
+  end
+
+  defp dispatch({:admit_derivation, attrs}) do
+    with {:ok, task} <- Authz.read_one(Task, task_id: attrs.task_id) do
+      # AUTHORIZATION: the actor-bound Permit.admit policy is evaluated before
+      # the raw transaction may insert its matching opaque Oban job.
+      case Repo.transaction(fn ->
+             input = Map.put(attrs, :task_id, task.id)
+
+             with {:ok, permit, notifications} <-
+                    Authz.create_with_notifications(Permit, input, action: :admit),
+                  {:ok, _job} <-
+                    %{permit_id: permit.permit_id} |> Executor.new() |> Oban.insert() do
+               {permit, notifications}
+             else
+               {:error, reason} -> Repo.rollback(reason)
+             end
+           end) do
+        {:ok, {permit, notifications}} ->
+          Ash.Notifier.notify(notifications)
+          {:ok, derivation_json(permit, task.task_id)}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
 
   defp dispatch({:validate_id, id}) do
     if TaskId.valid?(id), do: {:ok, %{id: id, valid: true}}, else: {:error, "invalid task ID"}
@@ -1586,6 +1620,29 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp filter_json(filter),
     do: %{id: filter.id, board_id: filter.board_id, name: filter.name, criteria: filter.criteria}
+
+  defp derivation_json(permit, task_id) do
+    %{
+      permit_id: permit.permit_id,
+      task_id: task_id,
+      source_event_id: permit.source_event_id,
+      forge_instance: permit.forge_instance,
+      repository: permit.repository,
+      commit_sha: permit.commit_sha,
+      tree_sha: permit.tree_sha,
+      ref: permit.ref,
+      pipeline_digest: permit.pipeline_digest,
+      input_artifact_digest: permit.input_artifact_digest,
+      action: permit.action,
+      state: permit.state,
+      executor_id: permit.executor_id,
+      evidence_digest: permit.evidence_digest,
+      artifact_digest: permit.artifact_digest,
+      failure_reason: permit.failure_reason,
+      claimed_at: permit.claimed_at,
+      completed_at: permit.completed_at
+    }
+  end
 
   defp todo_json(todo) do
     %{id: todo.todo_id, body: todo.body, position: todo.position, completed: todo.completed}

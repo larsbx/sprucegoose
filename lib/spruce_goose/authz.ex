@@ -71,6 +71,11 @@ defmodule SpruceGoose.Authz do
   def read(query_or_resource), do: Ash.read(query_or_resource, opts())
   def count(query), do: Ash.count(query, opts())
   def create(resource, input, extra \\ []), do: Ash.create(resource, input, opts(extra))
+
+  def create_with_notifications(resource, input, extra \\ []) do
+    Ash.create(resource, input, opts(Keyword.put(extra, :return_notifications?, true)))
+  end
+
   def update(record, input, extra \\ []), do: Ash.update(record, input, opts(extra))
   def update_changeset(changeset, extra \\ []), do: Ash.update(changeset, opts(extra))
 
