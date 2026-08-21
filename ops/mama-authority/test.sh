@@ -18,6 +18,7 @@ grep -Fxq 'job_arguments = ["permit_id"]' "$executor_manifest"
 test -f "$executor_dropin"
 grep -Fxq '[Service]' "$executor_dropin"
 grep -Fxq 'Environment=SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR=sprucegoose-derivation-v1' "$executor_dropin"
+grep -Fxq 'Environment=SPRUCE_GOOSE_OBAN_ENABLED=true' "$executor_dropin"
 
 grep -Fq 'RuntimeDirectoryMode=0700' "$unit"
 grep -Fq 'BatchMode=yes' "$unit"
