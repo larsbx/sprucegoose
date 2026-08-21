@@ -1,13 +1,16 @@
 # Current state
 
-Verified 2026-08-21 under task `tsk-20260821T221335Z-01119801`.
+Verified 2026-08-21 under task `tsk-20260821T225940Z-88506be3`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `651ee5baa7624a076a5d7ce60da96ff56bae6f09`; its tree is
-  `4586349281f305514867e677f0d3fd67322a083c`.
+  `6b97bb8b066475797b42f3bb5c8f92118dbe84e5`; its tree is
+  `68b95736899fd23d8ea31c19be2414663c670715`. The governed
+  `break-glass-pg19beta2-convergence-20260821` transaction converged the
+  superseded pre-cutover branch lineages without reintroducing PostgreSQL 19
+  Beta 3, retired GitLab CI, or obsolete audit diagrams.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
