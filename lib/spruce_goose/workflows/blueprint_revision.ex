@@ -12,7 +12,7 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
-  alias SpruceGoose.Blueprints.SourceVerifier
+  alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
 
   @hex40 ~r/\A[0-9a-f]{40}\z/
   @hex64 ~r/\A[0-9a-f]{64}\z/
@@ -29,7 +29,7 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
       authorize_if(Readable)
     end
 
-    policy action(:register) do
+    policy action([:register, :apply]) do
       authorize_if(HasRole.approver())
     end
   end
@@ -70,6 +70,31 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
 
       change(fn changeset, _context -> verify_source(changeset) end)
       validate(fn changeset, _context -> validate_source(changeset) end)
+
+      change(fn changeset, _context ->
+        Ash.Changeset.change_attribute(
+          changeset,
+          :revision_id,
+          deterministic_id(changeset.attributes)
+        )
+      end)
+    end
+
+    create :apply do
+      accept([
+        :project_id,
+        :repository,
+        :source_commit,
+        :source_path,
+        :schema_version
+      ])
+
+      change(fn changeset, _context -> verify_source(changeset) end)
+      validate(fn changeset, _context -> validate_source(changeset) end)
+
+      change(fn changeset, _context ->
+        Ash.Changeset.before_action(changeset, &apply_manifest/1)
+      end)
 
       change(fn changeset, _context ->
         Ash.Changeset.change_attribute(
@@ -138,6 +163,23 @@ defmodule SpruceGoose.Workflows.BlueprintRevision do
 
       {:error, error} ->
         Ash.Changeset.add_error(changeset, field: :source_path, message: to_string(error))
+    end
+  end
+
+  defp apply_manifest(changeset) do
+    repository = Ash.Changeset.get_attribute(changeset, :repository)
+    commit = Ash.Changeset.get_attribute(changeset, :source_commit)
+    path = Ash.Changeset.get_attribute(changeset, :source_path)
+    digest = Ash.Changeset.get_attribute(changeset, :manifest_digest)
+    project_id = Ash.Changeset.get_attribute(changeset, :project_id)
+
+    with {:ok, %{digest: ^digest, bytes: bytes}} <-
+           SourceVerifier.verify(repository, commit, path),
+         :ok <- Applier.apply(project_id, bytes) do
+      changeset
+    else
+      {:ok, _} -> Ash.Changeset.add_error(changeset, "blueprint bytes changed during apply")
+      {:error, error} -> Ash.Changeset.add_error(changeset, to_string(error))
     end
   end
 

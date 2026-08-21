@@ -12,7 +12,7 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
          request = Application.get_env(:spruce_goose, :blueprint_http_request, &Req.request/1),
          {:ok, tree} <- fetch_tree(owner, repo, commit, token, request),
          {:ok, bytes} <- fetch_bytes(owner, repo, commit, path, token, request) do
-      {:ok, %{tree: tree, digest: sha256(bytes)}}
+      {:ok, %{tree: tree, digest: sha256(bytes), bytes: bytes}}
     end
   end
 

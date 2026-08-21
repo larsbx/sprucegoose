@@ -8,7 +8,8 @@ defmodule SpruceGoose.CLI.Command do
     {"id", ["id", "validate-id ID"]},
     {"project",
      ["add KEY NAME", "list", "show KEY", "view KEY", "rename KEY NAME", "remove KEY"]},
-    {"blueprint", ["register PROJECT REPOSITORY COMMIT PATH"]},
+    {"blueprint",
+     ["register PROJECT REPOSITORY COMMIT PATH", "apply PROJECT REPOSITORY COMMIT PATH"]},
     {"roadmap",
      [
        "add PROJECT KEY NAME",
@@ -205,6 +206,10 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["blueprint", "register", project, repository, commit, path]) do
     {:ok, {:register_blueprint, project, repository, commit, path}}
+  end
+
+  def parse(["blueprint", "apply", project, repository, commit, path]) do
+    {:ok, {:apply_blueprint, project, repository, commit, path}}
   end
 
   def parse(["roadmap", "add", project, key | name]) when name != [],

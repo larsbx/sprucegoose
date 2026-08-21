@@ -16,8 +16,12 @@ defmodule SpruceGoose.Workflows.Roadmap do
       authorize_if(Readable)
     end
 
-    policy action_type([:create, :destroy]) do
+    policy action([:create, :destroy]) do
       authorize_if(HasRole.author())
+    end
+
+    policy action(:apply_blueprint) do
+      authorize_if(HasRole.approver())
     end
 
     policy action(:rename) do
@@ -73,6 +77,10 @@ defmodule SpruceGoose.Workflows.Roadmap do
 
     create :create do
       primary?(true)
+      accept([:project_id, :key, :name])
+    end
+
+    create :apply_blueprint do
       accept([:project_id, :key, :name])
     end
   end

@@ -61,12 +61,17 @@ bytes. See [`docs/revisions.md`](docs/revisions.md).
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
-for a project. The record binds the project to a repository slug, commit, tree,
-relative path, manifest digest, and schema version. It has no update or destroy
-action and does not itself transition, promote, or deploy work.
+or atomically apply its roadmap and workflow definitions. The record binds the
+project to a repository slug, commit, tree, relative path, manifest digest, and
+schema version. It has no update or destroy action and never imports tasks,
+lifecycle state, actors, grants, approvals, shell commands, or deployments.
 
 ```sh
 ./sprucegoose blueprint register my-project root/my-project \
+  <40-hex-commit> .sprucegoose/project.yaml \
+  --as release-approver
+
+./sprucegoose blueprint apply my-project root/my-project \
   <40-hex-commit> .sprucegoose/project.yaml \
   --as release-approver
 
@@ -79,7 +84,28 @@ project, roadmap, workflow, task, and blueprint identifiers. Generated text is
 explicitly labeled as a projection and is never accepted as mutation input.
 Blueprint registration independently reads the commit, tree, and path bytes
 through Forgejo. SpruceGoose derives the manifest digest; callers cannot supply
-the tree or digest recorded by the Ash action.
+the tree or digest recorded by the Ash action. Apply validates the whole
+versioned YAML package before writing, then creates or revises its project-scoped
+roadmaps and workflows in one database transaction. Any invalid definition or
+write failure leaves both hierarchy and revision receipt unchanged.
+
+```yaml
+schema_version: 1
+project: my-project
+roadmaps:
+  - key: delivery
+    name: Delivery
+    workflows:
+      - id: release-v1
+        name: Release v1
+        definition:
+          schema_version: 1
+          tasks:
+            - id: test
+              kind: oban
+              depends_on: []
+              input: {}
+```
 
 ```sh
 mix escript.build

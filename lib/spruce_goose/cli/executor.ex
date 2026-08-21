@@ -162,31 +162,11 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch({:view_project, key}), do: Legibility.project(key)
 
   defp dispatch({:register_blueprint, project_key, repository, commit, path}) do
-    with {:ok, project} <- read_one(Project, key: project_key),
-         {:ok, revision} <-
-           Authz.create(
-             BlueprintRevision,
-             %{
-               project_id: project.id,
-               repository: repository,
-               source_commit: commit,
-               source_path: path,
-               schema_version: 1
-             },
-             action: :register
-           ) do
-      {:ok,
-       %{
-         id: revision.revision_id,
-         project: project_key,
-         repository: revision.repository,
-         commit: revision.source_commit,
-         tree: revision.source_tree,
-         path: revision.source_path,
-         digest: revision.manifest_digest,
-         schema_version: revision.schema_version
-       }}
-    end
+    create_blueprint_revision(project_key, repository, commit, path, :register)
+  end
+
+  defp dispatch({:apply_blueprint, project_key, repository, commit, path}) do
+    create_blueprint_revision(project_key, repository, commit, path, :apply)
   end
 
   defp dispatch({:list_roadmaps, project_key}) do
@@ -858,6 +838,35 @@ defmodule SpruceGoose.CLI.Executor do
     else
       false -> {:error, "SOP path must be #{SopGate.path()}"}
       result -> result
+    end
+  end
+
+  defp create_blueprint_revision(project_key, repository, commit, path, action) do
+    with {:ok, project} <- read_one(Project, key: project_key),
+         {:ok, revision} <-
+           Authz.create(
+             BlueprintRevision,
+             %{
+               project_id: project.id,
+               repository: repository,
+               source_commit: commit,
+               source_path: path,
+               schema_version: 1
+             },
+             action: action
+           ) do
+      {:ok,
+       %{
+         id: revision.revision_id,
+         project: project_key,
+         repository: revision.repository,
+         commit: revision.source_commit,
+         tree: revision.source_tree,
+         path: revision.source_path,
+         digest: revision.manifest_digest,
+         schema_version: revision.schema_version,
+         action: action
+       }}
     end
   end
 

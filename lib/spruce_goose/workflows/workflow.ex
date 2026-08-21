@@ -17,7 +17,7 @@ defmodule SpruceGoose.Workflows.Workflow do
       authorize_if(Readable)
     end
 
-    policy action_type([:create, :destroy]) do
+    policy action([:create, :destroy]) do
       authorize_if(HasRole.author())
     end
 
@@ -26,6 +26,10 @@ defmodule SpruceGoose.Workflows.Workflow do
     end
 
     policy action([:revise, :replace_definition]) do
+      authorize_if(HasRole.approver())
+    end
+
+    policy action(:apply_blueprint) do
       authorize_if(HasRole.approver())
     end
   end
@@ -54,6 +58,10 @@ defmodule SpruceGoose.Workflows.Workflow do
 
     create :create do
       primary?(true)
+      accept([:roadmap_id, :workflow_id, :name, :definition])
+    end
+
+    create :apply_blueprint do
       accept([:roadmap_id, :workflow_id, :name, :definition])
     end
 

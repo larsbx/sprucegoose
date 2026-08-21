@@ -199,6 +199,16 @@ defmodule SpruceGoose.CLITest do
                ".sprucegoose/project.yaml"
              ])
 
+    assert {:ok, {:apply_blueprint, "pi", "root/pi", "commit", ".sprucegoose/project.yaml"}} =
+             Command.parse([
+               "blueprint",
+               "apply",
+               "pi",
+               "root/pi",
+               "commit",
+               ".sprucegoose/project.yaml"
+             ])
+
     assert {:ok, {:list_roadmaps, nil}} = Command.parse(["roadmap", "list"])
 
     assert {:ok, {:list_roadmaps, "pi"}} =

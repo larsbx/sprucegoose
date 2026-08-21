@@ -42,6 +42,7 @@ defmodule SpruceGoose.MixProject do
   defp deps do
     [
       {:req, "~> 0.5"},
+      {:yaml_elixir, "~> 2.12"},
       {:picosat_elixir, "~> 0.2"},
       {:ash, "~> 3.0"},
       {:ash_events, "~> 0.7.0"},
