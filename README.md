@@ -100,10 +100,13 @@ versioned YAML package before writing, then creates or revises its project-scope
 roadmaps and workflows in one database transaction. Any invalid definition or
 write failure leaves both hierarchy and revision receipt unchanged.
 Instantiation re-verifies the referenced commit/path bytes and copies the
-typed runner, input, title, and Definition of Done from that exact revision;
-it does not trust a mutable workflow row. Pre-cutover tasks retain null source
-bindings as the explicit grandfathered epoch rather than receiving fabricated
-repository provenance.
+typed runner, input, title, Definition of Done, dependencies, and artifact
+requirements from that exact revision; it does not trust a mutable workflow
+row. `task add` and `inbox promote` are retired operator paths. Use `inbox add`
+for a non-authoritative work request, then commit a TaskDefinition and use
+`task instantiate`. Pre-cutover tasks retain null source bindings as the
+explicit grandfathered epoch rather than receiving fabricated repository
+provenance.
 The production verifier reads a repository-read-only token from the owner-only
 path configured by `SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE`; it does not use the
 ICM publication credential.
@@ -125,6 +128,7 @@ roadmaps:
               title: Run tests
               definition_of_done: The governed test suite passes
               depends_on: []
+              artifact_requirements: [test-report]
               input: {}
 ```
 
@@ -140,22 +144,16 @@ mix escript.build
 ./sprucegoose grant add openclaw --role operator --scope project:my-project --as lars
 ./sprucegoose whoami --as openclaw
 
-./sprucegoose project add my-project "My project"
-./sprucegoose roadmap add my-project delivery "Delivery roadmap"
-./sprucegoose workflow add \
+./sprucegoose blueprint apply my-project root/my-project \
+  <40-hex-commit> .sprucegoose/project.yaml --as release-approver
+./sprucegoose task instantiate \
   --project my-project \
   --roadmap delivery \
-  --definition '{"schema_version":1,"tasks":[{"id":"verify","kind":"oban","depends_on":["build"]},{"id":"build","kind":"oban"}]}' \
-  release "Release workflow"
-./sprucegoose task add \
-  --project pi \
-  --roadmap buzz-agent-collaboration-plane \
-  --workflow buzz-integration \
+  --workflow release-v1 \
+  --blueprint bpr-... \
+  --definition test \
   --priority 2 \
-  --artifact prototype \
-  --dod "Focused checks pass" \
-  --sop "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md" \
-  "Implement the next slice"
+  --as openclaw
 ./sprucegoose task artifact-receipt tsk-... \
   prototype /absolute/path/to/prototype telegram:message:6680 --as artifact-verifier
 ./sprucegoose task list --state waiting

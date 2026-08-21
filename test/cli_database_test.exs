@@ -895,7 +895,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert {:error, "not found"} = Executor.run({:resolve_inbox, "inbox-missing", nil})
   end
 
-  test "inbox promote admits a governed task and records capture provenance atomically" do
+  test "inbox capture cannot bypass repository-bound task admission" do
     {:ok, definition} = Definition.parse(%{tasks: [%{id: "triage", kind: :oban}]})
     {:ok, project} = Ash.create(Project, %{key: "triage", name: "Triage"})
 
@@ -922,30 +922,14 @@ defmodule SpruceGoose.CLIDatabaseTest do
 
     {:ok, capture} = Executor.run({:add_inbox, "Promote this capture"})
 
-    assert {:ok, %{capture: promoted, task: task}} =
+    assert {:error, message} =
              Executor.run({:promote_inbox, capture.id, Map.put(membership, :title, nil)})
 
-    assert task.title == "Promote this capture"
-    assert task.definition_of_done == "Capture is promoted"
-    assert task.sop_gate_required
-    assert promoted.state == :resolved
-    assert promoted.promoted_task_id == task.id
-    assert promoted.resolution_reason == "promoted to #{task.id}"
+    assert message =~ "TaskDefinition"
+    assert message =~ "task instantiate"
 
-    assert {:ok, shown} = Executor.run({:show_task, task.id})
-    assert shown.id == task.id
-
-    assert {:error, _} =
-             Executor.run({:promote_inbox, capture.id, Map.put(membership, :title, nil)})
-
-    {:ok, titled_capture} = Executor.run({:add_inbox, "Capture with override"})
-
-    assert {:ok, %{task: titled}} =
-             Executor.run(
-               {:promote_inbox, titled_capture.id, Map.put(membership, :title, "Explicit title")}
-             )
-
-    assert titled.title == "Explicit title"
+    assert {:ok, %{items: pending}} = Executor.run({:list_inbox, nil})
+    assert capture.id in Enum.map(pending, & &1.id)
   end
 
   test "inbox promote leaves the capture open when task admission fails" do

@@ -13,6 +13,12 @@ defmodule SpruceGoose.Workflows.TaskDefinition do
       public?: true
     )
 
+    attribute(:artifact_requirements, {:array, :string},
+      allow_nil?: false,
+      default: [],
+      public?: true
+    )
+
     attribute(:input, :map, allow_nil?: false, default: %{}, public?: true)
   end
 
@@ -25,5 +31,21 @@ defmodule SpruceGoose.Workflows.TaskDefinition do
     validate(string_length(:id, min: 1, max: 128))
     validate(string_length(:title, min: 1, max: 300))
     validate(string_length(:definition_of_done, min: 1, max: 2_000))
+
+    validate(fn changeset, _context ->
+      requirements = Ash.Changeset.get_attribute(changeset, :artifact_requirements) || []
+
+      valid? =
+        length(requirements) <= 50 and
+          Enum.uniq(requirements) == requirements and
+          Enum.all?(requirements, fn value ->
+            is_binary(value) and String.trim(value) == value and value != "" and
+              byte_size(value) <= 128
+          end)
+
+      if valid?,
+        do: :ok,
+        else: {:error, field: :artifact_requirements, message: "must be unique bounded names"}
+    end)
   end
 end

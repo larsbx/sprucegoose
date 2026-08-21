@@ -29,7 +29,6 @@ defmodule SpruceGoose.CLI.Command do
      ]},
     {"task",
      [
-       "add --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--type task|diagnosis] [--artifact NAME] TITLE",
        "instantiate --project KEY --roadmap KEY --workflow ID --blueprint REVISION --definition KEY --priority N [--type task|diagnosis]",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
        "show ID",
@@ -76,8 +75,7 @@ defmodule SpruceGoose.CLI.Command do
        "add TEXT",
        "list [--state pending|resolved|dropped|all]",
        "done CAPTURE_ID",
-       "drop CAPTURE_ID REASON",
-       "promote CAPTURE_ID --project KEY --roadmap KEY --workflow ID --priority N --dod TEXT --sop PATH [--title T]"
+       "drop CAPTURE_ID REASON"
      ]},
     {"revise",
      [
@@ -348,50 +346,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["inbox", "drop", capture_id | reason]) when reason != [],
     do: {:ok, {:drop_inbox, capture_id, Enum.join(reason, " ")}}
 
-  def parse(["inbox", "promote", capture_id | args]) do
-    {opts, rest, invalid} =
-      OptionParser.parse(args,
-        strict: [
-          project: :string,
-          roadmap: :string,
-          workflow: :string,
-          priority: :integer,
-          dod: :string,
-          sop: :string,
-          type: :string,
-          title: :string
-        ]
-      )
-
-    task_type = Keyword.get(opts, :type, "task")
-
-    with [] <- invalid,
-         [] <- rest,
-         {:ok, project} <- required(opts, :project),
-         {:ok, roadmap} <- required(opts, :roadmap),
-         {:ok, workflow} <- required(opts, :workflow),
-         {:ok, priority} <- required_priority(opts),
-         {:ok, dod} <- required(opts, :dod),
-         {:ok, sop_path} <- required(opts, :sop),
-         true <- task_type in ["task", "diagnosis"] do
-      {:ok,
-       {:promote_inbox, capture_id,
-        %{
-          project: project,
-          roadmap: roadmap,
-          workflow: workflow,
-          priority: priority,
-          definition_of_done: dod,
-          sop_path: sop_path,
-          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
-          title: Keyword.get(opts, :title)
-        }}}
-    else
-      false -> {:error, "--type must be task or diagnosis"}
-      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
-      {:error, option} -> {:error, "--#{option} is required"}
-      _ -> {:error, "invalid inbox promote arguments"}
-    end
+  def parse(["inbox", "promote" | _args]) do
+    {:error,
+     "inbox promote is retired; commit a TaskDefinition, apply its blueprint, then use task instantiate"}
   end
 
   def parse(["todo", "list", task_id]), do: {:ok, {:list_todos, task_id}}
@@ -599,52 +556,9 @@ defmodule SpruceGoose.CLI.Command do
     end
   end
 
-  def parse(["task", "add" | args]) do
-    {opts, title, invalid} =
-      OptionParser.parse(args,
-        strict: [
-          project: :string,
-          roadmap: :string,
-          workflow: :string,
-          priority: :integer,
-          dod: :string,
-          sop: :string,
-          type: :string,
-          artifact: :keep
-        ]
-      )
-
-    task_type = Keyword.get(opts, :type, "task")
-
-    with [] <- invalid,
-         {:ok, project} <- required(opts, :project),
-         {:ok, roadmap} <- required(opts, :roadmap),
-         {:ok, workflow} <- required(opts, :workflow),
-         {:ok, priority} <- required_priority(opts),
-         {:ok, dod} <- required(opts, :dod),
-         {:ok, sop_path} <- required(opts, :sop),
-         true <- task_type in ["task", "diagnosis"],
-         title when title != "" <- Enum.join(title, " ") do
-      {:ok,
-       {:add_task,
-        %{
-          project: project,
-          roadmap: roadmap,
-          workflow: workflow,
-          priority: priority,
-          definition_of_done: dod,
-          sop_path: sop_path,
-          task_type: if(task_type == "diagnosis", do: :diagnosis, else: :task),
-          artifact_requirements: Keyword.get_values(opts, :artifact),
-          title: title
-        }}}
-    else
-      false -> {:error, "--type must be task or diagnosis"}
-      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
-      "" -> {:error, "task title is required"}
-      {:error, option} -> {:error, "--#{option} is required"}
-      _ -> {:error, "invalid task add arguments"}
-    end
+  def parse(["task", "add" | _args]) do
+    {:error,
+     "task add is retired for executable work; commit a TaskDefinition, apply its blueprint, then use task instantiate"}
   end
 
   def parse(["task", "instantiate" | args]) do

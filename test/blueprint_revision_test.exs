@@ -140,6 +140,7 @@ defmodule SpruceGoose.BlueprintRevisionTest do
     assert task.definition_of_done == "The governed test suite passes"
     assert task.runner == :oban
     assert task.input == %{}
+    assert task.artifact_requirements == ["test-report"]
 
     assert {:error, error} =
              Authz.with_actor(operator, fn ->
@@ -160,6 +161,40 @@ defmodule SpruceGoose.BlueprintRevisionTest do
     assert Exception.message(error) =~ "definition_key"
   end
 
+  test "unbound Ash task creation is unavailable outside an isolated store" do
+    project = Ash.create!(Project, %{key: "legible", name: "Bound only"})
+    approver = actor_with_role("bound-only-approver", :approver)
+    operator = actor_with_role("bound-only-operator", :operator)
+
+    Authz.with_actor(approver, fn ->
+      {:ok, _revision} = Authz.create(BlueprintRevision, attrs(project), action: :apply)
+    end)
+
+    [workflow] = Ash.read!(Ash.Query.filter_input(Workflow, workflow_id: "release-v1"))
+    previous = Application.get_env(:spruce_goose, :allow_unbound_task_admission)
+    Application.put_env(:spruce_goose, :allow_unbound_task_admission, false)
+
+    on_exit(fn ->
+      Application.put_env(:spruce_goose, :allow_unbound_task_admission, previous)
+    end)
+
+    assert {:error, error} =
+             Authz.with_actor(operator, fn ->
+               Authz.create(Task, %{
+                 workflow_id: workflow.id,
+                 task_id: "tsk-20260821T170000Z-00000003",
+                 task_type: :task,
+                 title: "Unbound",
+                 definition_of_done: "Must be refused",
+                 priority: 1,
+                 runner: :oban
+               })
+             end)
+
+    assert Exception.message(error) =~ "unbound admission is unavailable"
+    assert Exception.message(error) =~ "task instantiate"
+  end
+
   test "apply refuses an invalid package without creating partial hierarchy or receipt" do
     Application.put_env(:spruce_goose, :blueprint_source_verifier, __MODULE__.InvalidVerifier)
     project = Ash.create!(Project, %{key: "legible", name: "Legible"})
@@ -171,6 +206,26 @@ defmodule SpruceGoose.BlueprintRevisionTest do
              end)
 
     assert Exception.message(error) =~ "depends on unknown task"
+    assert Ash.read!(Ash.Query.filter_input(Roadmap, project_id: project.id)) == []
+    assert Ash.read!(BlueprintRevision) == []
+  end
+
+  test "apply refuses invalid artifact requirements before materializing hierarchy" do
+    Application.put_env(
+      :spruce_goose,
+      :blueprint_source_verifier,
+      __MODULE__.InvalidArtifactsVerifier
+    )
+
+    project = Ash.create!(Project, %{key: "legible", name: "Legible"})
+    approver = actor_with_role("blueprint-invalid-artifacts", :approver)
+
+    assert {:error, error} =
+             Authz.with_actor(approver, fn ->
+               Authz.create(BlueprintRevision, attrs(project), action: :apply)
+             end)
+
+    assert Exception.message(error) =~ "must be unique bounded names"
     assert Ash.read!(Ash.Query.filter_input(Roadmap, project_id: project.id)) == []
     assert Ash.read!(BlueprintRevision) == []
   end
@@ -217,6 +272,7 @@ defmodule SpruceGoose.BlueprintRevisionTest do
                     title: Run tests
                     definition_of_done: The governed test suite passes
                     depends_on: []
+                    artifact_requirements: [test-report]
                     input: {}
                   - id: build
                     kind: oban
@@ -250,6 +306,36 @@ defmodule SpruceGoose.BlueprintRevisionTest do
                   - id: build
                     kind: oban
                     depends_on: [missing]
+                    input: {}
+      """
+
+      {:ok, %{tree: String.duplicate("b", 40), digest: String.duplicate("c", 64), bytes: bytes}}
+    end
+  end
+
+  defmodule InvalidArtifactsVerifier do
+    @behaviour SpruceGoose.Blueprints.SourceVerifier
+
+    @impl true
+    def verify(_repository, _commit, _path) do
+      bytes = """
+      schema_version: 1
+      project: legible
+      roadmaps:
+        - key: delivery
+          name: Delivery
+          workflows:
+            - id: release-v1
+              name: Release v1
+              definition:
+                schema_version: 1
+                tasks:
+                  - id: test
+                    kind: oban
+                    title: Run tests
+                    definition_of_done: The governed test suite passes
+                    artifact_requirements: [test-report, test-report]
+                    depends_on: []
                     input: {}
       """
 

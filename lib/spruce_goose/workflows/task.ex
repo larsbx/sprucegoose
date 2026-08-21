@@ -151,6 +151,7 @@ defmodule SpruceGoose.Workflows.Task do
         :custom_fields
       ])
 
+      validate(fn _changeset, _context -> validate_unbound_admission() end)
       change(fn changeset, _context -> acknowledge_sop(changeset) end)
     end
 
@@ -327,6 +328,7 @@ defmodule SpruceGoose.Workflows.Task do
       |> Ash.Changeset.change_attribute(:definition_of_done, definition.definition_of_done)
       |> Ash.Changeset.change_attribute(:runner, definition.kind)
       |> Ash.Changeset.change_attribute(:input, definition.input)
+      |> Ash.Changeset.change_attribute(:artifact_requirements, definition.artifact_requirements)
     else
       false ->
         Ash.Changeset.add_error(changeset,
@@ -343,6 +345,20 @@ defmodule SpruceGoose.Workflows.Task do
           message: "is not an admissible task definition"
         )
     end
+  end
+
+  defp validate_unbound_admission do
+    configured? = Application.get_env(:spruce_goose, :allow_unbound_task_admission, false)
+    database = SpruceGoose.Repo.config()[:database]
+    live_database = Application.get_env(:spruce_goose, :ledger_live_database)
+
+    if configured? and database != live_database,
+      do: :ok,
+      else:
+        {:error,
+         field: :blueprint_revision_id,
+         message:
+           "unbound admission is unavailable; commit a TaskDefinition and use task instantiate"}
   end
 
   identities do

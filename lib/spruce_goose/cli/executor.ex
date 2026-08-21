@@ -710,14 +710,12 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch({:promote_inbox, capture_id, input}) do
     with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
          :ok <- require_open_capture(item),
-         title = input.title || item.body,
-         {:ok, task} <- run({:add_task, Map.put(input, :title, title)}),
-         {:ok, item} <-
-           resolve_capture(item, :resolved, %{
-             resolution_reason: "promoted to #{task.id}",
-             promoted_task_id: task.id
-           }) do
-      {:ok, %{capture: inbox_json(item), task: task}}
+         true <- is_map(input) do
+      {:error,
+       "inbox promotion cannot create executable work; commit a TaskDefinition and use task instantiate"}
+    else
+      false -> {:error, "invalid inbox promotion input"}
+      result -> result
     end
   end
 
