@@ -59,6 +59,9 @@ bytes. See [`docs/revisions.md`](docs/revisions.md).
 
 ## Legible repository blueprints and views
 
+The normative, operative, evidentiary, and projection boundaries are defined
+in [`docs/authority-planes.md`](docs/authority-planes.md).
+
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
 or atomically apply its roadmap and workflow definitions. The record binds the
