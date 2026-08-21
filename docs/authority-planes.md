@@ -81,4 +81,3 @@ authority. The required sequence is:
    evidentiary roots.
 5. Rebuild current state from those events and demote mutable aggregate rows
    to projections only after parity and recovery proofs pass.
-
