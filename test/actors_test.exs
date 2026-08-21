@@ -14,7 +14,7 @@ defmodule SpruceGoose.ActorsTest do
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
-  @genesis_roles ~w(admin approver artifact_verifier author operator proposer reader)a
+  @genesis_roles ~w(admin approver artifact_verifier author derivation_executor operator proposer reader)a
 
   describe "genesis" do
     test "an empty registry creates its first actor as a global admin" do

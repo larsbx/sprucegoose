@@ -9,5 +9,14 @@ defmodule SpruceGoose.Actors.Role do
   """
 
   use Ash.Type.Enum,
-    values: [:reader, :operator, :artifact_verifier, :proposer, :approver, :author, :admin]
+    values: [
+      :reader,
+      :operator,
+      :derivation_executor,
+      :artifact_verifier,
+      :proposer,
+      :approver,
+      :author,
+      :admin
+    ]
 end
