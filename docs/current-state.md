@@ -1,15 +1,15 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T094711Z-a55aa8a2`.
+Verified 2026-08-22 under task `tsk-20260822T162741Z-a5b69dee`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `3b51983bd63e4054e685432a871f39f8a8211de8`; its tree is
-  `6b2f28b8a5d13e104345f6db761c4b0d527a9a4a`. The governed
-  `transactional-shadow-events-20260822` transaction retained PostgreSQL 19
-  Beta 2 and activated transactional certified-event shadowing.
+  `b1d69ac6ca9f131016d4188ae80106118d43bae2`; its tree is
+  `34bab7aa9a4de1e68cfd15f047ff8363ffbe7a79`. The governed replay
+  transaction retained PostgreSQL 19 Beta 2 and activated the deterministic
+  authoritative-task projection without transferring read or write authority.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -79,19 +79,28 @@ separate-session concurrency, retry, and conflict behavior has passed. The
 supported mutation path now appends one root-valid candidate event in the same
 transaction as each accepted mutation in the baseline replay scope; a refused
 append rolls the mutation back. Reconciliation checks task outbox coverage and
-contiguous stream positions. The production stream currently contains two
-candidate events at positions 1 and 2, with no missing task events or malformed
-streams. A fresh logical dump restored both events and all eight roots into a
-disposable database. No historical roots were invented, and mutable workflow
-rows remain authority.
+contiguous stream positions. The accepted grandfathered baseline binds one
+exact legacy snapshot to one `GrandfatheredStateAccepted` event without
+inventing historical events or roots.
 
-This is not a production historical-authority cutover. A governed
-`GrandfatheredStateAccepted` baseline, the shadow-append observation window,
-deterministic projection rebuild, dual-read parity, rollback proof, and
-direct-projection-write refusal remain required. The shadow-append observation
-window has started but is not itself an authority change. Jimbo is excluded
-from the first cutover wave. A bounded non-Jimbo project will canary first, and
-`openclaw-system` will move last.
+The deterministic authoritative-task projector rebuilds its explicit public
+task schema from that baseline plus contiguous certified events. Production
+empty-state rebuild, restart recovery, digest integrity, dual-read parity, and
+zero-lag checks pass. The projector-owned PostgreSQL materialization refuses
+direct insert, update, and delete operations unless the projector enables its
+transaction-local write flag. The empty-state gate also proved that the legacy
+reader and transactional writer remain available while the materialization is
+absent, and that rebuilding does not delete certified events. At the recorded
+checkpoint the stream contains 35 certified events with zero missing task
+events and zero malformed streams; the projection covers 700 tasks at stream
+position 35 with digest
+`aae20a9c7eccd94d971e4719a3f547b2812520e1c556f9f56e2487282830c89e`.
+
+This is not a production historical-authority cutover. Mutable workflow rows
+remain the read and write authority. A bounded non-Jimbo canary, observation
+window, explicit authority-transfer decision, and rollback gates remain
+required before any reader or writer moves. Jimbo is excluded from the first
+cutover wave, and `openclaw-system` will move last.
 
 ## Repository documentation policy
 
