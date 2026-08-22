@@ -1,15 +1,16 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T162741Z-a5b69dee`.
+Verified 2026-08-22 under task `tsk-20260822T190703Z-661e4ff4`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `b1d69ac6ca9f131016d4188ae80106118d43bae2`; its tree is
-  `34bab7aa9a4de1e68cfd15f047ff8363ffbe7a79`. The governed replay
-  transaction retained PostgreSQL 19 Beta 2 and activated the deterministic
-  authoritative-task projection without transferring read or write authority.
+  `3d61c36e07b039074c3258212a6ab07cdd42097d`; its tree is
+  `7b52ae2ed01059fe1efd2c362097f66c14257594`. The governed release retained
+  PostgreSQL 19 Beta 2 and the deterministic authoritative-task projection,
+  and added immutable certified derivation outcomes without transferring task
+  read or write authority.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -32,6 +33,16 @@ parity remains weaker than the intended Twelve-Factor baseline.
 
 - Successful artifact verification records a digest-bound permit and stores
   immutable content-addressed bytes.
+- Every new derivation permit binds the exact ontology, schema, norm, policy,
+  grant/revocation epoch, agent-charter, interpreter, and evidence-policy
+  roots. The root set participates in the deterministic permit identity.
+  Existing pre-root permits remain readable with null roots; no historical
+  provenance was fabricated.
+- Permits no longer carry mutable execution progress or terminal results.
+  Each execution can append at most one immutable, content-addressed outcome
+  receipt and one `DerivationOutcomeCertified` ledger event with the same
+  roots. The receipt and event commit together, retries refuse, and PostgreSQL
+  rejects permit or receipt updates and deletes.
 - A root-managed `artifact-signer` identity holds the Ed25519 private key. The
   SpruceGoose/Oban executor cannot read or replace it.
 - The signer has no IP network, no CAS write access, no repository, build, or
