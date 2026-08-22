@@ -47,6 +47,12 @@ roadmaps:
               definition_of_done: Read-only checks identify the current Ada failure boundary across the Mama Hermes service, messaging consumer, gateway, and provider authentication; sanitized finding, reproducible regression evidence, and the governing SOP reference are attached; no remediation or credential mutation occurs.
               depends_on: []
               input: {}
+            - id: ada-runtime-model-repair
+              kind: openclaw
+              title: Restore Ada with a supported Codex model
+              definition_of_done: Mama Hermes uses a ChatGPT Codex-supported model; the production gateway is restarted through its governed user service; health, provider authentication, Telegram routing, and a bounded inference smoke test pass; rollback configuration is retained and no credential is exposed or replaced.
+              depends_on: [ada-runtime-diagnosis]
+              input: {}
             - id: constitutive-mutation-lockdown
               kind: openclaw
               title: Lock constitutive hierarchy mutations to repository blueprints
