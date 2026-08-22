@@ -3,10 +3,12 @@ defmodule SpruceGoose.CLIDatabaseTest do
 
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.SopGate
+  alias SpruceGoose.Actors.{Actor, Grant}
 
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
+    BlueprintRevision,
     Definition,
     Dependency,
     Project,
@@ -14,6 +16,160 @@ defmodule SpruceGoose.CLIDatabaseTest do
     Task,
     Workflow
   }
+
+  test "blueprint apply creates a repository-defined project atomically" do
+    previous = Application.get_env(:spruce_goose, :blueprint_source_verifier)
+    Application.put_env(:spruce_goose, :blueprint_source_verifier, __MODULE__.NewProjectVerifier)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:spruce_goose, :blueprint_source_verifier, previous),
+        else: Application.delete_env(:spruce_goose, :blueprint_source_verifier)
+    end)
+
+    actor =
+      Ash.create!(Actor, %{name: "new-project-approver", kind: :agent, created_by: "test"},
+        authorize?: false
+      )
+
+    Ash.create!(
+      Grant,
+      %{actor_id: actor.id, role: :approver, scope: "*", granted_by: "test"},
+      authorize?: false
+    )
+
+    assert {:error, register_error} =
+             Executor.run(
+               {:register_blueprint, "new-project", "root/new-project", String.duplicate("a", 40),
+                ".sprucegoose/project.yaml"},
+               actor.name
+             )
+
+    assert register_error =~ "use blueprint apply to create it"
+    assert Ash.read!(Ash.Query.filter_input(Project, key: "new-project")) == []
+
+    assert {:ok, %{project: "new-project", action: :apply}} =
+             Executor.run(
+               {:apply_blueprint, "new-project", "root/new-project", String.duplicate("a", 40),
+                ".sprucegoose/project.yaml"},
+               actor.name
+             )
+
+    project = Ash.read_one!(Ash.Query.filter_input(Project, key: "new-project"))
+    assert project.name == "New Project"
+    assert [_] = Ash.read!(Ash.Query.filter_input(Roadmap, project_id: project.id))
+    assert [_] = Ash.read!(Ash.Query.filter_input(BlueprintRevision, project_id: project.id))
+  end
+
+  test "a rejected new-project blueprint leaves no constitutive rows" do
+    previous = Application.get_env(:spruce_goose, :blueprint_source_verifier)
+
+    Application.put_env(
+      :spruce_goose,
+      :blueprint_source_verifier,
+      __MODULE__.InvalidNewProjectVerifier
+    )
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:spruce_goose, :blueprint_source_verifier, previous),
+        else: Application.delete_env(:spruce_goose, :blueprint_source_verifier)
+    end)
+
+    actor =
+      Ash.create!(Actor, %{name: "invalid-project-approver", kind: :agent, created_by: "test"},
+        authorize?: false
+      )
+
+    Ash.create!(
+      Grant,
+      %{actor_id: actor.id, role: :approver, scope: "*", granted_by: "test"},
+      authorize?: false
+    )
+
+    assert {:error, error} =
+             Executor.run(
+               {:apply_blueprint, "invalid-project", "root/invalid-project",
+                String.duplicate("a", 40), ".sprucegoose/project.yaml"},
+               actor.name
+             )
+
+    assert inspect(error) =~ "depends on unknown task"
+    assert Ash.read!(Ash.Query.filter_input(Project, key: "invalid-project")) == []
+    assert Ash.read!(BlueprintRevision) == []
+  end
+
+  defmodule NewProjectVerifier do
+    @behaviour SpruceGoose.Blueprints.SourceVerifier
+
+    @impl true
+    def verify(_repository, _commit, _path) do
+      bytes = """
+      schema_version: 1
+      project:
+        key: new-project
+        name: New Project
+      roadmaps:
+        - key: delivery
+          name: Delivery
+          workflows:
+            - id: release-v1
+              name: Release v1
+              definition:
+                schema_version: 1
+                tasks:
+                  - id: verify
+                    kind: oban
+                    title: Verify
+                    definition_of_done: Verification passes
+                    depends_on: []
+                    input: {}
+      """
+
+      {:ok,
+       %{
+         tree: String.duplicate("b", 40),
+         digest: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower),
+         bytes: bytes
+       }}
+    end
+  end
+
+  defmodule InvalidNewProjectVerifier do
+    @behaviour SpruceGoose.Blueprints.SourceVerifier
+
+    @impl true
+    def verify(_repository, _commit, _path) do
+      bytes = """
+      schema_version: 1
+      project:
+        key: invalid-project
+        name: Invalid Project
+      roadmaps:
+        - key: delivery
+          name: Delivery
+          workflows:
+            - id: release-v1
+              name: Release v1
+              definition:
+                schema_version: 1
+                tasks:
+                  - id: verify
+                    kind: oban
+                    title: Verify
+                    definition_of_done: Verification passes
+                    depends_on: [missing]
+                    input: {}
+      """
+
+      {:ok,
+       %{
+         tree: String.duplicate("b", 40),
+         digest: :crypto.hash(:sha256, bytes) |> Base.encode16(case: :lower),
+         bytes: bytes
+       }}
+    end
+  end
 
   test "CLI admits a complete project roadmap workflow DAG task TODO hierarchy" do
     assert {:ok, %{key: "dogfood"} = project} =

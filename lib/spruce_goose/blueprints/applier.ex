@@ -10,22 +10,28 @@ defmodule SpruceGoose.Blueprints.Applier do
 
   def apply(project_id, bytes) when is_binary(bytes) do
     with {:ok, manifest} <- parse(bytes),
+         {:ok, project_spec} <- project_spec(manifest),
          {:ok, project} <- Authz.read_one(Project, id: project_id),
-         :ok <- matching_project(manifest, project),
+         :ok <- matching_project(project_spec, project),
          {:ok, normalized} <- normalize(manifest) do
       # AUTHORIZATION: the enclosing BlueprintRevision :apply action requires an
       # approver; every nested hierarchy read/write still runs through Authz.
-      case SpruceGoose.Repo.transaction(fn -> materialize(project, normalized) end) do
+      case SpruceGoose.Repo.transaction(fn -> materialize(project, project_spec, normalized) end) do
         {:ok, :ok} -> :ok
         {:error, error} -> {:error, error_message(error)}
       end
     end
   end
 
+  def project(bytes) when is_binary(bytes) do
+    with {:ok, manifest} <- parse(bytes), do: project_spec(manifest)
+  end
+
   def task_definition(project_key, workflow_id, definition_key, bytes)
       when is_binary(project_key) and is_binary(bytes) do
     with {:ok, manifest} <- parse(bytes),
-         :ok <- matching_project(manifest, %{key: project_key}),
+         {:ok, project_spec} <- project_spec(manifest),
+         :ok <- matching_project(project_spec, %{key: project_key}),
          {:ok, roadmaps} <- normalize(manifest),
          %{} = workflow <-
            roadmaps
@@ -50,11 +56,26 @@ defmodule SpruceGoose.Blueprints.Applier do
     end
   end
 
-  defp matching_project(%{"schema_version" => 1, "project" => key}, %{key: key}), do: :ok
+  defp project_spec(%{"schema_version" => 1, "project" => key}) when is_binary(key),
+    do: {:ok, %{key: key, name: nil}}
 
-  defp matching_project(%{"schema_version" => version}, _),
+  defp project_spec(%{
+         "schema_version" => 1,
+         "project" => %{"key" => key, "name" => name} = project
+       }) do
+    with :ok <- exact_keys(project, ~w(key name), "project"),
+         {:ok, key} <- identifier(key, "project key"),
+         {:ok, name} <- name(name, "project name") do
+      {:ok, %{key: key, name: name}}
+    end
+  end
+
+  defp project_spec(%{"schema_version" => version}),
     do: {:error, "unsupported blueprint schema version #{inspect(version)}"}
 
+  defp project_spec(_), do: {:error, "blueprint project is invalid"}
+
+  defp matching_project(%{key: key}, %{key: key}), do: :ok
   defp matching_project(_, _), do: {:error, "blueprint project does not match the target project"}
 
   defp normalize(manifest) do
@@ -101,7 +122,21 @@ defmodule SpruceGoose.Blueprints.Applier do
 
   defp normalize_workflow(_), do: {:error, "workflow must be a mapping"}
 
-  defp materialize(project, roadmaps) do
+  defp materialize(project, project_spec, roadmaps) do
+    with {:ok, project} <- update_project(project, project_spec) do
+      materialize_roadmaps(project, roadmaps)
+    else
+      {:error, error} -> SpruceGoose.Repo.rollback(error)
+    end
+  end
+
+  defp update_project(project, %{name: nil}), do: {:ok, project}
+
+  defp update_project(project, %{name: name}) do
+    Authz.update(project, %{name: name}, action: :apply_blueprint_revision)
+  end
+
+  defp materialize_roadmaps(project, roadmaps) do
     Enum.reduce_while(roadmaps, :ok, fn spec, :ok ->
       with {:ok, roadmap} <- upsert_roadmap(project, spec),
            :ok <- materialize_workflows(roadmap, spec.workflows) do
@@ -115,7 +150,7 @@ defmodule SpruceGoose.Blueprints.Applier do
   defp upsert_roadmap(project, spec) do
     case Authz.read_one(Roadmap, project_id: project.id, key: spec.key) do
       {:ok, roadmap} ->
-        Authz.update(roadmap, %{name: spec.name}, action: :revise)
+        Authz.update(roadmap, %{name: spec.name}, action: :apply_blueprint_revision)
 
       {:error, "not found"} ->
         Authz.create(Roadmap, %{project_id: project.id, key: spec.key, name: spec.name},
@@ -133,7 +168,7 @@ defmodule SpruceGoose.Blueprints.Applier do
         case Authz.read_one(Workflow, roadmap_id: roadmap.id, workflow_id: spec.workflow_id) do
           {:ok, workflow} ->
             Authz.update(workflow, %{name: spec.name, definition: spec.definition},
-              action: :revise
+              action: :apply_blueprint_revision
             )
 
           {:error, "not found"} ->

@@ -5,6 +5,7 @@ defmodule SpruceGoose.Workflows.Roadmap do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
+  alias SpruceGoose.Workflows.ConstitutiveMutation
 
   postgres do
     table("roadmaps")
@@ -21,6 +22,10 @@ defmodule SpruceGoose.Workflows.Roadmap do
     end
 
     policy action(:apply_blueprint) do
+      authorize_if(HasRole.approver())
+    end
+
+    policy action(:apply_blueprint_revision) do
       authorize_if(HasRole.approver())
     end
 
@@ -57,8 +62,10 @@ defmodule SpruceGoose.Workflows.Roadmap do
     defaults([:read])
 
     update :rename do
+      require_atomic?(false)
       accept([:name])
       change(optimistic_lock(:lock_version))
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     # Identical to :rename today, because the row is only key + name — a
@@ -67,17 +74,27 @@ defmodule SpruceGoose.Workflows.Roadmap do
     # so the audit trail distinguishes a signed-off revision from a rename.
     # `key` is excluded on purpose: the vault references roadmaps by key.
     update :revise do
+      require_atomic?(false)
+      accept([:name])
+      change(optimistic_lock(:lock_version))
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
+    end
+
+    update :apply_blueprint_revision do
       accept([:name])
       change(optimistic_lock(:lock_version))
     end
 
     destroy :destroy do
       primary?(true)
+      require_atomic?(false)
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     create :create do
       primary?(true)
       accept([:project_id, :key, :name])
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     create :apply_blueprint do

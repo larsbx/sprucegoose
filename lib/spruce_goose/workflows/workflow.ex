@@ -5,7 +5,7 @@ defmodule SpruceGoose.Workflows.Workflow do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
-  alias SpruceGoose.Workflows.Definition
+  alias SpruceGoose.Workflows.{ConstitutiveMutation, Definition}
 
   postgres do
     table("workflows")
@@ -30,6 +30,10 @@ defmodule SpruceGoose.Workflows.Workflow do
     end
 
     policy action(:apply_blueprint) do
+      authorize_if(HasRole.approver())
+    end
+
+    policy action(:apply_blueprint_revision) do
       authorize_if(HasRole.approver())
     end
   end
@@ -59,6 +63,7 @@ defmodule SpruceGoose.Workflows.Workflow do
     create :create do
       primary?(true)
       accept([:roadmap_id, :workflow_id, :name, :definition])
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     create :apply_blueprint do
@@ -66,8 +71,10 @@ defmodule SpruceGoose.Workflows.Workflow do
     end
 
     update :replace_definition do
+      require_atomic?(false)
       accept([:definition])
       change(optimistic_lock(:lock_version))
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     # The governed-revision entry point: one action so a signed-off revision
@@ -75,17 +82,28 @@ defmodule SpruceGoose.Workflows.Workflow do
     # two, which would leave a window where only half the revision had landed.
     # `workflow_id` is excluded on purpose: the vault references workflows by it.
     update :revise do
+      require_atomic?(false)
+      accept([:name, :definition])
+      change(optimistic_lock(:lock_version))
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
+    end
+
+    update :apply_blueprint_revision do
       accept([:name, :definition])
       change(optimistic_lock(:lock_version))
     end
 
     update :rename do
+      require_atomic?(false)
       accept([:name])
       change(optimistic_lock(:lock_version))
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     destroy :destroy do
       primary?(true)
+      require_atomic?(false)
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
   end
 

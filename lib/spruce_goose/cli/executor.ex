@@ -6,6 +6,7 @@ defmodule SpruceGoose.CLI.Executor do
 
   alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
   alias SpruceGoose.CLI.Command
+  alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
   alias SpruceGoose.Derivations.{Executor, Permit}
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
@@ -900,19 +901,32 @@ defmodule SpruceGoose.CLI.Executor do
   end
 
   defp create_blueprint_revision(project_key, repository, commit, path, action) do
-    with {:ok, project} <- read_one(Project, key: project_key),
-         {:ok, revision} <-
-           Authz.create(
-             BlueprintRevision,
-             %{
-               project_id: project.id,
-               repository: repository,
-               source_commit: commit,
-               source_path: path,
-               schema_version: 1
-             },
-             action: action
-           ) do
+    with {:ok, %{bytes: bytes}} <- SourceVerifier.verify(repository, commit, path),
+         {:ok, %{key: ^project_key} = project_spec} <- Applier.project(bytes),
+         # AUTHORIZATION: every write in this transaction uses the actor-bound Authz surface.
+         {:ok, {_project, revision, notifications}} <-
+           Repo.transaction(fn ->
+             with {:ok, project, project_notifications} <-
+                    ensure_blueprint_project(project_spec, action),
+                  {:ok, revision, revision_notifications} <-
+                    Authz.create_with_notifications(
+                      BlueprintRevision,
+                      %{
+                        project_id: project.id,
+                        repository: repository,
+                        source_commit: commit,
+                        source_path: path,
+                        schema_version: 1
+                      },
+                      action: action
+                    ) do
+               {project, revision, project_notifications ++ revision_notifications}
+             else
+               {:error, error} -> Repo.rollback(error)
+             end
+           end) do
+      Ash.Notifier.notify(notifications)
+
       {:ok,
        %{
          id: revision.revision_id,
@@ -925,6 +939,40 @@ defmodule SpruceGoose.CLI.Executor do
          schema_version: revision.schema_version,
          action: action
        }}
+    else
+      {:ok, %{key: other}} ->
+        {:error, "blueprint project #{other} does not match the requested project #{project_key}"}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp ensure_blueprint_project(%{key: key, name: name}, action) do
+    case read_one(Project, key: key) do
+      {:ok, project} when action == :apply and is_binary(name) ->
+        Authz.update(project, %{name: name},
+          action: :apply_blueprint_revision,
+          return_notifications?: true
+        )
+
+      {:ok, project} ->
+        {:ok, project, []}
+
+      {:error, "not found"} when action == :apply and is_binary(name) ->
+        Authz.create_with_notifications(Project, %{key: key, name: name},
+          action: :apply_blueprint
+        )
+
+      {:error, "not found"} when action == :register ->
+        {:error,
+         "blueprint register requires an existing project; use blueprint apply to create it"}
+
+      {:error, "not found"} ->
+        {:error, "new project blueprints must define project key and name"}
+
+      error ->
+        error
     end
   end
 
