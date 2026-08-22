@@ -1,15 +1,15 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T075231Z-2110e90b`.
+Verified 2026-08-22 under task `tsk-20260822T083721Z-54fe7069`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `abcedacaaf1e6332aea547ba96aa83e6e2e1d1de`; its tree is
-  `ca361b455790a48cadf60a1309faa582d73f9ce8`. The governed
-  `constitutional-vertical-slice-20260822` transaction retained PostgreSQL 19
-  Beta 2 and activated the typed constitutional authorization path.
+  `c3e9af17bd31448a80be5cb12a8617ac7f1e2e3c`; its tree is
+  `b332149fb7a8f1eb1b4b71cd05d2bf2e586a82bc`. The governed
+  `certified-event-ledger-shadow-20260822` transaction retained PostgreSQL 19
+  Beta 2 and activated the certified ledger in empty shadow mode.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -71,11 +71,20 @@ stale or expired grants, insufficient authority, conflicts, omitted input
 identity, and unauthorized effects. The only licensed action in this slice is
 `verify_artifact`; the path stores no command and cannot execute an effect.
 
-These seams are not a production historical-authority cutover. The certified PostgreSQL
-EventLedger, shadow-append observation window, deterministic projection
-rebuild, dual-read parity, rollback proof, and direct-projection-write refusal
-remain required. Jimbo is excluded from the first cutover wave. A bounded
-non-Jimbo project will canary first, and `openclaw-system` will move last.
+The deployed PostgreSQL EventLedger now appends immutable, per-stream ordered
+certified events with exact content identities, required constitutional roots,
+and conflict-safe idempotency. Database constraints recheck identities and
+required roots, and a trigger refuses updates and deletes. Its recovery,
+separate-session concurrency, retry, and conflict behavior has passed. The
+production ledger intentionally contains no events yet: no historical roots
+were invented and mutable workflow rows remain authority.
+
+This is not a production historical-authority cutover. A governed
+`GrandfatheredStateAccepted` baseline, the shadow-append observation window,
+deterministic projection rebuild, dual-read parity, rollback proof, and
+direct-projection-write refusal remain required. Jimbo is excluded from the
+first cutover wave. A bounded non-Jimbo project will canary first, and
+`openclaw-system` will move last.
 
 ## Repository documentation policy
 
