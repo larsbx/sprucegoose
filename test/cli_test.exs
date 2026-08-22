@@ -74,6 +74,22 @@ defmodule SpruceGoose.CLITest do
                "refs/heads/staging",
                "--pipeline-digest",
                String.duplicate("c", 64),
+               "--ontology-root",
+               "sha256:" <> digest,
+               "--schema-root",
+               "sha256:" <> digest,
+               "--norm-root",
+               "sha256:" <> digest,
+               "--policy-root",
+               "sha256:" <> digest,
+               "--grant-epoch-root",
+               "sha256:" <> digest,
+               "--agent-charter-root",
+               "sha256:" <> digest,
+               "--interpreter-root",
+               "sha256:" <> digest,
+               "--evidence-policy-root",
+               "sha256:" <> digest,
                "--action",
                "verify_artifact",
                "--input-artifact",
@@ -82,6 +98,7 @@ defmodule SpruceGoose.CLITest do
 
     assert attrs.action == :verify_artifact
     assert attrs.input_artifact_digest == digest
+    assert attrs.roots["grant_epoch"] == "sha256:" <> digest
 
     assert {:ok, {:show_derivation, "drv-abc"}} =
              Command.parse(["derivation", "show", "drv-abc"])

@@ -14,7 +14,7 @@ defmodule SpruceGoose.Actors.Scope do
   require Ash.Query
 
   alias SpruceGoose.Actors.{Actor, Grant}
-  alias SpruceGoose.Derivations.Permit
+  alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
   alias SpruceGoose.Repo
 
   alias SpruceGoose.Workflows.{
@@ -109,6 +109,14 @@ defmodule SpruceGoose.Actors.Scope do
     JOIN roadmaps r ON r.id = w.roadmap_id
     JOIN projects p ON p.id = r.project_id
     WHERE dp.id = $1
+    """,
+    OutcomeReceipt => """
+    SELECT p.key FROM derivation_outcome_receipts dor
+    JOIN workflow_tasks t ON t.id = dor.task_id
+    JOIN workflows w ON w.id = t.workflow_id
+    JOIN roadmaps r ON r.id = w.roadmap_id
+    JOIN projects p ON p.id = r.project_id
+    WHERE dor.id = $1
     """
   }
 
@@ -124,7 +132,8 @@ defmodule SpruceGoose.Actors.Scope do
     SavedFilter => {:board_id, Board},
     Todo => {:task_id, Task},
     BlueprintRevision => {:project_id, Project},
-    Permit => {:task_id, Task}
+    Permit => {:task_id, Task},
+    OutcomeReceipt => {:task_id, Task}
   }
 
   # The relationship path from each resource to the owning project key, used to
@@ -142,7 +151,8 @@ defmodule SpruceGoose.Actors.Scope do
     TodoDependency => [:successor, :task, :workflow, :roadmap, :project, :key],
     Revision => [:project_key],
     BlueprintRevision => [:project, :key],
-    Permit => [:task, :workflow, :roadmap, :project, :key]
+    Permit => [:task, :workflow, :roadmap, :project, :key],
+    OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key]
   }
 
   @doc """

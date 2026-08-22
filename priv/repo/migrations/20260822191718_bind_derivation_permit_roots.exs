@@ -13,9 +13,26 @@ defmodule SpruceGoose.Repo.Migrations.BindDerivationPermitRoots do
       # unmodified; the Ash admission action requires roots for every new row.
       add(:roots, :map, null: true)
     end
+
+    execute("""
+    CREATE FUNCTION refuse_derivation_permit_mutation() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'derivation permits are immutable';
+    END;
+    $$ LANGUAGE plpgsql
+    """)
+
+    execute("""
+    CREATE TRIGGER derivation_permits_immutable
+    BEFORE UPDATE OR DELETE ON derivation_permits
+    FOR EACH ROW EXECUTE FUNCTION refuse_derivation_permit_mutation()
+    """)
   end
 
   def down do
+    execute("DROP TRIGGER IF EXISTS derivation_permits_immutable ON derivation_permits")
+    execute("DROP FUNCTION IF EXISTS refuse_derivation_permit_mutation()")
+
     alter table(:derivation_permits) do
       remove(:roots)
     end

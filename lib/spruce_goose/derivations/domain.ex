@@ -9,5 +9,6 @@ defmodule SpruceGoose.Derivations.Domain do
 
   resources do
     resource(SpruceGoose.Derivations.Permit)
+    resource(SpruceGoose.Derivations.OutcomeReceipt)
   end
 end
