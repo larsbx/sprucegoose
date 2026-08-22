@@ -196,7 +196,8 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
 
   defp outbox_event_key(_result), do: nil
 
-  defp roots do
+  @doc "Return the exact reviewed constitutional roots used by production certified events."
+  def roots do
     bytes =
       case Application.fetch_env(:spruce_goose, :shadow_event_policy_path) do
         {:ok, path} -> File.read(path)
