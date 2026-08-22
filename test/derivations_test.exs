@@ -161,6 +161,57 @@ defmodule SpruceGoose.DerivationsTest do
              })
   end
 
+  @tag :separate_sessions
+  test "concurrent execution converges on one immutable receipt and certified event" do
+    task = in_progress_task("concurrent-executor")
+    operator = actor_with_role("operator-concurrent-executor", :operator)
+    executor = actor_with_role("executor-concurrent-executor", :derivation_executor)
+
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
+    on_exit(fn ->
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: SuccessfulHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    parent = self()
+
+    jobs =
+      for _index <- 1..8 do
+        Elixir.Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(SpruceGoose.Repo, parent, self())
+          Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+        end)
+      end
+
+    results = Elixir.Task.await_many(jobs, 15_000)
+
+    assert Enum.count(results, &(&1 == :ok)) == 1
+
+    assert Enum.count(
+             results,
+             &(&1 == {:discard, "derivation already has a terminal receipt"})
+           ) == 7
+
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+
+    assert %{rows: [[1]]} =
+             SpruceGoose.Repo.query!(
+               "SELECT count(*) FROM derivation_outcome_receipts WHERE permit_id = $1",
+               [permit.permit_id]
+             )
+
+    assert {:ok, [_event]} =
+             EventLedger.read(EventLedger.new(), "derivation:" <> permit.permit_id)
+  end
+
   test "the bounded executor fails closed when an action has no configured handler" do
     task = in_progress_task("missing-handler")
     operator = actor_with_role("operator-missing-handler", :operator)
