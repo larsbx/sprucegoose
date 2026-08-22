@@ -20,6 +20,8 @@ defmodule SpruceGoose.Derivations.Permit do
   @hex64 ~r/\A[0-9a-f]{64}\z/
   @repository ~r/\A[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\z/
   @ref ~r/\Arefs\/(heads|tags)\/[A-Za-z0-9._\/-]+\z/
+  @required_roots ~w(ontology schema norm policy grant_epoch agent_charter interpreter evidence_policy)
+  @root ~r/\Asha256:[0-9a-f]{64}\z/
 
   postgres do
     table("derivation_permits")
@@ -43,10 +45,6 @@ defmodule SpruceGoose.Derivations.Permit do
     policy action(:admit) do
       authorize_if(HasRole.operator())
     end
-
-    policy action([:claim, :succeed, :fail]) do
-      authorize_if(HasRole.derivation_executor())
-    end
   end
 
   attributes do
@@ -59,6 +57,7 @@ defmodule SpruceGoose.Derivations.Permit do
     attribute(:tree_sha, :string, allow_nil?: false, public?: true)
     attribute(:ref, :string, allow_nil?: false, public?: true)
     attribute(:pipeline_digest, :string, allow_nil?: false, public?: true)
+    attribute(:roots, :map, allow_nil?: false, public?: true)
     attribute(:input_artifact_digest, :string, public?: true)
 
     attribute(:action, :atom,
@@ -106,11 +105,13 @@ defmodule SpruceGoose.Derivations.Permit do
         :tree_sha,
         :ref,
         :pipeline_digest,
+        :roots,
         :input_artifact_digest,
         :action
       ])
 
       validate(fn changeset, _context -> validate_source(changeset) end)
+      validate(fn changeset, _context -> validate_roots(changeset) end)
       validate(fn changeset, _context -> validate_action_input(changeset) end)
       validate(fn changeset, _context -> validate_task(changeset) end)
 
@@ -120,64 +121,6 @@ defmodule SpruceGoose.Derivations.Permit do
           :permit_id,
           deterministic_id(changeset.attributes)
         )
-      end)
-    end
-
-    update :claim do
-      require_atomic?(false)
-      accept([])
-      argument(:executor_id, :string, allow_nil?: false)
-      validate(fn changeset, _context -> require_state(changeset, :admitted) end)
-
-      change(fn changeset, _context ->
-        changeset
-        |> Ash.Changeset.change_attribute(
-          :executor_id,
-          Ash.Changeset.get_argument(changeset, :executor_id)
-        )
-        |> Ash.Changeset.change_attribute(:state, :claimed)
-        |> Ash.Changeset.change_attribute(:claimed_at, DateTime.utc_now())
-      end)
-    end
-
-    update :succeed do
-      require_atomic?(false)
-      accept([])
-      argument(:evidence_digest, :string, allow_nil?: false)
-      argument(:artifact_digest, :string)
-      validate(fn changeset, _context -> require_state(changeset, :claimed) end)
-      validate(fn changeset, _context -> validate_success(changeset) end)
-
-      change(fn changeset, _context ->
-        changeset
-        |> Ash.Changeset.change_attribute(
-          :evidence_digest,
-          Ash.Changeset.get_argument(changeset, :evidence_digest)
-        )
-        |> Ash.Changeset.change_attribute(
-          :artifact_digest,
-          Ash.Changeset.get_argument(changeset, :artifact_digest)
-        )
-        |> Ash.Changeset.change_attribute(:state, :succeeded)
-        |> Ash.Changeset.change_attribute(:completed_at, DateTime.utc_now())
-      end)
-    end
-
-    update :fail do
-      require_atomic?(false)
-      accept([])
-      argument(:failure_reason, :string, allow_nil?: false)
-      validate(fn changeset, _context -> require_state(changeset, :claimed) end)
-      validate(fn changeset, _context -> non_blank_argument(changeset, :failure_reason) end)
-
-      change(fn changeset, _context ->
-        changeset
-        |> Ash.Changeset.change_attribute(
-          :failure_reason,
-          Ash.Changeset.get_argument(changeset, :failure_reason)
-        )
-        |> Ash.Changeset.change_attribute(:state, :failed)
-        |> Ash.Changeset.change_attribute(:completed_at, DateTime.utc_now())
       end)
     end
   end
@@ -199,6 +142,7 @@ defmodule SpruceGoose.Derivations.Permit do
         value(attrs, :tree_sha),
         value(attrs, :ref),
         value(attrs, :pipeline_digest),
+        canonical_roots(value(attrs, :roots)),
         value(attrs, :input_artifact_digest),
         value(attrs, :action)
       ]
@@ -240,6 +184,22 @@ defmodule SpruceGoose.Derivations.Permit do
     end
   end
 
+  defp validate_roots(changeset) do
+    roots = Ash.Changeset.get_attribute(changeset, :roots)
+
+    if is_map(roots) and not is_struct(roots) and
+         Map.keys(roots) |> Enum.sort() == Enum.sort(@required_roots) and
+         Enum.all?(roots, fn {_name, value} -> is_binary(value) and Regex.match?(@root, value) end),
+       do: :ok,
+       else: {:error, field: :roots, message: "must contain the exact constitutional root set"}
+  end
+
+  defp canonical_roots(roots) when is_map(roots) do
+    Enum.map_join(@required_roots, "\n", &Map.get(roots, &1, ""))
+  end
+
+  defp canonical_roots(_roots), do: ""
+
   defp validate_action_input(changeset) do
     action = Ash.Changeset.get_attribute(changeset, :action)
     digest = Ash.Changeset.get_attribute(changeset, :input_artifact_digest)
@@ -254,38 +214,6 @@ defmodule SpruceGoose.Derivations.Permit do
       true ->
         :ok
     end
-  end
-
-  defp require_state(changeset, expected) do
-    if changeset.data.state == expected,
-      do: :ok,
-      else: {:error, field: :state, message: "must be #{expected}, got #{changeset.data.state}"}
-  end
-
-  defp validate_success(changeset) do
-    evidence = Ash.Changeset.get_argument(changeset, :evidence_digest)
-    artifact = Ash.Changeset.get_argument(changeset, :artifact_digest)
-
-    cond do
-      not (is_binary(evidence) and Regex.match?(@hex64, evidence)) ->
-        {:error, field: :evidence_digest, message: "is invalid"}
-
-      changeset.data.action == :build_release and
-          not (is_binary(artifact) and Regex.match?(@hex64, artifact)) ->
-        {:error, field: :artifact_digest, message: "is required for build_release"}
-
-      not is_nil(artifact) and not (is_binary(artifact) and Regex.match?(@hex64, artifact)) ->
-        {:error, field: :artifact_digest, message: "is invalid"}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp non_blank_argument(changeset, name) do
-    if non_blank?(Ash.Changeset.get_argument(changeset, name)),
-      do: :ok,
-      else: {:error, field: name, message: "must not be blank"}
   end
 
   defp non_blank?(value), do: is_binary(value) and String.trim(value) != ""

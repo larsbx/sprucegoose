@@ -105,7 +105,7 @@ defmodule SpruceGoose.CLI.Command do
     {"outbox", ["failed", "replay EVENT_ID"]},
     {"derivation",
      [
-       "admit --task ID --source-event ID --forge-instance ID --repository OWNER/REPO --commit OID --tree OID --ref REF --pipeline-digest SHA256 --action test|build_release|verify_artifact [--input-artifact SHA256]",
+       "admit --task ID --source-event ID --forge-instance ID --repository OWNER/REPO --commit OID --tree OID --ref REF --pipeline-digest SHA256 --ontology-root CID --schema-root CID --norm-root CID --policy-root CID --grant-epoch-root CID --agent-charter-root CID --interpreter-root CID --evidence-policy-root CID --action test|build_release|verify_artifact [--input-artifact SHA256]",
        "show PERMIT_ID"
      ]},
     {"release",
@@ -505,13 +505,21 @@ defmodule SpruceGoose.CLI.Command do
           tree: :string,
           ref: :string,
           pipeline_digest: :string,
+          ontology_root: :string,
+          schema_root: :string,
+          norm_root: :string,
+          policy_root: :string,
+          grant_epoch_root: :string,
+          agent_charter_root: :string,
+          interpreter_root: :string,
+          evidence_policy_root: :string,
           action: :string,
           input_artifact: :string
         ]
       )
 
     required =
-      ~w(task source_event forge_instance repository commit tree ref pipeline_digest action)a
+      ~w(task source_event forge_instance repository commit tree ref pipeline_digest ontology_root schema_root norm_root policy_root grant_epoch_root agent_charter_root interpreter_root evidence_policy_root action)a
 
     with [] <- rest,
          [] <- invalid,
@@ -528,6 +536,13 @@ defmodule SpruceGoose.CLI.Command do
           tree_sha: Keyword.fetch!(opts, :tree),
           ref: Keyword.fetch!(opts, :ref),
           pipeline_digest: Keyword.fetch!(opts, :pipeline_digest),
+          roots:
+            Map.new(
+              ~w(ontology schema norm policy grant_epoch agent_charter interpreter evidence_policy),
+              fn name ->
+                {name, Keyword.fetch!(opts, String.to_existing_atom(name <> "_root"))}
+              end
+            ),
           input_artifact_digest: Keyword.get(opts, :input_artifact),
           action: action
         }}}

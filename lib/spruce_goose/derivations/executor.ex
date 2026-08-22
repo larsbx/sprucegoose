@@ -16,8 +16,10 @@ defmodule SpruceGoose.Derivations.Executor do
 
   alias SpruceGoose.Actors.Actor
   alias SpruceGoose.Authz
-  alias SpruceGoose.Derivations.Permit
-  alias SpruceGoose.Kernel.ShadowEvents
+  alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
+  alias SpruceGoose.Kernel.{Canonical, CertifiedEvent, ContentID}
+  alias SpruceGoose.Kernel.Postgres.EventLedger
+  alias SpruceGoose.Repo
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"permit_id" => permit_id}} = job)
@@ -32,25 +34,37 @@ defmodule SpruceGoose.Derivations.Executor do
   def perform(%Oban.Job{}), do: {:discard, "expected exactly one permit_id"}
 
   defp execute(permit_id, executor_id) do
-    with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
-         {:ok, claimed} <- shadow_update(permit, %{executor_id: executor_id}, :claim) do
-      run_handler(claimed)
-    else
+    # AUTHORIZATION: executor_actor/0 resolved an active derivation_executor before this transaction.
+    case Repo.transaction(fn -> execute_locked(permit_id, executor_id) end) do
+      {:ok, result} -> result
       {:error, reason} -> {:discard, message(reason)}
     end
   end
 
-  defp run_handler(permit) do
-    case handler_for(permit.action) do
-      {:ok, handler} ->
-        invoke_handler(handler, permit)
+  defp execute_locked(permit_id, executor_id) do
+    # AUTHORIZATION: the actor-bound executor serializes only the immutable permit it was asked to run.
+    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [permit_id])
 
-      {:error, reason} ->
-        fail(permit, reason)
+    with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
+         {:ok, nil} <- existing_receipt(permit_id) do
+      run_handler(permit, executor_id)
+    else
+      {:ok, %OutcomeReceipt{}} -> Repo.rollback("derivation already has a terminal receipt")
+      {:error, reason} -> Repo.rollback(reason)
     end
   end
 
-  defp invoke_handler(handler, permit) do
+  defp run_handler(permit, executor_id) do
+    case handler_for(permit.action) do
+      {:ok, handler} ->
+        invoke_handler(handler, permit, executor_id)
+
+      {:error, reason} ->
+        record_failure(permit, executor_id, reason)
+    end
+  end
+
+  defp invoke_handler(handler, permit, executor_id) do
     result =
       try do
         handler.run(permit)
@@ -62,35 +76,92 @@ defmodule SpruceGoose.Derivations.Executor do
 
     case result do
       {:ok, %{evidence_digest: evidence} = outcome} ->
-        input = %{
+        record_outcome(permit, %{
+          executor_id: executor_id,
+          outcome: :succeeded,
           evidence_digest: evidence,
           artifact_digest: Map.get(outcome, :artifact_digest)
-        }
-
-        case shadow_update(permit, input, :succeed) do
-          {:ok, _completed} -> :ok
-          {:error, reason} -> {:discard, message(reason)}
-        end
+        })
 
       {:error, reason} ->
-        fail(permit, message(reason))
+        record_failure(permit, executor_id, message(reason))
 
       other ->
-        fail(permit, "handler returned malformed outcome: #{inspect(other)}")
+        record_failure(
+          permit,
+          executor_id,
+          "handler returned malformed outcome: #{inspect(other)}"
+        )
     end
   end
 
-  defp fail(permit, reason) do
-    case shadow_update(permit, %{failure_reason: reason}, :fail) do
-      {:ok, _failed} -> {:discard, reason}
-      {:error, error} -> {:discard, message(error)}
+  defp record_failure(permit, executor_id, reason) do
+    case record_outcome(permit, %{
+           executor_id: executor_id,
+           outcome: :failed,
+           failure_reason: reason
+         }) do
+      :ok -> {:discard, reason}
+      other -> other
     end
   end
 
-  defp shadow_update(permit, input, action) do
-    ShadowEvents.transaction({:derivation_transition, permit.permit_id, action}, fn ->
-      Authz.update(permit, input, action: action)
-    end)
+  defp record_outcome(permit, attrs) do
+    payload = %{
+      "permit_id" => permit.permit_id,
+      "executor_id" => attrs.executor_id,
+      "outcome" => to_string(attrs.outcome),
+      "evidence_digest" => Map.get(attrs, :evidence_digest),
+      "artifact_digest" => Map.get(attrs, :artifact_digest),
+      "failure_reason" => Map.get(attrs, :failure_reason),
+      "roots" => permit.roots
+    }
+
+    with {:ok, bytes} <- Canonical.encode(payload),
+         {:ok, %ContentID{digest: digest}} <- ContentID.derive(:sha256, bytes),
+         receipt_attrs <-
+           attrs
+           |> Map.put(:task_id, permit.task_id)
+           |> Map.put(:permit_id, permit.permit_id)
+           |> Map.put(:roots, permit.roots)
+           |> Map.put(:receipt_id, "drr-" <> digest),
+         {:ok, receipt, _notifications} <-
+           Authz.create_with_notifications(OutcomeReceipt, receipt_attrs, action: :record),
+         {:ok, event} <- certified_event(receipt),
+         {:ok, _identity, _ledger} <- EventLedger.append(EventLedger.new(), event) do
+      :ok
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp certified_event(receipt) do
+    CertifiedEvent.new(%{
+      stream: "derivation:" <> receipt.permit_id,
+      event_type: "DerivationOutcomeCertified",
+      idempotency_key: receipt.receipt_id,
+      payload: %{
+        "receipt_id" => receipt.receipt_id,
+        "permit_id" => receipt.permit_id,
+        "executor_id" => receipt.executor_id,
+        "outcome" => to_string(receipt.outcome),
+        "evidence_digest" => receipt.evidence_digest,
+        "artifact_digest" => receipt.artifact_digest,
+        "failure_reason" => receipt.failure_reason
+      },
+      roots: receipt.roots
+    })
+  end
+
+  defp existing_receipt(permit_id) do
+    OutcomeReceipt
+    |> Ash.Query.filter_input(permit_id: permit_id)
+    |> Authz.read()
+    |> case do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [receipt]} -> {:ok, receipt}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp handler_for(action) do

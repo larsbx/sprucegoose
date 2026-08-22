@@ -4,13 +4,17 @@ defmodule SpruceGoose.DerivationsTest do
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Authz
   alias SpruceGoose.CLI.Executor, as: CLIExecutor
-  alias SpruceGoose.Derivations.{Domain, Executor, Permit}
+  alias SpruceGoose.Derivations.{Domain, Executor, OutcomeReceipt, Permit}
   alias SpruceGoose.Kernel.Postgres.EventLedger
   alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
 
   @commit String.duplicate("a", 40)
   @tree String.duplicate("b", 40)
   @pipeline String.duplicate("c", 64)
+  @roots Map.new(
+           ~w(ontology schema norm policy grant_epoch agent_charter interpreter evidence_policy),
+           &{&1, "sha256:" <> String.duplicate("e", 64)}
+         )
 
   defmodule SuccessfulHandler do
     def run(%Permit{action: :test}) do
@@ -23,7 +27,7 @@ defmodule SpruceGoose.DerivationsTest do
   end
 
   test "the domain exposes one typed authority resource" do
-    assert Ash.Domain.Info.resources(Domain) == [Permit]
+    assert Ash.Domain.Info.resources(Domain) == [Permit, OutcomeReceipt]
   end
 
   test "an operator admits one deterministic permit for an in-progress governed task" do
@@ -70,45 +74,43 @@ defmodule SpruceGoose.DerivationsTest do
              as_actor(executor, fn -> Authz.create(Permit, attrs, action: :admit) end)
   end
 
-  test "only a derivation executor may claim and record a typed terminal outcome" do
+  test "permit identity binds the complete constitutional root set" do
+    task = in_progress_task("roots")
+    operator = actor_with_role("operator-roots", :operator)
+    attrs = permit_attrs(task)
+
+    assert {:error, missing} =
+             as_actor(operator, fn ->
+               Authz.create(Permit, Map.delete(attrs, :roots), action: :admit)
+             end)
+
+    assert Exception.message(missing) =~ "roots"
+
+    assert {:ok, permit} =
+             as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
+
+    substituted = put_in(attrs, [:roots, "policy"], "sha256:" <> String.duplicate("f", 64))
+    refute Permit.deterministic_id(substituted) == permit.permit_id
+  end
+
+  test "permit authority is immutable after admission" do
     task = in_progress_task("outcome")
     operator = actor_with_role("operator-outcome", :operator)
-    executor = actor_with_role("executor-outcome", :derivation_executor)
     attrs = permit_attrs(task)
 
     {:ok, permit} = as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
 
-    assert {:error, _} =
-             as_actor(operator, fn ->
-               Authz.update(permit, %{executor_id: "bounded-executor-v1"}, action: :claim)
-             end)
+    assert is_nil(Ash.Resource.Info.action(Permit, :claim))
+    assert is_nil(Ash.Resource.Info.action(Permit, :succeed))
+    assert is_nil(Ash.Resource.Info.action(Permit, :fail))
 
-    assert {:error, error} =
-             as_actor(executor, fn ->
-               Authz.update(permit, %{evidence_digest: @pipeline}, action: :succeed)
-             end)
-
-    assert Exception.message(error) =~ "claimed"
-
-    assert {:ok, claimed} =
-             as_actor(executor, fn ->
-               Authz.update(permit, %{executor_id: "bounded-executor-v1"}, action: :claim)
-             end)
-
-    assert claimed.state == :claimed
-
-    assert {:ok, succeeded} =
-             as_actor(executor, fn ->
-               Authz.update(claimed, %{evidence_digest: @pipeline}, action: :succeed)
-             end)
-
-    assert succeeded.state == :succeeded
-    assert succeeded.evidence_digest == @pipeline
-
-    assert {:error, _} =
-             as_actor(executor, fn ->
-               Authz.update(succeeded, %{failure_reason: "late rewrite"}, action: :fail)
-             end)
+    assert {:error, %Postgrex.Error{postgres: %{message: "derivation permits are immutable"}}} =
+             Ecto.Adapters.SQL.query(
+               SpruceGoose.Repo,
+               "UPDATE derivation_permits SET state = 'claimed' WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(permit.id)],
+               mode: :savepoint
+             )
   end
 
   test "the bounded Oban executor accepts only a permit id and records a typed outcome" do
@@ -132,20 +134,82 @@ defmodule SpruceGoose.DerivationsTest do
 
     assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert {:ok, completed} =
-             as_actor(executor, fn -> Authz.read_one(Permit, permit_id: permit.permit_id) end)
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+    receipt = receipt!(permit.permit_id)
+    assert receipt.outcome == :succeeded
+    assert receipt.executor_id == executor.name
+    assert receipt.evidence_digest == String.duplicate("d", 64)
 
-    assert completed.state == :succeeded
-    assert completed.executor_id == executor.name
-    assert completed.evidence_digest == String.duplicate("d", 64)
+    assert {:ok, [event]} = EventLedger.read(EventLedger.new(), "derivation:" <> permit.permit_id)
+    assert event.event_type == "DerivationOutcomeCertified"
 
-    assert {:ok, events} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
-    assert Enum.map(events, & &1.payload["command"]) == List.duplicate("derivation_transition", 2)
+    assert {:discard, "derivation already has a terminal receipt"} =
+             Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert {:error,
+            %Postgrex.Error{postgres: %{message: "derivation outcome receipts are immutable"}}} =
+             Ecto.Adapters.SQL.query(
+               SpruceGoose.Repo,
+               "UPDATE derivation_outcome_receipts SET executor_id = 'tampered' WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(receipt.id)],
+               mode: :savepoint
+             )
 
     assert {:discard, "expected exactly one permit_id"} =
              Executor.perform(%Oban.Job{
                args: %{"permit_id" => permit.permit_id, "command" => "mix test"}
              })
+  end
+
+  @tag :separate_sessions
+  test "concurrent execution converges on one immutable receipt and certified event" do
+    task = in_progress_task("concurrent-executor")
+    operator = actor_with_role("operator-concurrent-executor", :operator)
+    executor = actor_with_role("executor-concurrent-executor", :derivation_executor)
+
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
+    on_exit(fn ->
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: SuccessfulHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    parent = self()
+
+    jobs =
+      for _index <- 1..8 do
+        Elixir.Task.async(fn ->
+          Ecto.Adapters.SQL.Sandbox.allow(SpruceGoose.Repo, parent, self())
+          Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+        end)
+      end
+
+    results = Elixir.Task.await_many(jobs, 15_000)
+
+    assert Enum.count(results, &(&1 == :ok)) == 1
+
+    assert Enum.count(
+             results,
+             &(&1 == {:discard, "derivation already has a terminal receipt"})
+           ) == 7
+
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+
+    assert %{rows: [[1]]} =
+             SpruceGoose.Repo.query!(
+               "SELECT count(*) FROM derivation_outcome_receipts WHERE permit_id = $1",
+               [permit.permit_id]
+             )
+
+    assert {:ok, [_event]} =
+             EventLedger.read(EventLedger.new(), "derivation:" <> permit.permit_id)
   end
 
   test "the bounded executor fails closed when an action has no configured handler" do
@@ -170,10 +234,9 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:discard, "no handler configured for test"} =
              Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert {:ok, failed} =
-             as_actor(executor, fn -> Authz.read_one(Permit, permit_id: permit.permit_id) end)
-
-    assert failed.state == :failed
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+    failed = receipt!(permit.permit_id)
+    assert failed.outcome == :failed
     assert failed.failure_reason == "no handler configured for test"
   end
 
@@ -216,8 +279,9 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:discard, "bounded handler failed"} =
              Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    failed = Ash.get!(Permit, permit.id, authorize?: false)
-    assert failed.state == :failed
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+    failed = receipt!(permit.permit_id)
+    assert failed.outcome == :failed
     assert failed.failure_reason == "bounded handler failed"
   end
 
@@ -257,8 +321,9 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:ok, ^first} = SpruceGoose.Derivations.VerifyArtifact.run(permit)
     assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    completed = Ash.get!(Permit, permit.id, authorize?: false)
-    assert completed.state == :succeeded
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+    completed = receipt!(permit.permit_id)
+    assert completed.outcome == :succeeded
     assert completed.artifact_digest == input.digest
 
     assert {:ok, %{digest: evidence}} =
@@ -278,14 +343,14 @@ defmodule SpruceGoose.DerivationsTest do
     assert Exception.message(error) =~ "input_artifact_digest"
   end
 
-  test "PostgreSQL refuses action-input mismatches outside Ash" do
+  test "PostgreSQL refuses any permit rewrite outside Ash" do
     task = in_progress_task("sql-input-guard")
     operator = actor_with_role("operator-sql-input-guard", :operator)
 
     {:ok, permit} =
       as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
 
-    assert {:error, %Postgrex.Error{postgres: %{constraint: "typed_derivation_input"}}} =
+    assert {:error, %Postgrex.Error{postgres: %{message: "derivation permits are immutable"}}} =
              Ecto.Adapters.SQL.query(
                SpruceGoose.Repo,
                "UPDATE derivation_permits SET input_artifact_digest = $1 WHERE id = $2::text::uuid",
@@ -325,8 +390,15 @@ defmodule SpruceGoose.DerivationsTest do
       tree_sha: @tree,
       ref: "refs/heads/main",
       pipeline_digest: @pipeline,
+      roots: @roots,
       action: :test
     }
+  end
+
+  defp receipt!(permit_id) do
+    OutcomeReceipt
+    |> Ash.Query.filter_input(permit_id: permit_id)
+    |> Ash.read_one!(authorize?: false)
   end
 
   defp actor_with_role(name, role) do
