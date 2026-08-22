@@ -16,6 +16,7 @@ defmodule SpruceGoose.Actors.Scope do
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
   alias SpruceGoose.Repo
+  alias SpruceGoose.TaskFlow.ShadowSnapshot
 
   alias SpruceGoose.Workflows.{
     Board,
@@ -117,6 +118,14 @@ defmodule SpruceGoose.Actors.Scope do
     JOIN roadmaps r ON r.id = w.roadmap_id
     JOIN projects p ON p.id = r.project_id
     WHERE dor.id = $1
+    """,
+    ShadowSnapshot => """
+    SELECT p.key FROM taskflow_shadow_snapshots s
+    JOIN workflow_tasks t ON t.id = s.task_id
+    JOIN workflows w ON w.id = t.workflow_id
+    JOIN roadmaps r ON r.id = w.roadmap_id
+    JOIN projects p ON p.id = r.project_id
+    WHERE s.id = $1
     """
   }
 
@@ -133,7 +142,8 @@ defmodule SpruceGoose.Actors.Scope do
     Todo => {:task_id, Task},
     BlueprintRevision => {:project_id, Project},
     Permit => {:task_id, Task},
-    OutcomeReceipt => {:task_id, Task}
+    OutcomeReceipt => {:task_id, Task},
+    ShadowSnapshot => {:task_id, Task}
   }
 
   # The relationship path from each resource to the owning project key, used to
@@ -152,7 +162,8 @@ defmodule SpruceGoose.Actors.Scope do
     Revision => [:project_key],
     BlueprintRevision => [:project, :key],
     Permit => [:task, :workflow, :roadmap, :project, :key],
-    OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key]
+    OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key],
+    ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key]
   }
 
   @doc """

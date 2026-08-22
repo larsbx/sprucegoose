@@ -9,6 +9,7 @@ config :spruce_goose,
     SpruceGoose.Actors,
     SpruceGoose.Derivations.Domain,
     SpruceGoose.Notes,
+    SpruceGoose.TaskFlow.Domain,
     SpruceGoose.Workflows,
     SpruceGoose.Knowledge.Domain
   ]
