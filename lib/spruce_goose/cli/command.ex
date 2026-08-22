@@ -102,6 +102,7 @@ defmodule SpruceGoose.CLI.Command do
        "replay-rebuild",
        "replay-status"
      ]},
+    {"runtime", ["shadow TASK_ID JSON", "parity TASK_ID JSON"]},
     {"outbox", ["failed", "replay EVENT_ID"]},
     {"derivation",
      [
@@ -493,6 +494,13 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["derivation", "show", permit_id]), do: {:ok, {:show_derivation, permit_id}}
 
+  def parse(["runtime", verb, task_id, json]) when verb in ["shadow", "parity"] do
+    with {:ok, envelope} <- runtime_envelope(json) do
+      command = if verb == "shadow", do: :shadow_runtime, else: :parity_runtime
+      {:ok, {command, task_id, envelope}}
+    end
+  end
+
   def parse(["derivation", "admit" | args]) do
     {opts, rest, invalid} =
       OptionParser.parse(args,
@@ -606,6 +614,42 @@ defmodule SpruceGoose.CLI.Command do
   defp derivation_action("build_release"), do: {:ok, :build_release}
   defp derivation_action("verify_artifact"), do: {:ok, :verify_artifact}
   defp derivation_action(_), do: {:error, :invalid_action}
+
+  @runtime_envelope_keys ~w(protocol_version adapter external_id revision status checkpoint owner_context_digest state_digest wait_digest child_task_count)
+  @runtime_required_keys List.delete(@runtime_envelope_keys, "checkpoint")
+  @runtime_key_sets [Enum.sort(@runtime_required_keys), Enum.sort(@runtime_envelope_keys)]
+  @runtime_statuses ~w(pending running waiting blocked succeeded failed cancelled)
+
+  defp runtime_envelope(json) do
+    with {:ok, decoded} when is_map(decoded) <- Jason.decode(json),
+         true <- decoded |> Map.keys() |> Enum.sort() |> then(&(&1 in @runtime_key_sets)),
+         1 <- decoded["protocol_version"],
+         adapter when is_binary(adapter) and adapter != "" <- decoded["adapter"],
+         external_id when is_binary(external_id) and external_id != "" <- decoded["external_id"],
+         revision when is_integer(revision) and revision >= 0 <- decoded["revision"],
+         status when status in @runtime_statuses <- decoded["status"],
+         checkpoint when is_nil(checkpoint) or is_binary(checkpoint) <- decoded["checkpoint"],
+         owner when is_binary(owner) <- decoded["owner_context_digest"],
+         state when is_binary(state) <- decoded["state_digest"],
+         wait when is_binary(wait) <- decoded["wait_digest"],
+         children when is_integer(children) and children >= 0 <- decoded["child_task_count"] do
+      {:ok,
+       %{
+         protocol_version: 1,
+         adapter: adapter,
+         external_id: external_id,
+         revision: revision,
+         status: String.to_existing_atom(status),
+         checkpoint: checkpoint,
+         owner_context_digest: owner,
+         state_digest: state,
+         wait_digest: wait,
+         child_task_count: children
+       }}
+    else
+      _ -> {:error, "invalid runtime envelope"}
+    end
+  end
 
   defp dependency_option(args) do
     case OptionParser.parse(args, strict: [after: :string]) do

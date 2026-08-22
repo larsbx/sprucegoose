@@ -25,7 +25,13 @@ defmodule SpruceGoose.Runtime.ShadowSnapshot do
     attribute(:adapter, :string, allow_nil?: false, public?: true)
     attribute(:external_id, :string, allow_nil?: false, public?: true)
     attribute(:revision, :integer, allow_nil?: false, public?: true)
-    attribute(:status, :string, allow_nil?: false, public?: true)
+
+    attribute(:status, :atom,
+      allow_nil?: false,
+      public?: true,
+      constraints: [one_of: ~w(pending running waiting blocked succeeded failed cancelled)a]
+    )
+
     attribute(:checkpoint, :string, public?: true)
     attribute(:owner_context_digest, :string, allow_nil?: false, public?: true)
     attribute(:state_digest, :string, allow_nil?: false, public?: true)

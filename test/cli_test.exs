@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLITest do
 
   test "returns scoped help for every command family and rejects unknown families" do
     families =
-      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger outbox derivation)
+      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger runtime outbox derivation)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -29,6 +29,44 @@ defmodule SpruceGoose.CLITest do
     assert {:ok, root_help} = CLI.run(["--help"])
     assert root_help.usage == "sprucegoose <command> [args]"
     assert {:ok, %{version: _}} = CLI.run(["--version"])
+  end
+
+  test "parses only provider-neutral versioned runtime envelopes" do
+    digest = "sha256:" <> String.duplicate("a", 64)
+
+    envelope = %{
+      "protocol_version" => 1,
+      "adapter" => "example-runtime/v1",
+      "external_id" => "run-1",
+      "revision" => 4,
+      "status" => "waiting",
+      "checkpoint" => "approval",
+      "owner_context_digest" => digest,
+      "state_digest" => digest,
+      "wait_digest" => digest,
+      "child_task_count" => 2
+    }
+
+    json = Jason.encode!(envelope)
+
+    assert {:ok, {:shadow_runtime, "tsk-20260822T210000Z-1234abcd", parsed}} =
+             Command.parse(["runtime", "shadow", "tsk-20260822T210000Z-1234abcd", json])
+
+    assert parsed.adapter == "example-runtime/v1"
+
+    assert {:ok, {:parity_runtime, _, ^parsed}} =
+             Command.parse(["runtime", "parity", "tsk-20260822T210000Z-1234abcd", json])
+
+    assert {:error, "invalid runtime envelope"} =
+             Command.parse([
+               "runtime",
+               "shadow",
+               "tsk-20260822T210000Z-1234abcd",
+               Jason.encode!(Map.put(envelope, "provider_payload", %{}))
+             ])
+
+    assert {:error, "invalid runtime envelope"} =
+             Command.parse(["runtime", "shadow", "tsk-20260822T210000Z-1234abcd", "{"])
   end
 
   test "generates and validates the spec task ID schema" do

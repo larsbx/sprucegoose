@@ -3,6 +3,7 @@ defmodule SpruceGoose.RuntimeShadowTest do
 
   alias SpruceGoose.Authz
   alias SpruceGoose.Runtime.ShadowSnapshot
+  alias SpruceGoose.Runtime.Shadow
   alias SpruceGoose.Workflows.{Project, Roadmap, Task, Workflow}
 
   test "imports an immutable provider-neutral runtime envelope without taking authority" do
@@ -15,7 +16,7 @@ defmodule SpruceGoose.RuntimeShadowTest do
       adapter: "example-runtime/v1",
       external_id: "run-shadow-1",
       revision: 7,
-      status: "waiting",
+      status: :waiting,
       checkpoint: "await_reply",
       owner_context_digest: digest("owner-context"),
       state_digest: digest("state"),
@@ -59,6 +60,37 @@ defmodule SpruceGoose.RuntimeShadowTest do
                [Ecto.UUID.dump!(snapshot.id)],
                mode: :savepoint
              )
+  end
+
+  test "imports idempotently, refuses revision conflicts, and reports parity" do
+    task = governed_task("adapter")
+    operator = actor_with_role("runtime-adapter-operator", :operator)
+
+    envelope = %{
+      protocol_version: 1,
+      adapter: "example-runtime/v1",
+      external_id: "run-adapter-1",
+      revision: 3,
+      status: "waiting",
+      checkpoint: "approval",
+      owner_context_digest: digest("owner"),
+      state_digest: digest("state"),
+      wait_digest: digest("wait"),
+      child_task_count: 1
+    }
+
+    as_actor(operator, fn ->
+      assert {:ok, %{created: true}} = Shadow.import(task, envelope)
+      assert {:ok, %{parity: true, mismatches: []}} = Shadow.parity(task, envelope)
+      assert {:ok, %{created: false}} = Shadow.import(task, envelope)
+
+      changed = %{envelope | status: :running}
+
+      assert {:error, "runtime revision conflicts with immutable snapshot"} =
+               Shadow.import(task, changed)
+
+      assert {:ok, %{parity: false, mismatches: [:status]}} = Shadow.parity(task, changed)
+    end)
   end
 
   test "the runtime port and persistence contract contain no provider names" do
