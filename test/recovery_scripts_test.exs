@@ -369,7 +369,7 @@ defmodule SpruceGoose.RecoveryScriptsTest do
 
     assert current =~ "PostgreSQL 19 Beta 2"
     assert current =~ "Assured Mode is **not** claimed"
-    assert current =~ "3b51983bd63e4054e685432a871f39f8a8211de8"
+    assert current =~ "b1d69ac6ca9f131016d4188ae80106118d43bae2"
   end
 
   defp before?(body, first, second) do
