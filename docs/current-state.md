@@ -1,13 +1,13 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T190703Z-661e4ff4`.
+Verified 2026-08-22 under task `tsk-20260822T205734Z-475bae2e`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `3d61c36e07b039074c3258212a6ab07cdd42097d`; its tree is
-  `7b52ae2ed01059fe1efd2c362097f66c14257594`. The governed release retained
+  `805220b4c82dd699511ef4cde8675474f1545a15`; its tree is
+  `2e7d6f9fc4532af0060466ac3aba11d9bf9052f3`. The governed release retained
   PostgreSQL 19 Beta 2 and the deterministic authoritative-task projection,
   and added immutable certified derivation outcomes without transferring task
   read or write authority.
@@ -24,6 +24,23 @@ Verified 2026-08-22 under task `tsk-20260822T190703Z-661e4ff4`.
   Project and materialize its hierarchy in one transaction. Invalid manifests
   roll back the Project and BlueprintRevision together. Existing hierarchy
   rows remain readable.
+
+## Runtime integration boundary
+
+SpruceGoose core exposes a provider-neutral, versioned runtime-state port and
+stores immutable shadow-snapshot envelopes. An envelope contains only an
+adapter identity, opaque external run identity, monotonic revision, normalized
+status and checkpoint, bounded digests, child-work count, and its governed
+SpruceGoose task link. Provider payloads, commands, session formats, and APIs
+remain outside the core boundary in replaceable edge adapters.
+
+Imports are idempotent for identical revisions and refuse conflicting content.
+Parity reads compare only the normalized contract, and PostgreSQL refuses
+snapshot updates and deletes. Production canaries proved import, retry,
+conflict refusal, direct-write refusal, restart recovery, parity after restart,
+and five concurrent clients. Runtime execution authority has not moved to
+SpruceGoose, and this contract does not depend on OpenClaw, TaskFlow, Pi, or
+any other specific provider.
 
 PostgreSQL 19 Beta 2 is an explicit production deviation. It is operationally
 verified but is not a supported GA baseline, so production and development
@@ -95,17 +112,25 @@ exact legacy snapshot to one `GrandfatheredStateAccepted` event without
 inventing historical events or roots.
 
 The deterministic authoritative-task projector rebuilds its explicit public
-task schema from that baseline plus contiguous certified events. Production
-empty-state rebuild, restart recovery, digest integrity, dual-read parity, and
-zero-lag checks pass. The projector-owned PostgreSQL materialization refuses
+task schema from that baseline plus contiguous certified events. Earlier
+production gates proved empty-state rebuild, restart recovery, digest
+integrity, dual-read parity, and zero lag through certified position 40. The
+projector-owned PostgreSQL materialization refuses
 direct insert, update, and delete operations unless the projector enables its
 transaction-local write flag. The empty-state gate also proved that the legacy
 reader and transactional writer remain available while the materialization is
-absent, and that rebuilding does not delete certified events. At the recorded
-checkpoint the stream contains 35 certified events with zero missing task
-events and zero malformed streams; the projection covers 700 tasks at stream
-position 35 with digest
-`aae20a9c7eccd94d971e4719a3f547b2812520e1c556f9f56e2487282830c89e`.
+absent, and that rebuilding does not delete certified events.
+
+Current reconciliation is healthy at 114 certified events, zero missing task
+events, and zero malformed streams. Replay itself is blocked: certified
+position 42 is a valid non-task `MutationAccepted` event for
+`apply_blueprint`, while the task projector currently attempts to decode every
+`MutationAccepted` event as a task mutation. Rebuild therefore refuses with
+`unsupported_certified_event`; the materialized projection remains at
+position 40 with lag 73 and parity false. The projector must route certified
+events by supported projection scope, skipping valid non-task mutations while
+still failing closed on malformed task mutations, before replay parity or
+authority transfer can be claimed again.
 
 This is not a production historical-authority cutover. Mutable workflow rows
 remain the read and write authority. A bounded non-Jimbo canary, observation
