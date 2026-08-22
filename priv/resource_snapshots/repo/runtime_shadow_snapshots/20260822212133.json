@@ -14,6 +14,18 @@
     },
     {
       "allow_nil?": false,
+      "default": "1",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "protocol_version",
+      "type": "bigint"
+    },
+    {
+      "allow_nil?": false,
       "default": "nil",
       "generated?": false,
       "precision": null,
@@ -21,7 +33,19 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "flow_id",
+      "source": "adapter",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "external_id",
       "type": "text"
     },
     {
@@ -45,31 +69,7 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "sync_mode",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
       "source": "status",
-      "type": "text"
-    },
-    {
-      "allow_nil?": false,
-      "default": "nil",
-      "generated?": false,
-      "precision": null,
-      "primary_key?": false,
-      "references": null,
-      "scale": null,
-      "size": null,
-      "source": "owner_key",
       "type": "text"
     },
     {
@@ -81,7 +81,19 @@
       "references": null,
       "scale": null,
       "size": null,
-      "source": "current_step",
+      "source": "checkpoint",
+      "type": "text"
+    },
+    {
+      "allow_nil?": false,
+      "default": "nil",
+      "generated?": false,
+      "precision": null,
+      "primary_key?": false,
+      "references": null,
+      "scale": null,
+      "size": null,
+      "source": "owner_context_digest",
       "type": "text"
     },
     {
@@ -151,7 +163,7 @@
           "global": null,
           "strategy": null
         },
-        "name": "taskflow_shadow_snapshots_task_id_fkey",
+        "name": "runtime_shadow_snapshots_task_id_fkey",
         "on_delete": null,
         "on_update": null,
         "primary_key?": true,
@@ -170,16 +182,20 @@
   "custom_indexes": [],
   "custom_statements": [],
   "has_create_action": true,
-  "hash": "CFA2720FF96091D5DFC8E5720747CA8E7D8756C9143F4B44E496B21A0C5E71D8",
+  "hash": "0FF0C41A501BC6DBD593671C288263D20EF146D3663B3D1315308E1551E4C57A",
   "identities": [
     {
       "all_tenants?": false,
       "base_filter": null,
-      "index_name": "taskflow_shadow_snapshots_one_snapshot_per_revision_index",
+      "index_name": "runtime_shadow_snapshots_one_snapshot_per_revision_index",
       "keys": [
         {
           "type": "atom",
-          "value": "flow_id"
+          "value": "adapter"
+        },
+        {
+          "type": "atom",
+          "value": "external_id"
         },
         {
           "type": "atom",
@@ -198,5 +214,5 @@
   },
   "repo": "Elixir.SpruceGoose.Repo",
   "schema": null,
-  "table": "taskflow_shadow_snapshots"
+  "table": "runtime_shadow_snapshots"
 }

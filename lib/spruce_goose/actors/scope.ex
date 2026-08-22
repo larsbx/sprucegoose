@@ -16,7 +16,7 @@ defmodule SpruceGoose.Actors.Scope do
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
   alias SpruceGoose.Repo
-  alias SpruceGoose.TaskFlow.ShadowSnapshot
+  alias SpruceGoose.Runtime.ShadowSnapshot
 
   alias SpruceGoose.Workflows.{
     Board,
@@ -120,7 +120,7 @@ defmodule SpruceGoose.Actors.Scope do
     WHERE dor.id = $1
     """,
     ShadowSnapshot => """
-    SELECT p.key FROM taskflow_shadow_snapshots s
+    SELECT p.key FROM runtime_shadow_snapshots s
     JOIN workflow_tasks t ON t.id = s.task_id
     JOIN workflows w ON w.id = t.workflow_id
     JOIN roadmaps r ON r.id = w.roadmap_id

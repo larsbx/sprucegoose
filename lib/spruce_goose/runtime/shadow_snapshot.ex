@@ -1,8 +1,8 @@
-defmodule SpruceGoose.TaskFlow.ShadowSnapshot do
-  @moduledoc "Immutable shadow of one revision of TaskFlow-owned resumability state."
+defmodule SpruceGoose.Runtime.ShadowSnapshot do
+  @moduledoc "Immutable provider-neutral shadow of one external runtime revision."
 
   use Ash.Resource,
-    domain: SpruceGoose.TaskFlow.Domain,
+    domain: SpruceGoose.Runtime.Domain,
     data_layer: AshPostgres.DataLayer,
     authorizers: [Ash.Policy.Authorizer]
 
@@ -10,7 +10,7 @@ defmodule SpruceGoose.TaskFlow.ShadowSnapshot do
   alias SpruceGoose.Workflows.Task
 
   postgres do
-    table("taskflow_shadow_snapshots")
+    table("runtime_shadow_snapshots")
     repo(SpruceGoose.Repo)
   end
 
@@ -21,12 +21,13 @@ defmodule SpruceGoose.TaskFlow.ShadowSnapshot do
 
   attributes do
     uuid_primary_key(:id)
-    attribute(:flow_id, :string, allow_nil?: false, public?: true)
+    attribute(:protocol_version, :integer, allow_nil?: false, default: 1, public?: true)
+    attribute(:adapter, :string, allow_nil?: false, public?: true)
+    attribute(:external_id, :string, allow_nil?: false, public?: true)
     attribute(:revision, :integer, allow_nil?: false, public?: true)
-    attribute(:sync_mode, :string, allow_nil?: false, public?: true)
     attribute(:status, :string, allow_nil?: false, public?: true)
-    attribute(:owner_key, :string, allow_nil?: false, public?: true)
-    attribute(:current_step, :string, public?: true)
+    attribute(:checkpoint, :string, public?: true)
+    attribute(:owner_context_digest, :string, allow_nil?: false, public?: true)
     attribute(:state_digest, :string, allow_nil?: false, public?: true)
     attribute(:wait_digest, :string, allow_nil?: false, public?: true)
     attribute(:child_task_count, :integer, allow_nil?: false, public?: true)
@@ -47,12 +48,13 @@ defmodule SpruceGoose.TaskFlow.ShadowSnapshot do
     create :import do
       accept([
         :task_id,
-        :flow_id,
+        :protocol_version,
+        :adapter,
+        :external_id,
         :revision,
-        :sync_mode,
         :status,
-        :owner_key,
-        :current_step,
+        :checkpoint,
+        :owner_context_digest,
         :state_digest,
         :wait_digest,
         :child_task_count
@@ -61,16 +63,18 @@ defmodule SpruceGoose.TaskFlow.ShadowSnapshot do
   end
 
   identities do
-    identity(:one_snapshot_per_revision, [:flow_id, :revision])
+    identity(:one_snapshot_per_revision, [:adapter, :external_id, :revision])
   end
 
   validations do
+    validate(compare(:protocol_version, greater_than_or_equal_to: 1))
     validate(compare(:revision, greater_than_or_equal_to: 0))
     validate(compare(:child_task_count, greater_than_or_equal_to: 0))
+    validate(match(:owner_context_digest, ~r/\Asha256:[0-9a-f]{64}\z/))
     validate(match(:state_digest, ~r/\Asha256:[0-9a-f]{64}\z/))
     validate(match(:wait_digest, ~r/\Asha256:[0-9a-f]{64}\z/))
-    validate(string_length(:flow_id, min: 1, max: 128))
-    validate(string_length(:owner_key, min: 1, max: 512))
-    validate(string_length(:current_step, max: 512))
+    validate(string_length(:adapter, min: 1, max: 128))
+    validate(string_length(:external_id, min: 1, max: 256))
+    validate(string_length(:checkpoint, max: 512))
   end
 end

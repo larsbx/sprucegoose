@@ -1,22 +1,23 @@
-defmodule SpruceGoose.TaskFlowShadowTest do
+defmodule SpruceGoose.RuntimeShadowTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.Authz
-  alias SpruceGoose.TaskFlow.ShadowSnapshot
+  alias SpruceGoose.Runtime.ShadowSnapshot
   alias SpruceGoose.Workflows.{Project, Roadmap, Task, Workflow}
 
-  test "imports immutable revisioned TaskFlow state without taking runtime authority" do
+  test "imports an immutable provider-neutral runtime envelope without taking authority" do
     task = governed_task("shadow")
-    operator = actor_with_role("taskflow-shadow-operator", :operator)
+    operator = actor_with_role("runtime-shadow-operator", :operator)
 
     attrs = %{
       task_id: task.id,
-      flow_id: "flow-shadow-1",
+      protocol_version: 1,
+      adapter: "example-runtime/v1",
+      external_id: "run-shadow-1",
       revision: 7,
-      sync_mode: "managed",
       status: "waiting",
-      owner_key: "agent:main:telegram:direct:8071938660",
-      current_step: "await_reply",
+      checkpoint: "await_reply",
+      owner_context_digest: digest("owner-context"),
       state_digest: digest("state"),
       wait_digest: digest("wait"),
       child_task_count: 2
@@ -27,8 +28,19 @@ defmodule SpruceGoose.TaskFlowShadowTest do
                Authz.create(ShadowSnapshot, attrs, action: :import)
              end)
 
-    assert snapshot.flow_id == attrs.flow_id
+    assert snapshot.external_id == attrs.external_id
     assert snapshot.revision == 7
+
+    assert {:ok, other_adapter} =
+             as_actor(operator, fn ->
+               Authz.create(
+                 ShadowSnapshot,
+                 %{attrs | adapter: "replacement-runtime/v1"},
+                 action: :import
+               )
+             end)
+
+    assert other_adapter.external_id == snapshot.external_id
 
     assert {:error, duplicate} =
              as_actor(operator, fn ->
@@ -40,20 +52,36 @@ defmodule SpruceGoose.TaskFlowShadowTest do
     assert is_nil(Ash.Resource.Info.action(ShadowSnapshot, :destroy))
 
     assert {:error,
-            %Postgrex.Error{postgres: %{message: "TaskFlow shadow snapshots are immutable"}}} =
+            %Postgrex.Error{postgres: %{message: "runtime shadow snapshots are immutable"}}} =
              Ecto.Adapters.SQL.query(
                SpruceGoose.Repo,
-               "UPDATE taskflow_shadow_snapshots SET status = 'running' WHERE id = $1::uuid",
+               "UPDATE runtime_shadow_snapshots SET status = 'running' WHERE id = $1::uuid",
                [Ecto.UUID.dump!(snapshot.id)],
                mode: :savepoint
              )
+  end
+
+  test "the runtime port and persistence contract contain no provider names" do
+    root = Path.expand("..", __DIR__)
+
+    source =
+      [
+        "lib/spruce_goose/runtime/state_source.ex",
+        "lib/spruce_goose/runtime/shadow_snapshot.ex",
+        "priv/repo/migrations/20260822210819_runtime_shadow_snapshots.exs"
+      ]
+      |> Enum.map_join("\n", &File.read!(Path.join(root, &1)))
+
+    refute source =~ "TaskFlow"
+    refute source =~ "OpenClaw"
+    refute source =~ "Pi agent"
   end
 
   defp digest(value), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, value), case: :lower)
 
   defp governed_task(suffix) do
     {:ok, project} =
-      Ash.create(Project, %{key: "tf-#{suffix}", name: "TaskFlow"}, authorize?: false)
+      Ash.create(Project, %{key: "runtime-#{suffix}", name: "Runtime"}, authorize?: false)
 
     {:ok, roadmap} =
       Ash.create(Roadmap, %{project_id: project.id, key: "roadmap", name: "Roadmap"},
@@ -67,7 +95,7 @@ defmodule SpruceGoose.TaskFlowShadowTest do
           roadmap_id: roadmap.id,
           workflow_id: "workflow",
           name: "Workflow",
-          definition: %{"tasks" => [%{"id" => "shadow", "kind" => "taskflow"}]}
+          definition: %{"tasks" => [%{"id" => "shadow", "kind" => "oban"}]}
         },
         authorize?: false
       )
@@ -78,7 +106,7 @@ defmodule SpruceGoose.TaskFlowShadowTest do
         task_id: SpruceGoose.TaskId.generate(),
         title: "Shadow",
         workflow_id: workflow.id,
-        runner: :taskflow,
+        runner: :oban,
         priority: 0,
         definition_of_done: "Shadow parity passes"
       },

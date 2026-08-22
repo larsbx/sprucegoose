@@ -1,4 +1,4 @@
-defmodule SpruceGoose.TaskFlow.Domain do
+defmodule SpruceGoose.Runtime.Domain do
   use Ash.Domain
 
   authorization do
@@ -6,6 +6,6 @@ defmodule SpruceGoose.TaskFlow.Domain do
   end
 
   resources do
-    resource(SpruceGoose.TaskFlow.ShadowSnapshot)
+    resource(SpruceGoose.Runtime.ShadowSnapshot)
   end
 end
