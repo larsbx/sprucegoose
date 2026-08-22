@@ -33,5 +33,6 @@ defmodule SpruceGoose.CLI do
 
   defp inspect_error(:usage), do: "usage: " <> Command.usage()
   defp inspect_error(error) when is_binary(error), do: error
-  defp inspect_error(error), do: Exception.message(error)
+  defp inspect_error(error) when is_exception(error), do: Exception.message(error)
+  defp inspect_error(error), do: inspect(error)
 end

@@ -6,6 +6,9 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
   alias SpruceGoose.Repo
 
   @policy "kernel/shadow-event-roots.json"
+  @policy_path Path.expand("../../../priv/#{@policy}", __DIR__)
+  @external_resource @policy_path
+  @policy_bytes File.read!(@policy_path)
   @notifications_key :spruce_goose_shadow_notifications
   @shadowed_verbs [
     :acknowledge_sop,
@@ -194,14 +197,13 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
   defp outbox_event_key(_result), do: nil
 
   defp roots do
-    path =
-      Application.get_env(
-        :spruce_goose,
-        :shadow_event_policy_path,
-        Application.app_dir(:spruce_goose, "priv/#{@policy}")
-      )
+    bytes =
+      case Application.fetch_env(:spruce_goose, :shadow_event_policy_path) do
+        {:ok, path} -> File.read(path)
+        :error -> {:ok, @policy_bytes}
+      end
 
-    with {:ok, bytes} <- File.read(path),
+    with {:ok, bytes} <- bytes,
          {:ok, %{"schema" => "sprucegoose-shadow-event-roots-v1", "roots" => roots}} <-
            Jason.decode(bytes) do
       {:ok, roots}
