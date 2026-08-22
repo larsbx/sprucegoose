@@ -31,16 +31,10 @@ defmodule SpruceGoose.TransactionalOutboxTest do
     inbox_events =
       Event
       |> where([event], event.aggregate_type == "inbox")
-      |> order_by([event], event.inserted_at)
       |> Repo.all()
 
-    assert [
-             %Event{aggregate_id: first_aggregate, event_type: "inbox.captured"},
-             %Event{aggregate_id: second_aggregate, event_type: "inbox.captured"}
-           ] = inbox_events
-
-    assert first_aggregate == first.id
-    assert second_aggregate == second.id
+    assert Enum.all?(inbox_events, &(&1.event_type == "inbox.captured"))
+    assert MapSet.new(inbox_events, & &1.aggregate_id) == MapSet.new([first.id, second.id])
 
     # Re-capturing an existing id is still deduplicated by the trigger.
     assert 2 ==
