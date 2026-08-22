@@ -93,7 +93,15 @@ defmodule SpruceGoose.CLI.Command do
        "remove NAME --role ROLE --scope SCOPE"
      ]},
     {"ledger",
-     ["import PATH", "parity PATH", "shadow-status", "baseline-accept", "baseline-show"]},
+     [
+       "import PATH",
+       "parity PATH",
+       "shadow-status",
+       "baseline-accept",
+       "baseline-show",
+       "replay-rebuild",
+       "replay-status"
+     ]},
     {"outbox", ["failed", "replay EVENT_ID"]},
     {"derivation",
      [
@@ -478,6 +486,8 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["ledger", "shadow-status"]), do: {:ok, :shadow_ledger_status}
   def parse(["ledger", "baseline-accept"]), do: {:ok, :accept_grandfathered_baseline}
   def parse(["ledger", "baseline-show"]), do: {:ok, :show_grandfathered_baseline}
+  def parse(["ledger", "replay-rebuild"]), do: {:ok, :rebuild_task_projection}
+  def parse(["ledger", "replay-status"]), do: {:ok, :task_projection_status}
   def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 

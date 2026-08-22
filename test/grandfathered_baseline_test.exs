@@ -6,7 +6,10 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
   alias SpruceGoose.Repo
 
   setup do
-    Repo.query!("TRUNCATE grandfathered_baselines, certified_events RESTART IDENTITY")
+    Repo.query!(
+      "TRUNCATE replay_projections, grandfathered_baselines, certified_events RESTART IDENTITY"
+    )
+
     :ok
   end
 
@@ -79,6 +82,28 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
     assert {:error, :shadow_not_reconciled} = Executor.run(:accept_grandfathered_baseline)
     assert %{rows: [[0]]} = Repo.query!("SELECT count(*) FROM grandfathered_baselines")
     assert %{rows: [[1]]} = Repo.query!("SELECT count(*) FROM certified_events")
+  end
+
+  test "rebuilds authoritative task state, proves parity, and refuses direct writes" do
+    task = task_fixture()
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+    assert {:ok, _} = Executor.run({:link_task, task.task_id, "evidence", "after-baseline"})
+
+    assert {:ok, rebuilt} = Executor.run(:rebuild_task_projection)
+    assert rebuilt.tasks >= 1
+
+    assert {:ok, %{parity: true, lag: 0}} = Executor.run(:task_projection_status)
+
+    assert_raise Postgrex.Error, ~r/replay projections are projector-owned/, fn ->
+      Repo.query!("UPDATE replay_projections SET stream_position = stream_position + 1")
+    end
+
+    Repo.query!("SELECT set_config('sprucegoose.projector_write', 'on', true)")
+    Repo.query!("DELETE FROM replay_projections")
+    assert {:error, :projection_not_built} = Executor.run(:task_projection_status)
+
+    assert {:ok, rebuilt_again} = Executor.run(:rebuild_task_projection)
+    assert rebuilt_again.state_digest == rebuilt.state_digest
   end
 
   @tag :separate_sessions

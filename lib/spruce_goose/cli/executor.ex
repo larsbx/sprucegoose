@@ -9,7 +9,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
   alias SpruceGoose.Derivations.{Executor, Permit}
-  alias SpruceGoose.Kernel.ShadowEvents
+  alias SpruceGoose.Kernel.{ShadowEvents, TaskProjector}
   alias SpruceGoose.Kernel.GrandfatheredBaseline
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
@@ -523,6 +523,8 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch(:shadow_ledger_status), do: ShadowEvents.status()
   defp dispatch(:accept_grandfathered_baseline), do: GrandfatheredBaseline.accept()
   defp dispatch(:show_grandfathered_baseline), do: GrandfatheredBaseline.show()
+  defp dispatch(:rebuild_task_projection), do: TaskProjector.rebuild()
+  defp dispatch(:task_projection_status), do: TaskProjector.status()
 
   defp dispatch({:show_task, id}) do
     with :ok <- require_valid_id(id),
