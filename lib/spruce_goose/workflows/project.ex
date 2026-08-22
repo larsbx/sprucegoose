@@ -19,12 +19,16 @@ defmodule SpruceGoose.Workflows.Project do
 
     # A project cannot be scoped to itself before it exists, so creating one
     # resolves to global scope and needs a fleet-wide author grant.
-    policy action_type([:create, :destroy]) do
+    policy action([:create, :destroy]) do
       authorize_if(HasRole.author())
     end
 
     policy action(:rename) do
       authorize_if(HasRole.author())
+    end
+
+    policy action([:apply_blueprint, :apply_blueprint_revision]) do
+      authorize_if(HasRole.approver())
     end
   end
 
@@ -59,6 +63,14 @@ defmodule SpruceGoose.Workflows.Project do
       primary?(true)
       accept([:key, :name])
       validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
+    end
+
+    create :apply_blueprint do
+      accept([:key, :name])
+    end
+
+    update :apply_blueprint_revision do
+      accept([:name])
     end
   end
 

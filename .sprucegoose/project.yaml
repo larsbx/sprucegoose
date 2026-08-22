@@ -1,5 +1,7 @@
 schema_version: 1
-project: openclaw-system
+project:
+  key: openclaw-system
+  name: OpenClaw System
 roadmaps:
   - key: sprucegoose-control-plane-convergence
     name: SpruceGoose Control Plane Convergence
