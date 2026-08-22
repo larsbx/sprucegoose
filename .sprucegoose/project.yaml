@@ -39,6 +39,36 @@ roadmaps:
               definition_of_done: An evidence-backed, read-only audit compares the current repository, deployed service, constitutive bindings, operative ledger, projections, and legacy epoch against the governed authority contract; findings include severity, proof, limitations, and separately governed remediation boundaries.
               depends_on: [authority-contract]
               input: {}
+            - id: constitutive-mutation-lockdown
+              kind: openclaw
+              title: Lock constitutive hierarchy mutations to repository blueprints
+              definition_of_done: Production Project, Roadmap, and Workflow creation, rename, and removal are unavailable outside exact verified BlueprintRevision application; existing hierarchy rows remain readable; isolated bootstrap and migration compatibility are explicit; Ash actions, CLI refusal, PostgreSQL constraints where applicable, compiled-CLI dogfood, and positive/refusal regressions pass.
+              depends_on: [knowledge-projection]
+              input: {}
+            - id: constitutional-vertical-slice
+              kind: openclaw
+              title: Implement one constitutional authorization path
+              definition_of_done: One typed OntologyVersion through Proposition, Claim/Evidence, Justification, Norm/Grant, Resolution, Authorization, and EffectIntent path binds exact constitutive roots and passes positive, substitution, missing-root, stale-grant, and unauthorized-effect refusal tests without executing a real effect.
+              depends_on: [authority-contract]
+              input: {}
+            - id: certified-event-ledger-shadow
+              kind: openclaw
+              title: Add the certified PostgreSQL EventLedger in shadow mode
+              definition_of_done: PostgreSQL appends immutable ordered certified events with exact content identity and idempotency, refuses conflicting reuse and mutation, verifies required constitutive roots, retains mutable tables as authority during shadow mode, and passes migration, concurrency, recovery, and compiled-CLI dogfood gates.
+              depends_on: [constitutive-mutation-lockdown, constitutional-vertical-slice]
+              input: {}
+            - id: grandfathered-baseline
+              kind: openclaw
+              title: Bind the grandfathered legacy baseline
+              definition_of_done: One content-addressed immutable baseline snapshot records the exact final legacy position and schema, one GrandfatheredStateAccepted certified event binds it, excluded fixtures remain quarantined, no legacy row receives invented provenance, and backup, restore, verification, and refusal gates pass.
+              depends_on: [certified-event-ledger-shadow]
+              input: {}
+            - id: deterministic-replay-parity
+              kind: openclaw
+              title: Prove deterministic replay and projection parity
+              definition_of_done: Empty-state rebuild, restart, concurrent shadow append completeness, dual-read parity, lag health, direct-projection-write refusal, and rollback to the legacy reader and writer pass without deleting certified events.
+              depends_on: [grandfathered-baseline]
+              input: {}
             - id: ooda-shadow
               kind: openclaw
               title: Shadow the Pi OODA path
@@ -67,7 +97,7 @@ roadmaps:
               kind: openclaw
               title: Canary the authority cutover
               definition_of_done: Forward event authority and deterministic projections pass replay, recovery, and parity canaries.
-              depends_on: [runtime-capability-transfer]
+              depends_on: [runtime-capability-transfer, deterministic-replay-parity]
               input: {}
             - id: legacy-retirement
               kind: openclaw
