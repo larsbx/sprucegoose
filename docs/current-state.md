@@ -1,13 +1,13 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T205734Z-475bae2e`.
+Verified 2026-08-22 under task `tsk-20260822T230747Z-f2749517`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `805220b4c82dd699511ef4cde8675474f1545a15`; its tree is
-  `2e7d6f9fc4532af0060466ac3aba11d9bf9052f3`. The governed release retained
+  `3a2dc6359fddd1f3d22d5ff633ad351ff290c30a`; its tree is
+  `876e8492bde221dc30709b4c1a09f28ddae7d906`. The governed release retained
   PostgreSQL 19 Beta 2 and the deterministic authoritative-task projection,
   and added immutable certified derivation outcomes without transferring task
   read or write authority.
@@ -112,25 +112,20 @@ exact legacy snapshot to one `GrandfatheredStateAccepted` event without
 inventing historical events or roots.
 
 The deterministic authoritative-task projector rebuilds its explicit public
-task schema from that baseline plus contiguous certified events. Earlier
-production gates proved empty-state rebuild, restart recovery, digest
-integrity, dual-read parity, and zero lag through certified position 40. The
-projector-owned PostgreSQL materialization refuses
+task schema from that baseline plus contiguous certified events. It routes
+supported task mutations into the projection, advances across valid certified
+non-task events without projecting them, and fails closed on malformed task
+mutations. The projector-owned PostgreSQL materialization refuses
 direct insert, update, and delete operations unless the projector enables its
 transaction-local write flag. The empty-state gate also proved that the legacy
 reader and transactional writer remain available while the materialization is
 absent, and that rebuilding does not delete certified events.
 
-Current reconciliation is healthy at 114 certified events, zero missing task
-events, and zero malformed streams. Replay itself is blocked: certified
-position 42 is a valid non-task `MutationAccepted` event for
-`apply_blueprint`, while the task projector currently attempts to decode every
-`MutationAccepted` event as a task mutation. Rebuild therefore refuses with
-`unsupported_certified_event`; the materialized projection remains at
-position 40 with lag 73 and parity false. The projector must route certified
-events by supported projection scope, skipping valid non-task mutations while
-still failing closed on malformed task mutations, before replay parity or
-authority transfer can be claimed again.
+Current reconciliation is healthy at 141 certified events, zero missing task
+events, and zero malformed streams. Production rebuilt 708 tasks through
+authority-stream position 140 with digest integrity, dual-read parity, and
+zero lag. Direct projection writes refuse, restart preserves parity, five
+concurrent clients pass, and no certified event was deleted.
 
 This is not a production historical-authority cutover. Mutable workflow rows
 remain the read and write authority. A bounded non-Jimbo canary, observation
