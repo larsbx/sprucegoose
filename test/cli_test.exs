@@ -137,41 +137,15 @@ defmodule SpruceGoose.CLITest do
              ])
   end
 
-  test "parses full hierarchy admission commands" do
-    assert {:ok, {:add_project, "dogfood", "Dogfood project"}} =
-             Command.parse(["project", "add", "dogfood", "Dogfood", "project"])
-
-    assert {:ok, {:add_roadmap, "dogfood", "dev", "Development roadmap"}} =
-             Command.parse(["roadmap", "add", "dogfood", "dev", "Development", "roadmap"])
-
-    definition = ~s({"tasks":[{"id":"build","kind":"oban"}]})
-
-    assert {:ok, {:add_workflow, "dogfood", "dev", "proof", "Proof workflow", ^definition}} =
-             Command.parse([
-               "workflow",
-               "add",
-               "--project",
-               "dogfood",
-               "--roadmap",
-               "dev",
-               "--definition",
-               definition,
-               "proof",
-               "Proof",
-               "workflow"
-             ])
-
-    assert {:error, "--definition is required"} =
-             Command.parse([
-               "workflow",
-               "add",
-               "--project",
-               "dogfood",
-               "--roadmap",
-               "dev",
-               "proof",
-               "Proof"
-             ])
+  test "refuses legacy hierarchy admission commands" do
+    for argv <- [
+          ["project", "add", "dogfood", "Dogfood"],
+          ["roadmap", "add", "dogfood", "dev", "Development"],
+          ["workflow", "add", "--project", "dogfood", "--roadmap", "dev"]
+        ] do
+      assert {:error, message} = Command.parse(argv)
+      assert message =~ "verified repository blueprint"
+    end
   end
 
   test "parses hierarchy read commands with optional scope filters" do
@@ -358,24 +332,7 @@ defmodule SpruceGoose.CLITest do
              Command.parse(["filter", "apply", "filter-id"])
   end
 
-  test "parses rename and removal commands across entities" do
-    assert {:ok, {:rename_project, "pi", "Pi Platform"}} =
-             Command.parse(["project", "rename", "pi", "Pi", "Platform"])
-
-    assert {:ok, {:remove_project, "pi"}} = Command.parse(["project", "remove", "pi"])
-
-    assert {:ok, {:rename_roadmap, "pi", "gov", "Governance"}} =
-             Command.parse(["roadmap", "rename", "pi", "gov", "Governance"])
-
-    assert {:ok, {:remove_roadmap, "pi", "gov"}} =
-             Command.parse(["roadmap", "remove", "pi", "gov"])
-
-    assert {:ok, {:rename_workflow, "pi", "gov", "wf", "Renamed flow"}} =
-             Command.parse(["workflow", "rename", "pi", "gov", "wf", "Renamed", "flow"])
-
-    assert {:ok, {:remove_workflow, "pi", "gov", "wf"}} =
-             Command.parse(["workflow", "remove", "pi", "gov", "wf"])
-
+  test "parses rename and removal commands for projection entities" do
     assert {:ok, {:rename_board, "board-id", "Main board"}} =
              Command.parse(["board", "rename", "board-id", "Main", "board"])
 
@@ -405,12 +362,8 @@ defmodule SpruceGoose.CLITest do
   end
 
   test "rename and removal commands reject missing names and stray arguments" do
-    assert {:error, :usage} = Command.parse(["project", "rename", "pi"])
-    assert {:error, :usage} = Command.parse(["roadmap", "rename", "pi", "gov"])
-    assert {:error, :usage} = Command.parse(["workflow", "rename", "pi", "gov", "wf"])
     assert {:error, :usage} = Command.parse(["board", "rename", "board-id"])
     assert {:error, :usage} = Command.parse(["column", "rename", "column-id"])
-    assert {:error, :usage} = Command.parse(["project", "remove"])
     assert {:error, :usage} = Command.parse(["filter", "remove"])
     assert {:error, :usage} = Command.parse(["todo", "remove", "tsk-20260727T044500Z-1234abcd"])
   end

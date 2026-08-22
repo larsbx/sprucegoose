@@ -115,7 +115,7 @@ defmodule SpruceGoose.Blueprints.Applier do
   defp upsert_roadmap(project, spec) do
     case Authz.read_one(Roadmap, project_id: project.id, key: spec.key) do
       {:ok, roadmap} ->
-        Authz.update(roadmap, %{name: spec.name}, action: :revise)
+        Authz.update(roadmap, %{name: spec.name}, action: :apply_blueprint_revision)
 
       {:error, "not found"} ->
         Authz.create(Roadmap, %{project_id: project.id, key: spec.key, name: spec.name},
@@ -133,7 +133,7 @@ defmodule SpruceGoose.Blueprints.Applier do
         case Authz.read_one(Workflow, roadmap_id: roadmap.id, workflow_id: spec.workflow_id) do
           {:ok, workflow} ->
             Authz.update(workflow, %{name: spec.name, definition: spec.definition},
-              action: :revise
+              action: :apply_blueprint_revision
             )
 
           {:error, "not found"} ->

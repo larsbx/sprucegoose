@@ -6,26 +6,19 @@ defmodule SpruceGoose.CLI.Command do
   # so drift is visible in one screen rather than across two files.
   @usage [
     {"id", ["id", "validate-id ID"]},
-    {"project",
-     ["add KEY NAME", "list", "show KEY", "view KEY", "rename KEY NAME", "remove KEY"]},
+    {"project", ["list", "show KEY", "view KEY"]},
     {"blueprint",
      ["register PROJECT REPOSITORY COMMIT PATH", "apply PROJECT REPOSITORY COMMIT PATH"]},
     {"roadmap",
      [
-       "add PROJECT KEY NAME",
        "list [--project KEY]",
-       "show PROJECT KEY",
-       "rename PROJECT KEY NAME",
-       "remove PROJECT KEY"
+       "show PROJECT KEY"
      ]},
     {"workflow",
      [
-       "add --project KEY --roadmap KEY --definition JSON ID NAME",
        "list [--project KEY] [--roadmap KEY]",
        "show PROJECT ROADMAP ID",
-       "critical-path PROJECT ROADMAP ID",
-       "rename PROJECT ROADMAP ID NAME",
-       "remove PROJECT ROADMAP ID"
+       "critical-path PROJECT ROADMAP ID"
      ]},
     {"task",
      [
@@ -160,6 +153,10 @@ defmodule SpruceGoose.CLI.Command do
     end
   end
 
+  defp constitutive_mutation_refusal do
+    {:error, SpruceGoose.Workflows.ConstitutiveMutation.refusal_message()}
+  end
+
   def parse(["help"]), do: {:ok, :help}
   def parse(["--help"]), do: {:ok, :help}
   def parse(["-h"]), do: {:ok, :help}
@@ -196,17 +193,12 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["id"]), do: {:ok, :generate_id}
   def parse(["validate-id", id]), do: {:ok, {:validate_id, id}}
 
-  def parse(["project", "add", key | name]) when name != [],
-    do: {:ok, {:add_project, key, Enum.join(name, " ")}}
+  def parse(["project", verb | _args]) when verb in ["add", "rename", "remove"],
+    do: constitutive_mutation_refusal()
 
   def parse(["project", "list"]), do: {:ok, :list_projects}
   def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
   def parse(["project", "view", key]), do: {:ok, {:view_project, key}}
-
-  def parse(["project", "rename", key | name]) when name != [],
-    do: {:ok, {:rename_project, key, Enum.join(name, " ")}}
-
-  def parse(["project", "remove", key]), do: {:ok, {:remove_project, key}}
 
   def parse(["blueprint", "register", project, repository, commit, path]) do
     {:ok, {:register_blueprint, project, repository, commit, path}}
@@ -216,8 +208,8 @@ defmodule SpruceGoose.CLI.Command do
     {:ok, {:apply_blueprint, project, repository, commit, path}}
   end
 
-  def parse(["roadmap", "add", project, key | name]) when name != [],
-    do: {:ok, {:add_roadmap, project, key, Enum.join(name, " ")}}
+  def parse(["roadmap", verb | _args]) when verb in ["add", "rename", "remove"],
+    do: constitutive_mutation_refusal()
 
   def parse(["roadmap", "list" | args]) do
     with {:ok, opts} <- scope_options(args, project: :string) do
@@ -227,10 +219,8 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["roadmap", "show", project, key]), do: {:ok, {:show_roadmap, project, key}}
 
-  def parse(["roadmap", "rename", project, key | name]) when name != [],
-    do: {:ok, {:rename_roadmap, project, key, Enum.join(name, " ")}}
-
-  def parse(["roadmap", "remove", project, key]), do: {:ok, {:remove_roadmap, project, key}}
+  def parse(["workflow", verb | _args]) when verb in ["add", "rename", "remove"],
+    do: constitutive_mutation_refusal()
 
   def parse(["workflow", "list" | args]) do
     with {:ok, opts} <- scope_options(args, project: :string, roadmap: :string) do
@@ -243,30 +233,6 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["workflow", "critical-path", project, roadmap, workflow_id]),
     do: {:ok, {:workflow_critical_path, project, roadmap, workflow_id}}
-
-  def parse(["workflow", "rename", project, roadmap, workflow_id | name]) when name != [],
-    do: {:ok, {:rename_workflow, project, roadmap, workflow_id, Enum.join(name, " ")}}
-
-  def parse(["workflow", "remove", project, roadmap, workflow_id]),
-    do: {:ok, {:remove_workflow, project, roadmap, workflow_id}}
-
-  def parse(["workflow", "add" | args]) do
-    {opts, rest, invalid} =
-      OptionParser.parse(args,
-        strict: [project: :string, roadmap: :string, definition: :string]
-      )
-
-    with [] <- invalid,
-         {:ok, project} <- required(opts, :project),
-         {:ok, roadmap} <- required(opts, :roadmap),
-         {:ok, definition} <- required(opts, :definition),
-         [workflow_id | name] when name != [] <- rest do
-      {:ok, {:add_workflow, project, roadmap, workflow_id, Enum.join(name, " "), definition}}
-    else
-      {:error, option} -> {:error, "--#{option} is required"}
-      _ -> {:error, "invalid workflow add arguments"}
-    end
-  end
 
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
   def parse(["task", "blockers", id]), do: {:ok, {:task_blockers, id}}

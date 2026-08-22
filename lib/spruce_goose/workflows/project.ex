@@ -5,6 +5,7 @@ defmodule SpruceGoose.Workflows.Project do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
+  alias SpruceGoose.Workflows.ConstitutiveMutation
 
   postgres do
     table("projects")
@@ -43,16 +44,21 @@ defmodule SpruceGoose.Workflows.Project do
     defaults([:read])
 
     update :rename do
+      require_atomic?(false)
       accept([:name])
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     destroy :destroy do
       primary?(true)
+      require_atomic?(false)
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
 
     create :create do
       primary?(true)
       accept([:key, :name])
+      validate(fn _changeset, _context -> ConstitutiveMutation.validate_legacy() end)
     end
   end
 

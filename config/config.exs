@@ -65,6 +65,7 @@ config :spruce_goose, :ledger_recovery_mode, false
 config :spruce_goose, :ledger_recovery_database, nil
 config :spruce_goose, :ledger_live_database, "spruce_goose_dev"
 config :spruce_goose, :allow_unbound_task_admission, false
+config :spruce_goose, :allow_legacy_hierarchy_mutation, false
 config :spruce_goose, :start_cli_service, false
 config :spruce_goose, :cli_socket_path, nil
 config :spruce_goose, :cli_request_timeout, 30_000

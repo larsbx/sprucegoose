@@ -17,6 +17,7 @@ config :bcrypt_elixir, log_rounds: 1
 config :spruce_goose, :default_actor, "test-system"
 config :spruce_goose, :authority_host_marker, "/nonexistent/sprucegoose-test-authority-marker"
 config :spruce_goose, :allow_unbound_task_admission, true
+config :spruce_goose, :allow_legacy_hierarchy_mutation, true
 
 config :spruce_goose,
        :systemwide_sop_path,
