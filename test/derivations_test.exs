@@ -5,6 +5,7 @@ defmodule SpruceGoose.DerivationsTest do
   alias SpruceGoose.Authz
   alias SpruceGoose.CLI.Executor, as: CLIExecutor
   alias SpruceGoose.Derivations.{Domain, Executor, Permit}
+  alias SpruceGoose.Kernel.Postgres.EventLedger
   alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
 
   @commit String.duplicate("a", 40)
@@ -137,6 +138,9 @@ defmodule SpruceGoose.DerivationsTest do
     assert completed.state == :succeeded
     assert completed.executor_id == executor.name
     assert completed.evidence_digest == String.duplicate("d", 64)
+
+    assert {:ok, events} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert Enum.map(events, & &1.payload["command"]) == List.duplicate("derivation_transition", 2)
 
     assert {:discard, "expected exactly one permit_id"} =
              Executor.perform(%Oban.Job{

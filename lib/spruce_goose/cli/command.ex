@@ -92,7 +92,7 @@ defmodule SpruceGoose.CLI.Command do
        "list [--actor NAME] [--role ROLE]",
        "remove NAME --role ROLE --scope SCOPE"
      ]},
-    {"ledger", ["import PATH", "parity PATH"]},
+    {"ledger", ["import PATH", "parity PATH", "shadow-status"]},
     {"outbox", ["failed", "replay EVENT_ID"]},
     {"derivation",
      [
@@ -474,6 +474,7 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["ledger", "import", path]), do: {:ok, {:import_ledger, path}}
   def parse(["ledger", "parity", path]), do: {:ok, {:parity_ledger, path}}
+  def parse(["ledger", "shadow-status"]), do: {:ok, :shadow_ledger_status}
   def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 

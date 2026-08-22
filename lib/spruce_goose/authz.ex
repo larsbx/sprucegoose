@@ -70,22 +70,60 @@ defmodule SpruceGoose.Authz do
 
   def read(query_or_resource), do: Ash.read(query_or_resource, opts())
   def count(query), do: Ash.count(query, opts())
-  def create(resource, input, extra \\ []), do: Ash.create(resource, input, opts(extra))
+
+  def create(resource, input, extra \\ []) do
+    notify(Ash.create(resource, input, notification_opts(extra)))
+  end
 
   def create_with_notifications(resource, input, extra \\ []) do
     Ash.create(resource, input, opts(Keyword.put(extra, :return_notifications?, true)))
   end
 
-  def update(record, input, extra \\ []), do: Ash.update(record, input, opts(extra))
-  def update_changeset(changeset, extra \\ []), do: Ash.update(changeset, opts(extra))
+  def update(record, input, extra \\ []) do
+    notify(Ash.update(record, input, notification_opts(extra)))
+  end
+
+  def update_changeset(changeset, extra \\ []) do
+    notify(Ash.update(changeset, notification_opts(extra)))
+  end
 
   def destroy(record) do
-    case Ash.destroy(record, opts()) do
-      :ok -> :ok
-      {:ok, _destroyed} -> :ok
-      error -> error
+    destroy_opts =
+      if SpruceGoose.Kernel.ShadowEvents.collecting_notifications?(),
+        do: opts(return_destroyed?: true, return_notifications?: true),
+        else: opts()
+
+    case Ash.destroy(record, destroy_opts) do
+      :ok ->
+        :ok
+
+      {:ok, _destroyed} ->
+        :ok
+
+      {:ok, _destroyed, notifications} ->
+        SpruceGoose.Kernel.ShadowEvents.collect_notifications(notifications)
+
+      error ->
+        error
     end
   end
+
+  defp notification_opts(extra) do
+    if SpruceGoose.Kernel.ShadowEvents.collecting_notifications?(),
+      do: opts(Keyword.put(extra, :return_notifications?, true)),
+      else: opts(extra)
+  end
+
+  defp notify({:ok, record, notifications}) do
+    if SpruceGoose.Kernel.ShadowEvents.collecting_notifications?() do
+      :ok = SpruceGoose.Kernel.ShadowEvents.collect_notifications(notifications)
+      {:ok, record}
+    else
+      {:ok, record, notifications}
+    end
+  end
+
+  defp notify(result), do: result
 
   defp opts(extra \\ []), do: Keyword.merge(extra, actor: actor!(), authorize?: true)
 end

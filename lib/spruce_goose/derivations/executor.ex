@@ -17,6 +17,7 @@ defmodule SpruceGoose.Derivations.Executor do
   alias SpruceGoose.Actors.Actor
   alias SpruceGoose.Authz
   alias SpruceGoose.Derivations.Permit
+  alias SpruceGoose.Kernel.ShadowEvents
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"permit_id" => permit_id}} = job)
@@ -32,7 +33,7 @@ defmodule SpruceGoose.Derivations.Executor do
 
   defp execute(permit_id, executor_id) do
     with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
-         {:ok, claimed} <- Authz.update(permit, %{executor_id: executor_id}, action: :claim) do
+         {:ok, claimed} <- shadow_update(permit, %{executor_id: executor_id}, :claim) do
       run_handler(claimed)
     else
       {:error, reason} -> {:discard, message(reason)}
@@ -66,7 +67,7 @@ defmodule SpruceGoose.Derivations.Executor do
           artifact_digest: Map.get(outcome, :artifact_digest)
         }
 
-        case Authz.update(permit, input, action: :succeed) do
+        case shadow_update(permit, input, :succeed) do
           {:ok, _completed} -> :ok
           {:error, reason} -> {:discard, message(reason)}
         end
@@ -80,10 +81,16 @@ defmodule SpruceGoose.Derivations.Executor do
   end
 
   defp fail(permit, reason) do
-    case Authz.update(permit, %{failure_reason: reason}, action: :fail) do
+    case shadow_update(permit, %{failure_reason: reason}, :fail) do
       {:ok, _failed} -> {:discard, reason}
       {:error, error} -> {:discard, message(error)}
     end
+  end
+
+  defp shadow_update(permit, input, action) do
+    ShadowEvents.transaction({:derivation_transition, permit.permit_id, action}, fn ->
+      Authz.update(permit, input, action: action)
+    end)
   end
 
   defp handler_for(action) do
