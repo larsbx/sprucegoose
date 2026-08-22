@@ -22,7 +22,11 @@ defmodule SpruceGoose.ProjectBlueprintManifestTest do
              "constitutional-vertical-slice"
            ]
 
-    assert tasks["grandfathered-baseline"].depends_on == ["certified-event-ledger-shadow"]
+    assert tasks["certified-event-shadow-append"].depends_on == [
+             "certified-event-ledger-shadow"
+           ]
+
+    assert tasks["grandfathered-baseline"].depends_on == ["certified-event-shadow-append"]
     assert tasks["deterministic-replay-parity"].depends_on == ["grandfathered-baseline"]
 
     assert Enum.sort(tasks["canary-cutover"].depends_on) ==
