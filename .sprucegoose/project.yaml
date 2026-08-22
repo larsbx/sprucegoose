@@ -41,6 +41,12 @@ roadmaps:
               definition_of_done: An evidence-backed, read-only audit compares the current repository, deployed service, constitutive bindings, operative ledger, projections, and legacy epoch against the governed authority contract; findings include severity, proof, limitations, and separately governed remediation boundaries.
               depends_on: [authority-contract]
               input: {}
+            - id: ada-runtime-diagnosis
+              kind: openclaw
+              title: Diagnose Ada production response failure
+              definition_of_done: Read-only checks identify the current Ada failure boundary across the Mama Hermes service, messaging consumer, gateway, and provider authentication; sanitized finding, reproducible regression evidence, and the governing SOP reference are attached; no remediation or credential mutation occurs.
+              depends_on: []
+              input: {}
             - id: constitutive-mutation-lockdown
               kind: openclaw
               title: Lock constitutive hierarchy mutations to repository blueprints
