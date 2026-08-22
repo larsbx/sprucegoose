@@ -1,16 +1,15 @@
 # Current state
 
-Verified 2026-08-21 under task `tsk-20260821T225940Z-88506be3`.
+Verified 2026-08-22 under task `tsk-20260822T012301Z-0cccb9a6`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `6b97bb8b066475797b42f3bb5c8f92118dbe84e5`; its tree is
-  `68b95736899fd23d8ea31c19be2414663c670715`. The governed
-  `break-glass-pg19beta2-convergence-20260821` transaction converged the
-  superseded pre-cutover branch lineages without reintroducing PostgreSQL 19
-  Beta 3, retired GitLab CI, or obsolete audit diagrams.
+  `3e6dab6382c4250e9e7cdc4569b648efccb24554`; its tree is
+  `471c841458f5421db1019e2fd7e8d9565e16a0a5`. The governed
+  `lockdown-main-20260822` transaction retained PostgreSQL 19 Beta 2 and
+  activated the repository-blueprint hierarchy lockdown.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -18,6 +17,12 @@ Verified 2026-08-21 under task `tsk-20260821T225940Z-88506be3`.
   transitions, actors, grants, receipts, permits, and evidence links.
 - Repository-bound BlueprintRevisions and TaskDefinitions are the reviewed
   admission surface. Mutable operator task creation is retired.
+- Direct Project, Roadmap, and Workflow creation, rename, and removal commands
+  are absent from the supported CLI and refuse through legacy entry points.
+  Exact verified `blueprint apply` operations may create a repository-defined
+  Project and materialize its hierarchy in one transaction. Invalid manifests
+  roll back the Project and BlueprintRevision together. Existing hierarchy
+  rows remain readable.
 
 PostgreSQL 19 Beta 2 is an explicit production deviation. It is operationally
 verified but is not a supported GA baseline, so production and development
