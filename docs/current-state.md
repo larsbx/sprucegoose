@@ -1,15 +1,15 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T012301Z-0cccb9a6`.
+Verified 2026-08-22 under task `tsk-20260822T075231Z-2110e90b`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `3e6dab6382c4250e9e7cdc4569b648efccb24554`; its tree is
-  `471c841458f5421db1019e2fd7e8d9565e16a0a5`. The governed
-  `lockdown-main-20260822` transaction retained PostgreSQL 19 Beta 2 and
-  activated the repository-blueprint hierarchy lockdown.
+  `abcedacaaf1e6332aea547ba96aa83e6e2e1d1de`; its tree is
+  `ca361b455790a48cadf60a1309faa582d73f9ce8`. The governed
+  `constitutional-vertical-slice-20260822` transaction retained PostgreSQL 19
+  Beta 2 and activated the typed constitutional authorization path.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -42,10 +42,11 @@ parity remains weaker than the intended Twelve-Factor baseline.
 
 ## Delivery architecture status
 
-Forgejo is the source authority. Woodpecker provides the loopback-only,
-bootstrap derivation service. SpruceGoose governs task admission, verification
-permits, and deployment authorization. Independent signing and immutable CAS
-custody are live.
+Forgejo is the source authority. Woodpecker runs loopback-only CI and governed
+release builds. The SpruceGoose Oban executor performs the bounded derivation
+actions. SpruceGoose governs task admission, verification permits, and
+deployment authorization. Independent signing and immutable CAS custody are
+live.
 
 Assured Mode is **not** claimed. OpenShip or an approved equivalent realization
 plane is not deployed, the dedicated isolated build runner is incomplete, and
@@ -61,7 +62,16 @@ metadata, ArtifactStore and EventLedger ports, and reference in-memory
 adapters. Focused tests prove altered-content and wrong-adapter refusal plus
 idempotent append only for byte-identical events.
 
-This seam is not a production authority cutover. The certified PostgreSQL
+The deployed kernel also provides one deterministic, content-addressed path
+from an exact ontology version through proposition, evidence, claim,
+justification, norm, grant, resolution, authorization, and an unexecuted
+`EffectIntent`. It refuses missing or substituted roots, undefined predicates,
+unbound referents, unsupported or contested evidence, incompatible norms,
+stale or expired grants, insufficient authority, conflicts, omitted input
+identity, and unauthorized effects. The only licensed action in this slice is
+`verify_artifact`; the path stores no command and cannot execute an effect.
+
+These seams are not a production historical-authority cutover. The certified PostgreSQL
 EventLedger, shadow-append observation window, deterministic projection
 rebuild, dual-read parity, rollback proof, and direct-projection-write refusal
 remain required. Jimbo is excluded from the first cutover wave. A bounded
