@@ -59,11 +59,17 @@ roadmaps:
               definition_of_done: PostgreSQL appends immutable ordered certified events with exact content identity and idempotency, refuses conflicting reuse and mutation, verifies required constitutive roots, retains mutable tables as authority during shadow mode, and passes migration, concurrency, recovery, and compiled-CLI dogfood gates.
               depends_on: [constitutive-mutation-lockdown, constitutional-vertical-slice]
               input: {}
+            - id: certified-event-shadow-append
+              kind: openclaw
+              title: Append certified shadow events transactionally
+              definition_of_done: Every accepted mutation in the baseline replay scope appends one root-valid certified candidate event in the same transaction; reconciliation detects missing, duplicate, reordered, or invalid events; mutable rows remain authority; positive, rollback, concurrency, recovery, and compiled-CLI dogfood gates pass.
+              depends_on: [certified-event-ledger-shadow]
+              input: {}
             - id: grandfathered-baseline
               kind: openclaw
               title: Bind the grandfathered legacy baseline
               definition_of_done: One content-addressed immutable baseline snapshot records the exact final legacy position and schema, one GrandfatheredStateAccepted certified event binds it, excluded fixtures remain quarantined, no legacy row receives invented provenance, and backup, restore, verification, and refusal gates pass.
-              depends_on: [certified-event-ledger-shadow]
+              depends_on: [certified-event-shadow-append]
               input: {}
             - id: deterministic-replay-parity
               kind: openclaw
