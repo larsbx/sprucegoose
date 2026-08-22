@@ -92,13 +92,30 @@ defmodule SpruceGoose.Kernel.TaskProjector do
 
   defp replay(state, position, events) do
     Enum.reduce_while(events, {:ok, state, position}, fn
-      [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, prior}
-      when next == prior + 1 and command in @task_commands and is_map(result) ->
-        task = normalize(result)
-        {:cont, {:ok, put_in(acc, ["tasks", task["id"]], task), next}}
-
       [next, _type, _payload], {:ok, _acc, prior} when next != prior + 1 ->
         {:halt, {:error, :noncontiguous_certified_history}}
+
+      [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, _prior}
+      when command in @task_commands and is_map(result) ->
+        case normalize(result) do
+          %{"id" => id} = task when is_binary(id) and id != "" ->
+            {:cont, {:ok, put_in(acc, ["tasks", id], task), next}}
+
+          _invalid_task ->
+            {:halt, {:error, :unsupported_certified_event}}
+        end
+
+      [_next, "MutationAccepted", %{"command" => command}], _acc
+      when command in @task_commands ->
+        {:halt, {:error, :unsupported_certified_event}}
+
+      [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, _prior}
+      when is_binary(command) and is_map(result) ->
+        {:cont, {:ok, acc, next}}
+
+      [next, event_type, payload], {:ok, acc, _prior}
+      when is_binary(event_type) and is_map(payload) and event_type != "MutationAccepted" ->
+        {:cont, {:ok, acc, next}}
 
       [_next, _type, _payload], _acc ->
         {:halt, {:error, :unsupported_certified_event}}
