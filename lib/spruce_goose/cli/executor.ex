@@ -11,6 +11,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Derivations.{Executor, Permit}
   alias SpruceGoose.Kernel.{ShadowEvents, TaskProjector}
   alias SpruceGoose.Kernel.GrandfatheredBaseline
+  alias SpruceGoose.Runtime.Shadow, as: RuntimeShadow
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
@@ -525,6 +526,18 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch(:show_grandfathered_baseline), do: GrandfatheredBaseline.show()
   defp dispatch(:rebuild_task_projection), do: TaskProjector.rebuild()
   defp dispatch(:task_projection_status), do: TaskProjector.status()
+
+  defp dispatch({:shadow_runtime, task_id, envelope}) do
+    with {:ok, task} <- Authz.read_one(Task, task_id: task_id) do
+      RuntimeShadow.import(task, envelope)
+    end
+  end
+
+  defp dispatch({:parity_runtime, task_id, envelope}) do
+    with {:ok, task} <- Authz.read_one(Task, task_id: task_id) do
+      RuntimeShadow.parity(task, envelope)
+    end
+  end
 
   defp dispatch({:show_task, id}) do
     with :ok <- require_valid_id(id),

@@ -20,6 +20,17 @@ defmodule SpruceGoose.Application do
     Supervisor.start_link(children, strategy: :one_for_one, name: SpruceGoose.Supervisor)
   end
 
+  @impl true
+  def stop(_state) do
+    if Application.get_env(:spruce_goose, :start_cli_service, false) do
+      :ok =
+        Application.fetch_env!(:spruce_goose, :cli_socket_path)
+        |> SpruceGoose.CLI.SocketPath.remove()
+    end
+
+    :ok
+  end
+
   defp cli_service_children do
     if Application.fetch_env!(:spruce_goose, :start_cli_service) do
       socket_path = Application.fetch_env!(:spruce_goose, :cli_socket_path)
@@ -27,6 +38,7 @@ defmodule SpruceGoose.Application do
 
       [
         {Task.Supervisor, name: SpruceGoose.CLI.TaskSupervisor},
+        {SpruceGoose.CLI.SocketPath, socket_path},
         Supervisor.child_spec(
           {Bandit,
            plug:
