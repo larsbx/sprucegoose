@@ -20,6 +20,8 @@ defmodule SpruceGoose.Derivations.Permit do
   @hex64 ~r/\A[0-9a-f]{64}\z/
   @repository ~r/\A[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\z/
   @ref ~r/\Arefs\/(heads|tags)\/[A-Za-z0-9._\/-]+\z/
+  @required_roots ~w(ontology schema norm policy grant_epoch agent_charter interpreter evidence_policy)
+  @root ~r/\Asha256:[0-9a-f]{64}\z/
 
   postgres do
     table("derivation_permits")
@@ -59,6 +61,7 @@ defmodule SpruceGoose.Derivations.Permit do
     attribute(:tree_sha, :string, allow_nil?: false, public?: true)
     attribute(:ref, :string, allow_nil?: false, public?: true)
     attribute(:pipeline_digest, :string, allow_nil?: false, public?: true)
+    attribute(:roots, :map, allow_nil?: false, public?: true)
     attribute(:input_artifact_digest, :string, public?: true)
 
     attribute(:action, :atom,
@@ -106,11 +109,13 @@ defmodule SpruceGoose.Derivations.Permit do
         :tree_sha,
         :ref,
         :pipeline_digest,
+        :roots,
         :input_artifact_digest,
         :action
       ])
 
       validate(fn changeset, _context -> validate_source(changeset) end)
+      validate(fn changeset, _context -> validate_roots(changeset) end)
       validate(fn changeset, _context -> validate_action_input(changeset) end)
       validate(fn changeset, _context -> validate_task(changeset) end)
 
@@ -199,6 +204,7 @@ defmodule SpruceGoose.Derivations.Permit do
         value(attrs, :tree_sha),
         value(attrs, :ref),
         value(attrs, :pipeline_digest),
+        canonical_roots(value(attrs, :roots)),
         value(attrs, :input_artifact_digest),
         value(attrs, :action)
       ]
@@ -239,6 +245,22 @@ defmodule SpruceGoose.Derivations.Permit do
         {:error, field: :task_id, message: "does not identify a governed task"}
     end
   end
+
+  defp validate_roots(changeset) do
+    roots = Ash.Changeset.get_attribute(changeset, :roots)
+
+    if is_map(roots) and not is_struct(roots) and
+         Map.keys(roots) |> Enum.sort() == Enum.sort(@required_roots) and
+         Enum.all?(roots, fn {_name, value} -> is_binary(value) and Regex.match?(@root, value) end),
+       do: :ok,
+       else: {:error, field: :roots, message: "must contain the exact constitutional root set"}
+  end
+
+  defp canonical_roots(roots) when is_map(roots) do
+    Enum.map_join(@required_roots, "\n", &Map.get(roots, &1, ""))
+  end
+
+  defp canonical_roots(_roots), do: ""
 
   defp validate_action_input(changeset) do
     action = Ash.Changeset.get_attribute(changeset, :action)

@@ -11,6 +11,10 @@ defmodule SpruceGoose.DerivationsTest do
   @commit String.duplicate("a", 40)
   @tree String.duplicate("b", 40)
   @pipeline String.duplicate("c", 64)
+  @roots Map.new(
+           ~w(ontology schema norm policy grant_epoch agent_charter interpreter evidence_policy),
+           &{&1, "sha256:" <> String.duplicate("e", 64)}
+         )
 
   defmodule SuccessfulHandler do
     def run(%Permit{action: :test}) do
@@ -68,6 +72,25 @@ defmodule SpruceGoose.DerivationsTest do
 
     assert {:error, _} =
              as_actor(executor, fn -> Authz.create(Permit, attrs, action: :admit) end)
+  end
+
+  test "permit identity binds the complete constitutional root set" do
+    task = in_progress_task("roots")
+    operator = actor_with_role("operator-roots", :operator)
+    attrs = permit_attrs(task)
+
+    assert {:error, missing} =
+             as_actor(operator, fn ->
+               Authz.create(Permit, Map.delete(attrs, :roots), action: :admit)
+             end)
+
+    assert Exception.message(missing) =~ "roots"
+
+    assert {:ok, permit} =
+             as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
+
+    substituted = put_in(attrs, [:roots, "policy"], "sha256:" <> String.duplicate("f", 64))
+    refute Permit.deterministic_id(substituted) == permit.permit_id
   end
 
   test "only a derivation executor may claim and record a typed terminal outcome" do
@@ -325,6 +348,7 @@ defmodule SpruceGoose.DerivationsTest do
       tree_sha: @tree,
       ref: "refs/heads/main",
       pipeline_digest: @pipeline,
+      roots: @roots,
       action: :test
     }
   end
