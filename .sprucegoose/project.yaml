@@ -89,6 +89,12 @@ roadmaps:
               definition_of_done: Empty-state rebuild, restart, concurrent shadow append completeness, dual-read parity, lag health, direct-projection-write refusal, and rollback to the legacy reader and writer pass without deleting certified events.
               depends_on: [grandfathered-baseline]
               input: {}
+            - id: projector-event-routing
+              kind: openclaw
+              title: Route certified events by projection scope
+              definition_of_done: The authoritative-task projector applies supported task mutations, advances across valid certified non-task events without projecting them, and fails closed on malformed or unsupported task mutations; focused, full, replay, recovery, migration, compiled-CLI, deployment, zero-lag, and parity gates pass without deleting certified events or transferring authority.
+              depends_on: [deterministic-replay-parity]
+              input: {}
             - id: certified-derivation-receipts
               kind: openclaw
               title: Bind derivation permits and certify immutable outcomes
@@ -123,7 +129,7 @@ roadmaps:
               kind: openclaw
               title: Canary the authority cutover
               definition_of_done: Forward event authority and deterministic projections pass replay, recovery, and parity canaries.
-              depends_on: [runtime-capability-transfer, deterministic-replay-parity]
+              depends_on: [runtime-capability-transfer, projector-event-routing]
               input: {}
             - id: legacy-retirement
               kind: openclaw

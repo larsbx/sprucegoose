@@ -28,9 +28,10 @@ defmodule SpruceGoose.ProjectBlueprintManifestTest do
 
     assert tasks["grandfathered-baseline"].depends_on == ["certified-event-shadow-append"]
     assert tasks["deterministic-replay-parity"].depends_on == ["grandfathered-baseline"]
+    assert tasks["projector-event-routing"].depends_on == ["deterministic-replay-parity"]
 
     assert Enum.sort(tasks["canary-cutover"].depends_on) ==
-             Enum.sort(["deterministic-replay-parity", "runtime-capability-transfer"])
+             Enum.sort(["projector-event-routing", "runtime-capability-transfer"])
   end
 
   defp atomize(value) when is_map(value) do
