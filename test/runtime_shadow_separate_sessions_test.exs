@@ -1,6 +1,8 @@
 defmodule SpruceGoose.RuntimeShadowSeparateSessionsTest do
   use ExUnit.Case, async: false
 
+  require Ash.Query
+
   @moduletag :separate_sessions
 
   alias SpruceGoose.{Authz, Repo}
@@ -22,7 +24,7 @@ defmodule SpruceGoose.RuntimeShadowSeparateSessionsTest do
     envelope = %{
       protocol_version: 1,
       adapter: "example-runtime/v1",
-      external_id: "concurrent-run",
+      external_id: "concurrent-run-#{task.task_id}",
       revision: 9,
       status: :waiting,
       checkpoint: "approval",
@@ -53,7 +55,17 @@ defmodule SpruceGoose.RuntimeShadowSeparateSessionsTest do
 
     assert Enum.count(results, &match?({:ok, %{created: true}}, &1)) == 1
     assert Enum.count(results, &match?({:ok, %{created: false}}, &1)) == 7
-    assert length(Ash.read!(ShadowSnapshot, authorize?: false)) == 1
+
+    snapshots =
+      ShadowSnapshot
+      |> Ash.Query.filter_input(
+        adapter: envelope.adapter,
+        external_id: envelope.external_id,
+        revision: envelope.revision
+      )
+      |> Ash.read!(authorize?: false)
+
+    assert length(snapshots) == 1
   end
 
   defp digest(value), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, value), case: :lower)
