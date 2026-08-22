@@ -2,6 +2,7 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.Kernel.{CertifiedEvent, ContentID}
   alias SpruceGoose.Kernel.Postgres.EventLedger
   alias SpruceGoose.Repo
 
@@ -106,6 +107,50 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
     assert rebuilt_again.state_digest == rebuilt.state_digest
   end
 
+  test "replay advances across certified non-task mutations" do
+    task = task_fixture()
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+
+    assert {:ok, event} =
+             CertifiedEvent.new(%{
+               stream: "authority:sprucegoose",
+               event_type: "MutationAccepted",
+               idempotency_key: "test:apply-blueprint",
+               payload: %{
+                 "command" => "apply_blueprint",
+                 "result" => %{"project" => "baseline"}
+               },
+               roots: shadow_roots()
+             })
+
+    assert {:ok, %ContentID{}, _ledger} =
+             EventLedger.append(EventLedger.new(), event)
+
+    assert {:ok, _} = Executor.run({:link_task, task.task_id, "evidence", "after-non-task"})
+    assert {:ok, %{tasks: tasks}} = Executor.run(:rebuild_task_projection)
+    assert tasks >= 1
+    assert {:ok, %{parity: true, lag: 0}} = Executor.run(:task_projection_status)
+  end
+
+  test "replay refuses a malformed task mutation" do
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+
+    assert {:ok, event} =
+             CertifiedEvent.new(%{
+               stream: "authority:sprucegoose",
+               event_type: "MutationAccepted",
+               idempotency_key: "test:malformed-task",
+               payload: %{"command" => "link_task", "result" => %{"title" => "missing id"}},
+               roots: shadow_roots()
+             })
+
+    assert {:ok, %ContentID{}, _ledger} =
+             EventLedger.append(EventLedger.new(), event)
+
+    assert {:error, :unsupported_certified_event} =
+             Executor.run(:rebuild_task_projection)
+  end
+
   @tag :separate_sessions
   test "acceptance racing a supported mutation keeps one contiguous boundary" do
     parent = self()
@@ -169,5 +214,13 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
       definition_of_done: "Baseline proof passes.",
       runner: :openclaw
     })
+  end
+
+  defp shadow_roots do
+    :spruce_goose
+    |> Application.app_dir("priv/kernel/shadow-event-roots.json")
+    |> File.read!()
+    |> Jason.decode!()
+    |> Map.fetch!("roots")
   end
 end
