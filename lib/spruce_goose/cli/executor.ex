@@ -9,6 +9,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
   alias SpruceGoose.Derivations.{Executor, Permit}
+  alias SpruceGoose.Kernel.ShadowEvents
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
   alias SpruceGoose.Workflows.{
@@ -92,7 +93,11 @@ defmodule SpruceGoose.CLI.Executor do
     case Resolver.resolve(actor_name) do
       {:ok, actor} ->
         actor
-        |> Authz.with_actor(fn -> dispatch(command) end)
+        |> Authz.with_actor(fn ->
+          if ShadowEvents.shadowed?(command),
+            do: ShadowEvents.transaction(command, fn -> dispatch(command) end),
+            else: dispatch(command)
+        end)
         |> explain(actor)
 
       {:error, message} ->
@@ -514,6 +519,7 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp dispatch({:import_ledger, path}), do: Ledger.import(path)
   defp dispatch({:parity_ledger, path}), do: Ledger.parity(path)
+  defp dispatch(:shadow_ledger_status), do: ShadowEvents.status()
 
   defp dispatch({:show_task, id}) do
     with :ok <- require_valid_id(id),
