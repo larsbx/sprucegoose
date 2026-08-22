@@ -960,10 +960,7 @@ defmodule SpruceGoose.CLI.Executor do
   defp ensure_blueprint_project(%{key: key, name: name}, action) do
     case read_one(Project, key: key) do
       {:ok, project} when action == :apply and is_binary(name) ->
-        Authz.update(project, %{name: name},
-          action: :apply_blueprint_revision,
-          return_notifications?: true
-        )
+        Authz.update_with_notifications(project, %{name: name}, action: :apply_blueprint_revision)
 
       {:ok, project} ->
         {:ok, project, []}
