@@ -83,6 +83,12 @@ roadmaps:
               definition_of_done: Empty-state rebuild, restart, concurrent shadow append completeness, dual-read parity, lag health, direct-projection-write refusal, and rollback to the legacy reader and writer pass without deleting certified events.
               depends_on: [grandfathered-baseline]
               input: {}
+            - id: certified-derivation-receipts
+              kind: openclaw
+              title: Bind derivation permits and certify immutable outcomes
+              definition_of_done: Derivation permits bind the exact ontology, schema, norm, policy, grant and revocation epoch, agent charter, interpreter, and evidence-policy roots; claim and completion no longer mutate permit authority; one append-only certified receipt records each terminal outcome; substitution, stale-epoch, duplicate, mutation, rollback, concurrency, migration, compiled-CLI, full regression, deployment, and live verification gates pass.
+              depends_on: [deterministic-replay-parity, constitutional-vertical-slice]
+              input: {}
             - id: ooda-shadow
               kind: openclaw
               title: Shadow the Pi OODA path
