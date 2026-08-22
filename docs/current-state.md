@@ -1,15 +1,15 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T083721Z-54fe7069`.
+Verified 2026-08-22 under task `tsk-20260822T094711Z-a55aa8a2`.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
   Beta 2. The deployed application commit is
-  `c3e9af17bd31448a80be5cb12a8617ac7f1e2e3c`; its tree is
-  `b332149fb7a8f1eb1b4b71cd05d2bf2e586a82bc`. The governed
-  `certified-event-ledger-shadow-20260822` transaction retained PostgreSQL 19
-  Beta 2 and activated the certified ledger in empty shadow mode.
+  `3b51983bd63e4054e685432a871f39f8a8211de8`; its tree is
+  `6b2f28b8a5d13e104345f6db761c4b0d527a9a4a`. The governed
+  `transactional-shadow-events-20260822` transaction retained PostgreSQL 19
+  Beta 2 and activated transactional certified-event shadowing.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
   application startup is not a normal operator path and must refuse while the
   authority marker names Mama.
@@ -76,14 +76,21 @@ certified events with exact content identities, required constitutional roots,
 and conflict-safe idempotency. Database constraints recheck identities and
 required roots, and a trigger refuses updates and deletes. Its recovery,
 separate-session concurrency, retry, and conflict behavior has passed. The
-production ledger intentionally contains no events yet: no historical roots
-were invented and mutable workflow rows remain authority.
+supported mutation path now appends one root-valid candidate event in the same
+transaction as each accepted mutation in the baseline replay scope; a refused
+append rolls the mutation back. Reconciliation checks task outbox coverage and
+contiguous stream positions. The production stream currently contains two
+candidate events at positions 1 and 2, with no missing task events or malformed
+streams. A fresh logical dump restored both events and all eight roots into a
+disposable database. No historical roots were invented, and mutable workflow
+rows remain authority.
 
 This is not a production historical-authority cutover. A governed
 `GrandfatheredStateAccepted` baseline, the shadow-append observation window,
 deterministic projection rebuild, dual-read parity, rollback proof, and
-direct-projection-write refusal remain required. Jimbo is excluded from the
-first cutover wave. A bounded non-Jimbo project will canary first, and
+direct-projection-write refusal remain required. The shadow-append observation
+window has started but is not itself an authority change. Jimbo is excluded
+from the first cutover wave. A bounded non-Jimbo project will canary first, and
 `openclaw-system` will move last.
 
 ## Repository documentation policy
