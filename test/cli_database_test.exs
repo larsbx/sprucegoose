@@ -59,6 +59,15 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert project.name == "New Project"
     assert [_] = Ash.read!(Ash.Query.filter_input(Roadmap, project_id: project.id))
     assert [_] = Ash.read!(Ash.Query.filter_input(BlueprintRevision, project_id: project.id))
+
+    assert {:ok, %{project: "new-project", action: :apply}} =
+             Executor.run(
+               {:apply_blueprint, "new-project", "root/new-project", String.duplicate("b", 40),
+                ".sprucegoose/project.yaml"},
+               actor.name
+             )
+
+    assert [_, _] = Ash.read!(Ash.Query.filter_input(BlueprintRevision, project_id: project.id))
   end
 
   test "a rejected new-project blueprint leaves no constitutive rows" do

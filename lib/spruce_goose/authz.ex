@@ -83,6 +83,10 @@ defmodule SpruceGoose.Authz do
     notify(Ash.update(record, input, notification_opts(extra)))
   end
 
+  def update_with_notifications(record, input, extra \\ []) do
+    Ash.update(record, input, opts(Keyword.put(extra, :return_notifications?, true)))
+  end
+
   def update_changeset(changeset, extra \\ []) do
     notify(Ash.update(changeset, notification_opts(extra)))
   end
