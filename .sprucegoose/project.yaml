@@ -156,6 +156,12 @@ roadmaps:
               definition_of_done: Every own repository classified as unpublished has a Forgejo repository created under the publication authority, a forgejo remote configured, and all branches and tags pushed, with local and remote object identity compared per repository and recorded; third-party upstream clones retain their upstream remotes and are not migrated; GitHub remains configured as a private mirror rather than being removed; no credential material is published; repositories whose worktrees are dirty or owned by another active task are recorded as waiting with exact paths instead of being force-cleaned.
               depends_on: [forgejo-publication-inventory]
               input: {}
+            - id: deontic-overlay-norm-root-candidate
+              kind: openclaw
+              title: Publish the neutral deontic overlay as a norm-root candidate
+              definition_of_done: The deontic and precedence overlays and their three executable certificates are committed to the repository in neutral deontic-logic vocabulary with no residual domain-specific terminology, each certificate re-runs from its committed path and exits zero with its stated law count reproduced rather than assumed, the terminology map records both the rename and the two substantive corrections it forced, the artifacts remain explicitly DRAFT and claim no adoption or authority, and the branch is published through the Forgejo publication authority with local and remote commit identity compared and a pull request opened against protected main.
+              depends_on: [constitutional-vertical-slice]
+              input: {}
             - id: openclaw-secrets-vaultwarden-custody
               kind: openclaw
               title: Move OpenClaw secrets into Vaultwarden custody
