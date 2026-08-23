@@ -143,3 +143,21 @@ roadmaps:
               definition_of_done: Superseded writers are disabled after rollback-safe cutover evidence is retained.
               depends_on: [canary-cutover]
               input: {}
+            - id: forgejo-publication-inventory
+              kind: openclaw
+              title: Inventory host repository publication authority
+              definition_of_done: Every Git repository under the host home directory is classified by exact remote URL against the Forgejo publication authority, distinguishing already-published repositories, unpublished own repositories, third-party upstream clones that must not migrate, linked worktrees that inherit their parent remote, and credential-bearing repositories requiring separate handling; classification is derived from live remote and API reads rather than hostname pattern matching, private repositories are resolved with an authenticated read so absence is never inferred from an anonymous refusal, and each dirty worktree is recorded with its owning task rather than absorbed.
+              depends_on: []
+              input: {}
+            - id: forgejo-publication-migration
+              kind: openclaw
+              title: Publish unpublished own repositories to Forgejo
+              definition_of_done: Every own repository classified as unpublished has a Forgejo repository created under the publication authority, a forgejo remote configured, and all branches and tags pushed, with local and remote object identity compared per repository and recorded; third-party upstream clones retain their upstream remotes and are not migrated; GitHub remains configured as a private mirror rather than being removed; no credential material is published; repositories whose worktrees are dirty or owned by another active task are recorded as waiting with exact paths instead of being force-cleaned.
+              depends_on: [forgejo-publication-inventory]
+              input: {}
+            - id: openclaw-secrets-vaultwarden-custody
+              kind: openclaw
+              title: Move OpenClaw secrets into Vaultwarden custody
+              definition_of_done: Credential material held in the local secrets repository is transferred into Vaultwarden through the bw CLI with per-item verification that each stored secret reads back byte-identical, the secrets repository is never pushed to Forgejo or any mirror, retention or destruction of the local copy is an explicit recorded decision rather than an implied side effect, and rollback remains possible until readback verification passes for every item.
+              depends_on: [forgejo-publication-inventory]
+              input: {}
