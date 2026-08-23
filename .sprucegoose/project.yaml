@@ -95,6 +95,12 @@ roadmaps:
               definition_of_done: The authoritative-task projector applies supported task mutations, advances across valid certified non-task events without projecting them, and fails closed on malformed or unsupported task mutations; focused, full, replay, recovery, migration, compiled-CLI, deployment, zero-lag, and parity gates pass without deleting certified events or transferring authority.
               depends_on: [deterministic-replay-parity]
               input: {}
+            - id: postgresql-ga-readiness-diagnosis
+              kind: openclaw
+              title: Diagnose PostgreSQL GA upgrade readiness
+              definition_of_done: Read-only source, package, extension, migration, backup, restore, rollback, and application-compatibility checks identify a supported PostgreSQL GA target and an evidence-backed upgrade boundary; finding, regression, and SOP references are attached; no package, service, database, credential, or production configuration is mutated.
+              depends_on: [projector-event-routing]
+              input: {}
             - id: certified-derivation-receipts
               kind: openclaw
               title: Bind derivation permits and certify immutable outcomes
