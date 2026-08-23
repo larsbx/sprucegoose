@@ -30,6 +30,10 @@ defmodule SpruceGoose.ProjectBlueprintManifestTest do
     assert tasks["deterministic-replay-parity"].depends_on == ["grandfathered-baseline"]
     assert tasks["projector-event-routing"].depends_on == ["deterministic-replay-parity"]
 
+    assert tasks["postgresql-ga-readiness-diagnosis"].depends_on == [
+             "projector-event-routing"
+           ]
+
     assert Enum.sort(tasks["canary-cutover"].depends_on) ==
              Enum.sort(["projector-event-routing", "runtime-capability-transfer"])
   end
