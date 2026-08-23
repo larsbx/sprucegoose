@@ -1,4 +1,5 @@
 schema_version: 1
+# Applied via `blueprint apply`; `register` records a revision without materializing it.
 project:
   key: openclaw-system
   name: OpenClaw System
