@@ -6,7 +6,7 @@ defmodule SpruceGoose.CLI.Command do
   # so drift is visible in one screen rather than across two files.
   @usage [
     {"id", ["id", "validate-id ID"]},
-    {"project", ["list", "show KEY", "view KEY", "materialize ROOT KEY [KEY ...]"]},
+    {"project", ["list", "show KEY", "view KEY", "materialize KEY [KEY ...]"]},
     {"blueprint",
      ["register PROJECT REPOSITORY COMMIT PATH", "apply PROJECT REPOSITORY COMMIT PATH"]},
     {"roadmap",
@@ -210,11 +210,13 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["project", "show", key]), do: {:ok, {:show_project, key}}
   def parse(["project", "view", key]), do: {:ok, {:view_project, key}}
 
-  def parse(["project", "materialize", root | keys]) when keys != [],
-    do: {:ok, {:materialize_projects, root, keys}}
+  # No destination argument: the archive root is configured on the authority
+  # host so a CLI caller cannot choose where the service writes.
+  def parse(["project", "materialize" | keys]) when keys != [],
+    do: {:ok, {:materialize_projects, keys}}
 
-  def parse(["project", "materialize" | _args]),
-    do: {:error, "project materialize requires a target root and at least one project key"}
+  def parse(["project", "materialize"]),
+    do: {:error, "project materialize requires at least one project key"}
 
   def parse(["blueprint", "register", project, repository, commit, path]) do
     {:ok, {:register_blueprint, project, repository, commit, path}}

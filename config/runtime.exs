@@ -89,6 +89,19 @@ config :spruce_goose,
     ),
   artifact_max_bytes: String.to_integer(System.get_env("ARTIFACT_MAX_BYTES", "67108864"))
 
+# The projection archive is the only tree the service may write. A caller names
+# projects, never a destination, so a CLI argument cannot redirect writes onto
+# the authority host.
+config :spruce_goose,
+  legible_archive_root:
+    System.get_env(
+      "LEGIBLE_ARCHIVE_ROOT",
+      if(config_env() == :prod,
+        do: "/home/admin-papa/sprucegoose-legible",
+        else: Path.join(System.tmp_dir!(), "sprucegoose-legible")
+      )
+    )
+
 if outbox_enabled? do
   config :spruce_goose, Oban,
     plugins: [

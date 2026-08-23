@@ -41,17 +41,44 @@ defmodule SpruceGoose.Legibility do
   end
 
   @doc """
-  Write authorized project projections into `root` as a regenerable archive.
+  Write authorized project projections into the configured archive root.
+
+  The destination is deliberately not a parameter. This runs inside the service
+  on the authority host, so accepting a caller-supplied path would let any CLI
+  argument choose where the service writes as its own user. The root comes from
+  `:legible_archive_root` configuration instead, and callers name only projects.
 
   Writes only the generated tree; it never reads the target back as input and
   performs no Git operations. Rendering is deterministic, so materializing
   unchanged authority twice produces byte-identical files.
   """
-  def materialize(project_keys, root) when is_list(project_keys) and is_binary(root) do
-    with :ok <- File.mkdir_p(Path.join(root, "projects")),
+  def materialize(project_keys) when is_list(project_keys) do
+    with {:ok, root} <- archive_root(),
+         :ok <- File.mkdir_p(Path.join(root, "projects")),
          :ok <- File.write(Path.join(root, "README.md"), @archive_readme),
          {:ok, written} <- materialize_projects(Enum.sort(project_keys), root) do
       {:ok, %{root: root, projects: written}}
+    end
+  end
+
+  defp archive_root do
+    case Application.get_env(:spruce_goose, :legible_archive_root) do
+      root when is_binary(root) ->
+        trimmed = String.trim(root)
+
+        cond do
+          trimmed == "" ->
+            {:error, "legible archive root is empty"}
+
+          not (trimmed =~ ~r|\A/|) ->
+            {:error, "legible archive root must be an absolute path"}
+
+          true ->
+            {:ok, Path.expand(trimmed)}
+        end
+
+      _ ->
+        {:error, "legible archive root is not configured"}
     end
   end
 
