@@ -7,14 +7,15 @@ defmodule SpruceGoose.AuthorityRuntime do
   databases while the named remote host is authoritative.
   """
 
-  def ensure_local_execution_allowed do
-    path =
-      Application.get_env(
-        :spruce_goose,
-        :authority_host_marker,
-        "/home/admin-papa/.config/sprucegoose/authority-host"
-      )
+  @default_marker "/home/admin-papa/.config/sprucegoose/authority-host"
 
+  def ensure_local_execution_allowed do
+    :spruce_goose
+    |> Application.get_env(:authority_host_marker, @default_marker)
+    |> read_marker()
+  end
+
+  defp read_marker(path) do
     case File.read(path) do
       {:error, :enoent} ->
         :ok

@@ -8,3 +8,6 @@ deps/
 graphify-out/
 backups/
 .infisical.json
+
+# ExUnit @tag :tmp_dir scratch space
+/tmp/

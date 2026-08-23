@@ -3,16 +3,22 @@ defmodule SpruceGoose.AuthorityRuntimeTest do
 
   alias SpruceGoose.AuthorityRuntime
 
-  setup do
-    path = Path.join(System.tmp_dir!(), "authority-host-#{System.unique_integer([:positive])}")
-    prior = Application.get_env(:spruce_goose, :authority_host_marker)
-    Application.put_env(:spruce_goose, :authority_host_marker, path)
+  # Use ExUnit's per-test tmp_dir, never a shared /tmp filename.
+  #
+  # `System.unique_integer/1` is per-VM and restarts from a low base on every
+  # run, so a shared "authority-host-<int>" path in tmp_dir eventually collides
+  # with a leftover file written by an earlier run. When that stale file holds a
+  # delegated host, the "missing marker" case reads it and fails with
+  # `authority is mama`. @tag :tmp_dir gives a path unique per test that ExUnit
+  # clears before the test runs.
+  @moduletag :tmp_dir
 
-    on_exit(fn ->
-      if prior,
-        do: Application.put_env(:spruce_goose, :authority_host_marker, prior),
-        else: Application.delete_env(:spruce_goose, :authority_host_marker)
-    end)
+  setup %{tmp_dir: tmp_dir} do
+    path = Path.join(tmp_dir, "authority-host")
+
+    configured = Application.fetch_env!(:spruce_goose, :authority_host_marker)
+    Application.put_env(:spruce_goose, :authority_host_marker, path)
+    on_exit(fn -> Application.put_env(:spruce_goose, :authority_host_marker, configured) end)
 
     %{path: path}
   end
