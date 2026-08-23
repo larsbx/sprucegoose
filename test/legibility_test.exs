@@ -3,7 +3,7 @@ defmodule SpruceGoose.LegibilityTest do
 
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.Authz
-  alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.CLI.{Command, Executor}
   alias SpruceGoose.Legibility
   alias SpruceGoose.Workflows.{Definition, Project, Roadmap, Task, Workflow}
 
@@ -53,14 +53,13 @@ defmodule SpruceGoose.LegibilityTest do
 
   test "materialize writes a byte-identical archive tree on rebuild" do
     task = seed_project("legibility-archive", "Legibility Archive")
-    root = Path.join(System.tmp_dir!(), "legible-#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf!(root) end)
+    root = configure_archive_root()
 
     operator = actor_with_role("legibility-archive-operator", :operator)
 
     assert {:ok, result} =
              Authz.with_actor(operator, fn ->
-               Legibility.materialize(["legibility-archive"], root)
+               Legibility.materialize(["legibility-archive"])
              end)
 
     assert result.root == root
@@ -81,7 +80,7 @@ defmodule SpruceGoose.LegibilityTest do
 
     assert {:ok, _} =
              Authz.with_actor(operator, fn ->
-               Legibility.materialize(["legibility-archive"], root)
+               Legibility.materialize(["legibility-archive"])
              end)
 
     assert digest_tree(root) == first
@@ -89,17 +88,74 @@ defmodule SpruceGoose.LegibilityTest do
 
   test "materialize refuses an unreadable project and writes no partial tree" do
     seed_project("legibility-unauthorized", "Legibility Unauthorized")
-    root = Path.join(System.tmp_dir!(), "legible-#{System.unique_integer([:positive])}")
-    on_exit(fn -> File.rm_rf!(root) end)
+    root = configure_archive_root()
 
     operator = actor_with_role("legibility-unauthorized-operator", :operator)
 
     assert {:error, _} =
              Authz.with_actor(operator, fn ->
-               Legibility.materialize(["legibility-missing"], root)
+               Legibility.materialize(["legibility-missing"])
              end)
 
     refute File.exists?(Path.join([root, "projects", "legibility-missing"]))
+  end
+
+  test "materialize takes its destination from configuration, not from the caller" do
+    seed_project("legibility-confined", "Legibility Confined")
+    root = configure_archive_root()
+    operator = actor_with_role("legibility-confined-operator", :operator)
+
+    # A caller names projects only. There is no destination parameter to point
+    # at the source repository or anywhere else on the authority host.
+    assert {:error, _} = Command.parse(["project", "materialize"])
+    assert {:ok, {:materialize_projects, ["legibility-confined"]}} =
+             Command.parse(["project", "materialize", "legibility-confined"])
+
+    # A path offered where a project key belongs is not a destination. It is an
+    # unknown key, refused by the authorized read before anything is written.
+    escape = Path.join(System.tmp_dir!(), "legible-escape-#{System.unique_integer([:positive])}")
+    on_exit(fn -> File.rm_rf!(escape) end)
+
+    assert {:error, _} =
+             Authz.with_actor(operator, fn ->
+               Legibility.materialize([escape])
+             end)
+
+    refute File.exists?(escape)
+
+    # The configured root is still the only tree written.
+    assert {:ok, result} =
+             Authz.with_actor(operator, fn ->
+               Legibility.materialize(["legibility-confined"])
+             end)
+
+    assert result.root == root
+    assert File.exists?(Path.join([root, "projects", "legibility-confined", "snapshot.json"]))
+  end
+
+  test "materialize refuses an unconfigured or relative archive root" do
+    seed_project("legibility-unconfigured", "Legibility Unconfigured")
+    operator = actor_with_role("legibility-unconfigured-operator", :operator)
+    previous = Application.get_env(:spruce_goose, :legible_archive_root)
+    on_exit(fn -> Application.put_env(:spruce_goose, :legible_archive_root, previous) end)
+
+    Application.delete_env(:spruce_goose, :legible_archive_root)
+
+    assert {:error, reason} =
+             Authz.with_actor(operator, fn ->
+               Legibility.materialize(["legibility-unconfigured"])
+             end)
+
+    assert reason =~ "not configured"
+
+    Application.put_env(:spruce_goose, :legible_archive_root, "relative/archive")
+
+    assert {:error, relative} =
+             Authz.with_actor(operator, fn ->
+               Legibility.materialize(["legibility-unconfigured"])
+             end)
+
+    assert relative =~ "absolute"
   end
 
   defp seed_project(key, name) do
@@ -123,6 +179,19 @@ defmodule SpruceGoose.LegibilityTest do
       priority: 3,
       runner: :oban
     })
+  end
+
+  defp configure_archive_root do
+    root = Path.join(System.tmp_dir!(), "legible-#{System.unique_integer([:positive])}")
+    previous = Application.get_env(:spruce_goose, :legible_archive_root)
+    Application.put_env(:spruce_goose, :legible_archive_root, root)
+
+    on_exit(fn ->
+      Application.put_env(:spruce_goose, :legible_archive_root, previous)
+      File.rm_rf!(root)
+    end)
+
+    root
   end
 
   defp actor_with_role(name, role) do

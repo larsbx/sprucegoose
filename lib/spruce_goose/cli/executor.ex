@@ -203,7 +203,7 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp dispatch({:view_project, key}), do: Legibility.project(key)
 
-  defp dispatch({:materialize_projects, root, keys}), do: Legibility.materialize(keys, root)
+  defp dispatch({:materialize_projects, keys}), do: Legibility.materialize(keys)
 
   defp dispatch({:register_blueprint, project_key, repository, commit, path}) do
     create_blueprint_revision(project_key, repository, commit, path, :register)
