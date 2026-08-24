@@ -39,5 +39,8 @@ defmodule SpruceGoose.Workflows do
     resource(SpruceGoose.Workflows.InboxItem)
     resource(SpruceGoose.Workflows.Revision)
     resource(SpruceGoose.Workflows.BlueprintRevision)
+    resource(SpruceGoose.Workflows.TaskReference)
+    resource(SpruceGoose.Workflows.VerificationTarget)
+    resource(SpruceGoose.Workflows.CompletionClaim)
   end
 end
