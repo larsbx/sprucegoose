@@ -25,7 +25,6 @@ defmodule SpruceGoose.Workflows.TaskReference do
     authorizers: [Ash.Policy.Authorizer]
 
   alias SpruceGoose.Checks.{HasRole, Readable}
-  alias SpruceGoose.Workflows.ReferenceKind
 
   postgres do
     table("task_references")
@@ -57,7 +56,18 @@ defmodule SpruceGoose.Workflows.TaskReference do
 
   attributes do
     uuid_primary_key(:id)
-    attribute(:kind, ReferenceKind, allow_nil?: false, public?: true)
+    # Open vocabulary: the authority holds 105 distinct kinds, 63 of them
+    # appearing once. Enumerating them would encode one-off session labels as
+    # constitutional vocabulary and reject real history on backfill. What a
+    # kind *means* is decided by `ReferenceKind.proof?/1`, not by storage.
+    # Bounded only against the empty string, which carries no meaning and
+    # would silently group unrelated evidence together.
+    attribute(:kind, :string,
+      allow_nil?: false,
+      public?: true,
+      constraints: [min_length: 1, trim?: true]
+    )
+
     attribute(:value, :string, allow_nil?: false, public?: true)
 
     # Nil only for backfilled rows, whose true recording time is unknown.

@@ -156,6 +156,9 @@ defmodule SpruceGoose.Evidence do
     Enum.any?(@verification_terms, &String.contains?(normalized, &1))
   end
 
+  # Proof is matched by exact value against the closed set. Because storage is
+  # an open vocabulary, an unrecognised kind reaches this filter routinely and
+  # must read as "not proof".
   defp has_proof_reference?(%Task{id: task_uuid}) do
     proof = ReferenceKind.proof_kinds()
 
