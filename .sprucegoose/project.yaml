@@ -174,3 +174,9 @@ roadmaps:
               definition_of_done: Credential material held in the local secrets repository is transferred into Vaultwarden through the bw CLI with per-item verification that each stored secret reads back byte-identical, the secrets repository is never pushed to Forgejo or any mirror, retention or destruction of the local copy is an explicit recorded decision rather than an implied side effect, and rollback remains possible until readback verification passes for every item.
               depends_on: [forgejo-publication-inventory]
               input: {}
+            - id: papa-decommission-inventory
+              kind: openclaw
+              title: Inventory Papa decommission readiness before any wipe
+              definition_of_done: Every service, systemd unit, timer, container, credential, DNS or tailnet route, listener, backup destination, recovery path, and publication authority still resident on Papa is enumerated from live host reads rather than from documentation or memory, and each is classified as already migrated to Mama, still Papa-only, or deliberately terminal; every item claimed migrated is proven by an independent read against Mama rather than by the migration record asserting itself, with identity compared where the item has a digest, commit, or content hash; backup freshness is proven by listing the offhost destination rather than trusting a job success line, and at least one restore or recovery path is exercised rather than assumed; Papa-only items are recorded with an owning task and an explicit disposition rather than left implicit; findings that block wipe readiness are recorded as blockers with exact evidence; and the inventory explicitly states that it authorizes nothing destructive, because the final wipe remains a separately governed human-approved action that this task must not perform, imply, or schedule.
+              depends_on: [forgejo-publication-inventory]
+              input: {}
