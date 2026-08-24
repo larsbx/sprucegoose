@@ -42,14 +42,14 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
                    TaskReference,
                    %{
                      task_id: task.id,
-                     kind: :finding,
+                     kind: "finding",
                      value: "proved by independent read"
                    },
                    action: :record
                  )
                end)
 
-      assert reference.kind == :finding
+      assert reference.kind == "finding"
       assert reference.value == "proved by independent read"
       assert %DateTime{} = reference.recorded_at
       assert reference.recorded_by == "evidence-writer"
@@ -76,7 +76,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
                Authz.with_actor(reader, fn ->
                  Authz.create(
                    TaskReference,
-                   %{task_id: task.id, kind: :finding, value: "unauthorized"},
+                   %{task_id: task.id, kind: "finding", value: "unauthorized"},
                    action: :record
                  )
                end)
@@ -89,7 +89,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
     test "backfilled references are marked and carry no recorded_at" do
       task = task_fixture()
 
-      assert {:ok, reference} = backfill(task, :finding, "migrated from Task.input")
+      assert {:ok, reference} = backfill(task, "finding", "migrated from Task.input")
 
       assert reference.backfilled
       assert is_nil(reference.recorded_at)
@@ -100,7 +100,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
     # backfilled must still be reported as stale.
     test "a task with only backfilled evidence is still stale" do
       task = task_fixture(state: :in_progress)
-      {:ok, _} = backfill(task, :finding, "historical, time unknown")
+      {:ok, _} = backfill(task, "finding", "historical, time unknown")
 
       stale = Evidence.stale_tasks(threshold_seconds: 0)
 
@@ -124,7 +124,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
     # task as freshly-evidenced.
     test "does not report a task whose evidence is newer than the threshold" do
       task = task_fixture(state: :in_progress)
-      {:ok, _} = record(task, :finding, "just recorded")
+      {:ok, _} = record(task, "finding", "just recorded")
 
       stale = Evidence.stale_tasks(threshold_seconds: 3600)
 
@@ -133,7 +133,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
 
     test "reports a task whose newest evidence predates the threshold" do
       task = task_fixture(state: :in_progress)
-      {:ok, _} = record_at(task, :finding, "old", seconds_ago: 7200)
+      {:ok, _} = record_at(task, "finding", "old", seconds_ago: 7200)
 
       stale = Evidence.stale_tasks(threshold_seconds: 3600)
 
@@ -175,7 +175,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
             "Every claim is proven by an independent read against the authority."
         )
 
-      {:ok, _} = record(task, :finding, "independent read performed")
+      {:ok, _} = record(task, "finding", "independent read performed")
 
       unproven = Evidence.unproven_tasks()
 
@@ -200,7 +200,7 @@ defmodule SpruceGoose.EvidenceAbsenceDetectionTest do
           definition_of_done: "Every claim is verified against live state."
         )
 
-      {:ok, _} = record(task, :sop, "/path/to/sop")
+      {:ok, _} = record(task, "sop", "/path/to/sop")
 
       unproven = Evidence.unproven_tasks()
 
