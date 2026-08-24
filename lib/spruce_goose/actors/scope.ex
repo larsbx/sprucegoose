@@ -22,6 +22,7 @@ defmodule SpruceGoose.Actors.Scope do
     Board,
     BoardColumn,
     BlueprintRevision,
+    CompletionClaim,
     Dependency,
     InboxItem,
     Project,
@@ -29,8 +30,10 @@ defmodule SpruceGoose.Actors.Scope do
     Roadmap,
     SavedFilter,
     Task,
+    TaskReference,
     Todo,
     TodoDependency,
+    VerificationTarget,
     Workflow
   }
 
@@ -143,7 +146,9 @@ defmodule SpruceGoose.Actors.Scope do
     BlueprintRevision => {:project_id, Project},
     Permit => {:task_id, Task},
     OutcomeReceipt => {:task_id, Task},
-    ShadowSnapshot => {:task_id, Task}
+    ShadowSnapshot => {:task_id, Task},
+    TaskReference => {:task_id, Task},
+    CompletionClaim => {:task_id, Task}
   }
 
   # The relationship path from each resource to the owning project key, used to
@@ -163,7 +168,9 @@ defmodule SpruceGoose.Actors.Scope do
     BlueprintRevision => [:project, :key],
     Permit => [:task, :workflow, :roadmap, :project, :key],
     OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key],
-    ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key]
+    ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key],
+    TaskReference => [:task, :workflow, :roadmap, :project, :key],
+    CompletionClaim => [:task, :workflow, :roadmap, :project, :key]
   }
 
   @doc """
@@ -180,10 +187,16 @@ defmodule SpruceGoose.Actors.Scope do
   refused rather than defaulted, since a scope that cannot be established is
   not a scope anyone was granted.
   """
+  def of(%Ash.Changeset{action_type: :create, resource: VerificationTarget}), do: {:ok, :global}
   def of(%Ash.Changeset{action_type: :create} = changeset), do: create_scope(changeset)
   def of(%Ash.Changeset{data: data}), do: of(data)
   def of(%Project{key: key}), do: {:ok, {:project, key}}
   def of(%InboxItem{}), do: {:ok, :global}
+
+  # A verification target is a deployment destination shared across projects,
+  # not something a single project owns, so it is scoped globally like the
+  # inbox rather than being walked up to a project that does not exist.
+  def of(%VerificationTarget{}), do: {:ok, :global}
   def of(%Revision{project_key: nil}), do: {:ok, :global}
   def of(%Revision{project_key: key}), do: {:ok, {:project, key}}
 

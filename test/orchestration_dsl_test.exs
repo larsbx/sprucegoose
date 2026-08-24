@@ -18,7 +18,10 @@ defmodule SpruceGoose.OrchestrationDslTest do
                Workflows.TodoDependency,
                Workflows.InboxItem,
                Workflows.Revision,
-               Workflows.BlueprintRevision
+               Workflows.BlueprintRevision,
+               Workflows.TaskReference,
+               Workflows.VerificationTarget,
+               Workflows.CompletionClaim
              ])
   end
 
