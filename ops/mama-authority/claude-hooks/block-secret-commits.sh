@@ -2,70 +2,77 @@
 # PreToolUse/Bash — refuse `git commit` when the staged set looks like it
 # carries a credential.
 #
-# Written after a near-miss: accountabot-dashboard-src/.prod.env (live
-# production secrets, mode 0600) was NOT covered by that repo's .gitignore,
-# so `git add -A` would have committed it permanently on the first import.
+# This is the EARLY half of the guard, not the authoritative one. Since
+# 2026-08-29 the same rules run as a real git pre-commit hook via a global
+# `core.hooksPath`, which covers every repo and every actor on the box. This
+# hook exists so an agent gets a readable denial at tool-call time instead of
+# a commit that dies in the shell — and so the rules live in one file, shared
+# with the git hook rather than copied.
 #
-# Deliberately high-precision. An earlier content scan in that session flagged
-# Phoenix's `dev-only-secret-key-base-...` placeholders and the app's own
-# redaction regexes — a guard that cries wolf gets switched off, so this
-# matches real credential FORMATS and known-secret FILENAMES only.
+# The original version resolved the repository only from a LEADING `cd … &&`,
+# which a compound command routed straight around:
+#
+#   d=$(mktemp -d) && cd "$d" && git add -f .prod.env && git commit -m x
+#
+# resolved to $HOME (not a repo), so the hook exited 0 and the commit landed.
+# Resolution is wider now — `git -C`, any `cd` in the command, the payload's
+# own cwd — but a `cd "$var"` still cannot be resolved statically. That case
+# is deliberately allowed to pass HERE and refused by the git hook, which
+# does not have to guess where it is.
 set -uo pipefail
 
 payload=$(cat)
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""' 2>/dev/null)
+cwd=$(printf '%s' "$payload" | jq -r '.cwd // ""' 2>/dev/null)
 
-# Fast exit: not a commit. Substring match so `cd x && git commit` is caught,
-# which a `Bash(git commit:*)` prefilter would miss.
-case "$cmd" in *"git commit"*) ;; *) exit 0 ;; esac
-
-# Honour a leading `cd <dir> &&` so the check runs in the right repo.
-workdir=$(printf '%s' "$cmd" | sed -nE "s/^[[:space:]]*cd[[:space:]]+([^&;|]+)[[:space:]]*&&.*/\1/p" | tr -d "\"'" | xargs 2>/dev/null)
-[ -n "${workdir:-}" ] && [ -d "$workdir" ] && cd "$workdir" 2>/dev/null
-
-git rev-parse --git-dir >/dev/null 2>&1 || exit 0   # not a repo: nothing to judge
-
-staged=$(git diff --cached --name-only 2>/dev/null)
-[ -n "$staged" ] || exit 0
+# Is `commit` actually the git subcommand? A plain substring test missed
+# `git -c user.email=… commit`, and matching bare "commit" would fire on
+# `git log --grep=commit`.
+printf '%s' "$cmd" | grep -qE \
+  '(^|[;&|]|\$\()[[:space:]]*git([[:space:]]+(-[cC][[:space:]]+[^[:space:]]+|--[a-z-]+(=[^[:space:]]+)?|-[a-zA-Z]))*[[:space:]]+commit([[:space:]]|$)' \
+  || exit 0
 
 deny() {
   jq -nc --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   exit 0
 }
 
-# --- 1. filenames that are secrets by convention -------------------------
-# Example files are explicitly fine.
-bad_names=$(printf '%s\n' "$staged" \
-  | grep -vE '\.(example|sample|template|dist)$' \
-  | grep -E '(^|/)\.?[^/]*\.env$|(^|/)\.env\.|\.pem$|\.p12$|\.pfx$|\.key$|(^|/)id_(rsa|dsa|ecdsa|ed25519)$|(^|/)\.netrc$|(^|/)\.git-credentials$' \
-  || true)
-if [ -n "$bad_names" ]; then
-  deny "git hygiene hook: refusing this commit — the staged set contains files that hold credentials by convention:
-
-$(printf '%s\n' "$bad_names" | sed 's/^/  - /')
-
-Add them to .gitignore and 'git restore --staged' them. If one is genuinely
-a template, name it .env.example (that suffix is allowed).
-Verify with: git check-ignore -v <file>"
+lib="$HOME/.config/git/hooks/lib/hygiene-scan.sh"
+if [ ! -r "$lib" ]; then
+  deny "git hygiene hook: the shared guard library is missing at $lib, so the
+staged set cannot be checked. Reinstall it from sprucegoose
+ops/mama-authority/git-hooks/ (install.sh) before committing."
 fi
+# shellcheck source=../git-hooks/lib/hygiene-scan.sh
+. "$lib"
 
-# --- 2. real credential formats in ADDED lines ---------------------------
-hits=$(git diff --cached -U0 2>/dev/null | grep '^+' | grep -oEm5 \
-  -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' \
-  -e 'AKIA[0-9A-Z]{16}' \
-  -e 'ghp_[A-Za-z0-9]{36}' \
-  -e 'sk-ant-[A-Za-z0-9_-]{40,}' \
-  -e 'xox[baprs]-[0-9A-Za-z-]{12,}' \
-  -e '://[^:@/[:space:]]+:[^@/[:space:]]{8,}@' \
-  | sort -u | head -5 || true)
-if [ -n "$hits" ]; then
-  masked=$(printf '%s\n' "$hits" | cut -c1-24 | sed 's/$/…/; s/^/  - /')
-  deny "git hygiene hook: refusing this commit — the staged diff contains something shaped like a live credential:
+# --- where is the repo? -------------------------------------------------
+# Later wins: an explicit `git -C` beats a `cd`, a `cd` beats the session cwd.
+repo=""
+[ -n "$cwd" ] && [ -d "$cwd" ] && repo="$cwd"
 
-$masked
+while read -r d; do
+  [ -n "$d" ] || continue
+  case "$d" in *'$'*|*'`'*|*'*'*) continue ;; esac   # not statically knowable
+  d=${d%\"}; d=${d#\"}; d=${d%\'}; d=${d#\'}
+  case "$d" in "~"|"~/"*) d="$HOME${d#\~}" ;; esac
+  [ -d "$d" ] && repo="$d"
+done < <(printf '%s' "$cmd" | grep -oE '(^|[;&|]|&&)[[:space:]]*cd[[:space:]]+[^;&|]+' \
+         | sed -E 's/.*cd[[:space:]]+//; s/[[:space:]]+$//')
 
-Values are truncated on purpose. Remove them, use an env var, and re-stage.
-Inspect with: git diff --cached"
+while read -r d; do
+  [ -n "$d" ] || continue
+  case "$d" in *'$'*|*'`'*) continue ;; esac
+  d=${d%\"}; d=${d#\"}; d=${d%\'}; d=${d#\'}
+  [ -d "$d" ] && repo="$d"
+done < <(printf '%s' "$cmd" | grep -oE '\bgit[[:space:]]+-C[[:space:]]+[^[:space:]]+' \
+         | sed -E 's/.*-C[[:space:]]+//')
+
+[ -n "$repo" ] || exit 0                       # nothing to judge from here
+git -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || exit 0
+
+if ! reason=$(hygiene_scan "$repo"); then
+  deny "$reason"
 fi
 
 exit 0

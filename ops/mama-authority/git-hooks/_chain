@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Generic passthrough for every hook this directory does not itself implement.
+#
+# `core.hooksPath` replaces the per-repo hooks directory wholesale — it does
+# not merge with it. Without this, pointing the global config here would
+# silently disable every existing hook on the box, starting with the
+# post-receive on ~/agent-icm.git that mirrors main and its tags to Forgejo.
+#
+# Symlinked in as each hook name; $0 tells us which one we were invoked as.
+# stdin, argv and exit status all pass straight through.
+set -uo pipefail
+
+name=$(basename "$0")
+gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+local_hook="$gitdir/hooks/$name"
+
+[ -x "$local_hook" ] || exit 0
+exec "$local_hook" "$@"

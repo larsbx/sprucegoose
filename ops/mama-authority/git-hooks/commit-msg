@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Doc gate: a change to how something runs must not land without its
+# documentation being looked at.
+#
+# In commit-msg rather than pre-commit because the override marker lives in
+# the message, and pre-commit runs before the message exists. The staged set
+# is still readable here.
+set -uo pipefail
+
+msgfile="${1:-}"
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+lib="$here/lib/doc-gate.sh"
+
+if [ ! -r "$lib" ]; then
+  echo "doc gate: guard library missing at $lib." >&2
+  echo "Refusing rather than committing unchecked. Reinstall from" >&2
+  echo "sprucegoose ops/mama-authority/git-hooks/, or use --no-verify knowingly." >&2
+  exit 1
+fi
+# shellcheck source=lib/doc-gate.sh
+. "$lib"
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || repo="."
+
+if ! reason=$(doc_gate "$repo" "$msgfile"); then
+  printf '\n%s\n' "$reason" >&2
+  exit 1
+fi
+
+gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+[ -x "$gitdir/hooks/commit-msg" ] || exit 0
+exec "$gitdir/hooks/commit-msg" "$@"
