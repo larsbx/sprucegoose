@@ -52,6 +52,22 @@ host path the containerised app could not reach, and documented a "reviewed
 upstream commit" that was 52 commits *after* the release it claimed to
 describe.
 
+### `handoff-capture-reminder.sh` — PostToolUse / Write|Edit, **advisory**
+
+A handoff body is only half a handoff. Item *bodies* live in
+`agent-icm/workflows/handoff/`; queue *state* lives in the SpruceGoose inbox,
+and `sprucegoose-daily-report` reads the inbox — not the folder. Write a body
+without capturing it and the item never reaches the digest: invisible work
+that looks filed.
+
+Fires only when no pending capture already references the file (a read-only
+DB check, silent if Postgres is unreachable), once per file per session, and
+pre-fills the exact `sprucegoose inbox add` line using the body's `# Title`.
+
+It also catches writes to `~/handoff/`, retired 2026-08-29. When that folder
+vanished mid-session a handoff item landed loose in `$HOME` and went unnoticed
+until a later `cd` failed.
+
 ## Install on the host
 
     install -m 755 ops/mama-authority/claude-hooks/*.sh ~/.claude/hooks/
