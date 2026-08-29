@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Verify each host's SpruceGoose kernel against the authoritative pin.
+
+Reads ops/kernel-pin.json and reports, per host, whether the running or staged
+kernel matches. Unknown or missing state is reported as DRIFT, never as
+success: a check that cannot see the target has not verified it.
+
+Exit codes:
+  0  every checked host matches the pin
+  1  at least one host drifts, or state could not be determined
+  2  usage / pin file error
+
+Read-only. Never restarts a service, writes an activation record, or changes
+which release is live.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PIN_PATH = os.path.join(REPO, "ops", "kernel-pin.json")
+
+MATCH, DRIFT, UNKNOWN = "MATCH", "DRIFT", "UNKNOWN"
+
+
+def load_pin(path):
+    try:
+        with open(path) as fh:
+            pin = json.load(fh)
+    except FileNotFoundError:
+        sys.exit(f"ERROR: pin file not found: {path}")
+    except json.JSONDecodeError as exc:
+        sys.exit(f"ERROR: pin file is not valid JSON: {exc}")
+    if pin.get("schema") != "sprucegoose-kernel-pin-v1":
+        sys.exit(f"ERROR: unexpected pin schema: {pin.get('schema')!r}")
+    auth = pin.get("authoritative") or {}
+    for field in ("commit", "tree", "archive_sha256"):
+        v = auth.get(field)
+        if not isinstance(v, str) or not v:
+            sys.exit(f"ERROR: pin is missing authoritative.{field}")
+    return pin
+
+
+def run(cmd, timeout=60):
+    """Return (ok, stdout). Never raises."""
+    try:
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
+        )
+        return p.returncode == 0, p.stdout.strip()
+    except Exception as exc:  # noqa: BLE001 - report, never crash the check
+        return False, f"<exec failed: {exc}>"
+
+
+def check_papa_staged(auth):
+    """Does papa hold a staged archive whose receipt matches the pin?"""
+    root = os.path.expanduser("~/sprucegoose-standby")
+    if not os.path.isdir(root):
+        return UNKNOWN, "no staged standby directory on papa", {}
+
+    found = []
+    for entry in sorted(os.listdir(root)):
+        d = os.path.join(root, entry)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if not name.endswith(".receipt.json"):
+                continue
+            rpath = os.path.join(d, name)
+            try:
+                with open(rpath) as fh:
+                    r = json.load(fh)
+            except Exception:
+                continue
+            src = r.get("source") or {}
+            arc = r.get("archive") or {}
+            found.append(
+                {
+                    "task": entry,
+                    "commit": src.get("commit", ""),
+                    "tree": src.get("tree", ""),
+                    "sha256": arc.get("sha256", ""),
+                    "archive_path": os.path.join(d, arc.get("filename", "")),
+                }
+            )
+
+    if not found:
+        return UNKNOWN, "no receipts found under ~/sprucegoose-standby", {}
+
+    for f in found:
+        if (
+            f["commit"] == auth["commit"]
+            and f["tree"] == auth["tree"]
+            and f["sha256"] == auth["archive_sha256"]
+        ):
+            # Receipt agrees; confirm the archive bytes still agree with it.
+            ap = f["archive_path"]
+            if not os.path.isfile(ap):
+                return DRIFT, f"receipt matches but archive missing: {ap}", f
+            ok, out = run(["sha256sum", ap], timeout=600)
+            actual = out.split()[0] if ok and out else ""
+            if actual != auth["archive_sha256"]:
+                return (
+                    DRIFT,
+                    f"archive bytes do not match receipt (got {actual[:12]}…)",
+                    f,
+                )
+            return MATCH, f"staged and digest-verified ({f['task']})", f
+
+    newest = sorted(found, key=lambda x: x["task"])[-1]
+    return (
+        DRIFT,
+        f"newest staged is {newest['commit'][:8]}, pin wants {auth['commit'][:8]}",
+        newest,
+    )
+
+
+def check_mama_live(auth, ssh_host):
+    """What commit is mama's live activation record pinned to?"""
+    ok, out = run(
+        [
+            "ssh", "-o", "BatchMode=yes", ssh_host,
+            "cat ~/sprucegoose-activations/*/activation.json 2>/dev/null "
+            "| tail -c 4000",
+        ],
+        timeout=90,
+    )
+    if not ok or not out:
+        return UNKNOWN, f"could not read activation records on {ssh_host}", {}
+
+    records = []
+    for chunk in out.replace("}{", "}\n{").splitlines():
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        try:
+            records.append(json.loads(chunk))
+        except json.JSONDecodeError:
+            continue
+    if not records:
+        return UNKNOWN, "no parsable activation record on mama", {}
+
+    live = records[-1]
+    obs = {
+        "commit": live.get("commit", ""),
+        "tree": live.get("tree", ""),
+        "sha256": live.get("archive_sha256", ""),
+        "task": live.get("task", ""),
+    }
+    if obs["commit"] == auth["commit"] and obs["tree"] == auth["tree"]:
+        return MATCH, "live activation matches pin", obs
+    return (
+        DRIFT,
+        f"live is {obs['commit'][:8] or '?'}, pin wants {auth['commit'][:8]}",
+        obs,
+    )
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Verify hosts against the kernel pin.")
+    ap.add_argument("--pin", default=PIN_PATH)
+    ap.add_argument("--mama-host", default="mama")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--skip-remote", action="store_true", help="check papa only (no ssh)"
+    )
+    args = ap.parse_args()
+
+    pin = load_pin(args.pin)
+    auth = pin["authoritative"]
+
+    results = [("papa/staged-standby",) + check_papa_staged(auth)]
+    if args.skip_remote:
+        results.append(
+            ("mama/live-activation", UNKNOWN, "skipped by --skip-remote", {})
+        )
+    else:
+        results.append(("mama/live-activation",) + check_mama_live(auth, args.mama_host))
+
+    drift = any(status != MATCH for _, status, _, _ in results)
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "pin": {
+                        "commit": auth["commit"],
+                        "tree": auth["tree"],
+                        "archive_sha256": auth["archive_sha256"],
+                    },
+                    "hosts": [
+                        {
+                            "host": h,
+                            "status": s,
+                            "detail": d,
+                            "observed": o,
+                        }
+                        for h, s, d, o in results
+                    ],
+                    "ok": not drift,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"pin commit : {auth['commit']}")
+        print(f"pin tree   : {auth['tree']}")
+        print(f"pin archive: {auth['archive_sha256']}")
+        print()
+        for host, status, detail, _obs in results:
+            print(f"  {status:8} {host:24} {detail}")
+        print()
+        print("RESULT:", "DRIFT DETECTED" if drift else "ALL HOSTS MATCH PIN")
+
+    return 1 if drift else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

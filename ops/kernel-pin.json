@@ -1,0 +1,43 @@
+{
+  "schema": "sprucegoose-kernel-pin-v1",
+  "pinned_at_utc": "2026-08-29T00:20:00Z",
+  "pinned_by_task": "tsk-20260829T001759Z-b0482a1d",
+  "authoritative": {
+    "commit": "fd4ab7e68047120d08f60759e4adf056104d4350",
+    "tree": "94cc57bbaed3ce4c03afb3b90243f3645febb0e0",
+    "archive_sha256": "1199ac47c9ce0d15139adf4a5e0afd52fd3755e4364a1c7a55468d880d73bcf0",
+    "archive_filename": "spruce_goose-0.1.0-governed.tar.xz",
+    "receipt_schema": "spruce-goose-release-receipt-v2",
+    "elixir_version": "1.19.5 (compiled with Erlang/OTP 28)",
+    "otp_version": "28.3.1",
+    "migration_set_sha256": "d2145cfa8108a9f5dbe2eca0b99cffcc8bc9b2b7587422c4acbdc43f43b84f44"
+  },
+  "provenance": {
+    "built_on": "papa/ubuntu-8gb-evergreen",
+    "built_by_task": "tsk-20260828T113444Z-9aea9c86",
+    "validator": "clean-source-candidate",
+    "selected_because": "newest repository tip by committer date; mama's live pin b54ec54a is an ancestor",
+    "reproducibility": "executable Code chunk deterministic across two papa builds (5492/5492); archive digest NOT reproducible (ExCk differs in 161 beams at fixed commit and path)"
+  },
+  "distribution": {
+    "transport": "syncthing",
+    "scope": [
+      "governed release archive",
+      "release receipt"
+    ],
+    "excluded": [
+      "live install tree ~/sprucegoose-rel"
+    ],
+    "exclusion_reason": "mama's ~/sprucegoose-rel/releases/COOKIE holds a provisioned Erlang distribution cookie, not the build placeholder (verified 2026-08-29). Replicating it would copy a live credential between hosts and into Syncthing metadata and versioned history.",
+    "direction": "papa sends, mama receives; consumer edits must not propagate back to the authority"
+  },
+  "activation_boundary": {
+    "note": "Synchronizing an artifact is not activation. Applying this pin to a running host requires the governed activate-sprucegoose-release path, which restarts the service and writes an activation record. That remains a separate owner-approved action.",
+    "mama_live_at_pin_time": {
+      "commit": "b54ec54a934fc67bb56e775d79d61d8114e76899",
+      "tree": "4170b861e9dda7d2aec7a816f9fdea1b761f71bc",
+      "archive_sha256": "cb648f4bf53619b95082655b85075cd0a9b4bc11ee0b91009104d5151e927e45",
+      "archive_status": "MISSING from both hosts; survives only as the unpacked install tree"
+    }
+  }
+}
