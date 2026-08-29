@@ -89,11 +89,23 @@ config :spruce_goose,
     ),
   artifact_max_bytes: String.to_integer(System.get_env("ARTIFACT_MAX_BYTES", "67108864"))
 
-if outbox_enabled? do
+if oban_enabled? do
+  # Lifeline rescues jobs left in `executing` when the node that claimed them
+  # dies. Guarded on `oban_enabled?` rather than `outbox_enabled?` because
+  # plugins were previously configured only when the outbox was on: with the
+  # outbox parked, Oban ran with no plugins at all and nothing reclaimed
+  # orphans. The papa->mama migration stranded 25 outbox jobs in `executing`
+  # from 2026-07-28 that were never rescued.
+  #
+  # Cron stays conditional on the outbox — its only entry is the dispatcher,
+  # which raises without an OUTBOX_HANDLER.
   config :spruce_goose, Oban,
-    plugins: [
-      {Oban.Plugins.Cron, crontab: SpruceGoose.Outbox.Dispatcher.cron_config()}
-    ]
+    plugins:
+      [{Oban.Plugins.Lifeline, rescue_after: :timer.minutes(30)}] ++
+        if(outbox_enabled?,
+          do: [{Oban.Plugins.Cron, crontab: SpruceGoose.Outbox.Dispatcher.cron_config()}],
+          else: []
+        )
 end
 
 cli_service_enabled? =
