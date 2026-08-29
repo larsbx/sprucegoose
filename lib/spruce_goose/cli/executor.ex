@@ -1,4 +1,9 @@
 defmodule SpruceGoose.CLI.Executor do
+  # The states the review is defined over: everything nonterminal. Sorted,
+  # because the adapter compares the declared list by equality.
+  @review_states ~w(blocked failed in_progress inbox proposed queued ready waiting)a
+  @review_page_size 500
+
   @moduledoc false
 
   require Ash.Query
@@ -560,6 +565,24 @@ defmodule SpruceGoose.CLI.Executor do
          {:ok, impacted} <- Graph.impact(task) do
       {:ok, %{task: task.task_id, impacted: impacted}}
     end
+  end
+
+  # Read-only, and deliberately not actor-filtered: the review adapter needs the
+  # whole nonterminal backlog to report a complete disposition, and what it
+  # receives is signed, so it cannot be edited in transit without detection.
+  # Read-only. Deliberately not narrowed further than the caller's own scope:
+  # the adapter needs the whole nonterminal backlog to report a complete
+  # disposition, and what it receives is signed, so it cannot be edited in
+  # transit without detection.
+  defp dispatch({:review_snapshot}) do
+    read = fn ->
+      query = task_scope_query(Task, @review_states, nil, nil, nil, %{})
+      {:ok, total} = Authz.count(query)
+      {:ok, memberships} = workflow_memberships()
+      {review_pages(query, memberships, 0, []), total}
+    end
+
+    {:ok, SpruceGoose.Review.Snapshot.envelope(read)}
   end
 
   defp dispatch({:list_tasks, filters}) do
@@ -1604,6 +1627,43 @@ defmodule SpruceGoose.CLI.Executor do
     do: {:error, "cannot add TODO to terminal task"}
 
   defp todo_admission_allowed(_task), do: :ok
+
+  # Page explicitly at the size the contract declares, rather than reading
+  # everything and claiming a page size that was never applied.
+  defp review_pages(query, memberships, offset, acc) do
+    {:ok, rows} = Authz.read(paginate_query(query, @review_page_size, offset))
+    acc = acc ++ Enum.map(rows, &review_task_json(&1, memberships))
+
+    if length(rows) < @review_page_size,
+      do: acc,
+      else: review_pages(query, memberships, offset + @review_page_size, acc)
+  end
+
+  # Exactly the fields the adapter admits — it refuses extras, so this
+  # projection is a contract rather than a convenience. String keys, because
+  # the payload is signed as JSON and atom keys would encode identically only
+  # by luck.
+  defp review_task_json(task, memberships) do
+    membership = Map.get(memberships, task.workflow_id)
+
+    %{
+      "id" => task.task_id,
+      "title" => task.title,
+      "state" => to_string(task.state),
+      "priority" => task.priority,
+      "due_at" => task.due_at && to_string(task.due_at),
+      "assignees" => task.assignees,
+      "labels" => task.labels,
+      "lock_version" => task.lock_version,
+      "inserted_at" => to_string(task.inserted_at),
+      "updated_at" => to_string(task.updated_at),
+      "project" => membership && membership.project,
+      "roadmap" => membership && membership.roadmap,
+      "workflow" => membership && membership.workflow,
+      "workflow_name" => membership && membership.workflow_name,
+      "wait_reason" => Map.get(task.input, "wait_reason")
+    }
+  end
 
   defp task_json(task) do
     case workflow_memberships() do

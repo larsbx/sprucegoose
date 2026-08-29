@@ -245,6 +245,7 @@ defmodule SpruceGoose.CLI.Command do
     do: {:ok, {:workflow_critical_path, project, roadmap, workflow_id}}
 
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
+  def parse(["task", "review-snapshot"]), do: {:ok, {:review_snapshot}}
   def parse(["task", "blockers", id]), do: {:ok, {:task_blockers, id}}
   def parse(["task", "impact", id]), do: {:ok, {:task_impact, id}}
 
