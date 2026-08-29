@@ -46,7 +46,8 @@ granted this, and when" and "revoke exactly this one".
 | role | grants |
 |---|---|
 | `reader` | read within scope |
-| `operator` | task lifecycle, board moves, metadata, todos, dependencies, inbox triage |
+| `operator` | task lifecycle, board moves, metadata, todos, dependencies, inbox triage; admit derivation permits |
+| `derivation_executor` | read and record terminal outcome receipts for derivation permits |
 | `artifact_verifier` | verify and record artifact-custody receipts |
 | `proposer` | propose and withdraw revisions |
 | `approver` | approve revisions, and the entity `:revise` actions they apply through |
@@ -61,9 +62,26 @@ operating on is not a coherent grant.
 grant roles and create actors, and cannot touch a single task — though it can of
 course grant itself anything, which is why Genesis hands out the complete seven-role
 set—seven global grants—rather than making the first operator run six more commands
-for no safety gain. The disposable recovery rehearsal later adds one separate
-`operator` grant for `recovery-agent`, so its expected database inventory is eight
-grant rows in total; that is not an eighth Genesis role.
+for no safety gain.
+
+`derivation_executor` is the one role deliberately outside that Genesis set. It
+is held only by a repository-declared executor identity, and it is narrow in
+both directions: it authorizes `OutcomeReceipt` read and `:record`
+(`lib/spruce_goose/derivations/outcome_receipt.ex`) and nothing else. It does
+**not** admit derivation permits — `Permit`'s `:admit` action requires
+`operator` (`lib/spruce_goose/derivations/permit.ex`). So the identity that
+licenses a derivation and the identity that records its terminal outcome are
+separate by construction. The executor is resolved from the
+`:derivation_executor_actor` application setting and must be an active actor;
+a disabled or unconfigured executor fails closed.
+
+The live grant inventory is not a fixed number and should be read from the
+database rather than from this page. Verified 2026-08-29 on the Mama authority:
+16 grants across 7 actors. An earlier revision of this document described a
+disposable recovery rehearsal adding one `operator` grant for a
+`recovery-agent` actor and gave a total of eight grant rows. That actor is not
+present in the live registry; treat the rehearsal as historical and
+`sprucegoose grant list` as authoritative.
 
 ### Scopes
 
