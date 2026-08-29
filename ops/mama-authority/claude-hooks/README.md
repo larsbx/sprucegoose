@@ -12,33 +12,31 @@ The repo is the source of truth. The host carries a deployed copy.
 
 Refuses `git commit` when the staged set looks like it carries a credential.
 
-Written after a near-miss: `accountabot-dashboard-src/.prod.env` (live
-production secrets, mode 0600) was not covered by that repo's `.gitignore`,
-so a `git add -A` during its first import would have committed it
-permanently.
+This is the **early half** of the guard, not the authoritative one. Since
+2026-08-29 the same rules run as a real git `pre-commit` hook via a global
+`core.hooksPath` (`../git-hooks/`), covering every repo and every actor on
+the box. This hook exists so an agent gets a readable denial at tool-call
+time instead of a commit that dies in the shell — and it **sources
+`~/.config/git/hooks/lib/hygiene-scan.sh`**, so the rules live in one file
+rather than in two copies that drift. If that library is missing it denies
+rather than passing unchecked, so install the git hooks first.
 
-Two checks, both deliberately high-precision:
+The rules themselves, the reasoning behind their precision, and the
+regression list are documented once, in `../git-hooks/README.md`.
 
-* **Filenames that are secrets by convention** — `*.env`, `*.pem`, `*.key`,
-  `id_rsa`, `.netrc`, `.git-credentials`. `.env.example` / `.sample` /
-  `.template` are allowed.
-* **Real credential formats in added lines** — `BEGIN … PRIVATE KEY`,
-  `AKIA…`, `ghp_…`, `sk-ant-…`, `xox[baprs]-…`, and URLs carrying an embedded
-  password.
+**The bypass it used to have.** It resolved the repository only from a
+*leading* `cd … &&`, so a compound command routed around it entirely:
 
-Matched values are **truncated** in the denial text: the guard must not be
-the thing that echoes a secret into a transcript.
+    d=$(mktemp -d) && cd "$d" && git add -f .prod.env && git commit -m x
 
-Precision matters more than recall here. A manual content scan during that
-same import flagged Phoenix's `dev-only-secret-key-base-…` placeholders, the
-app's own redaction regexes, and `System.fetch_env!("SECRET_KEY_BASE")`. A
-guard that cries wolf gets switched off, so this matches credential *formats*
-and known *filenames*, never the word "secret". All four of those cases are
-covered by tests below and must keep passing.
+resolved to `$HOME`, not a repo, so the hook exited 0 and the commit landed.
+Resolution is wider now — `git -C <dir>`, *any* `cd` in the command, and the
+payload's own `cwd`, later winning over earlier — and subcommand detection
+survives `git -c user.email=… commit` while ignoring `git log --grep=commit`.
 
-It matches `git commit` as a substring, not via a `Bash(git commit:*)`
-prefilter, so `cd repo && git commit …` is caught too, and it honours a
-leading `cd <dir> &&` so the check runs against the right repository.
+A `cd "$var"` still cannot be resolved statically, and that case is
+deliberately allowed to pass *here*: the git hook refuses it without having
+to guess where it is. Nothing bypasses both.
 
 ### `doc-update-reminder.sh` — PostToolUse / Write|Edit, **advisory**
 
@@ -70,6 +68,10 @@ until a later `cd` failed.
 
 ## Install on the host
 
+The git hooks are a prerequisite — `block-secret-commits.sh` sources their
+shared library:
+
+    ops/mama-authority/git-hooks/install.sh
     install -m 755 ops/mama-authority/claude-hooks/*.sh ~/.claude/hooks/
 
 and register them in `~/.claude/settings.json`:
@@ -80,15 +82,20 @@ and register them in `~/.claude/settings.json`:
           "command": "/home/admin-papa/.claude/hooks/block-secret-commits.sh",
           "timeout": 15}]}],
       "PostToolUse": [{"matcher": "Write|Edit",
-        "hooks": [{"type": "command",
-          "command": "/home/admin-papa/.claude/hooks/doc-update-reminder.sh",
-          "timeout": 10}]}]
+        "hooks": [
+          {"type": "command",
+           "command": "/home/admin-papa/.claude/hooks/doc-update-reminder.sh",
+           "timeout": 10},
+          {"type": "command",
+           "command": "/home/admin-papa/.claude/hooks/handoff-capture-reminder.sh",
+           "timeout": 15}]}]
     }
 
 **Hooks added mid-session do not take effect until config reloads** — open
 `/hooks` once, or restart. Verified the hard way: after writing the config,
 a deliberate commit of a staged `.prod.env` still succeeded. Always prove a
-new hook fires before believing it protects you.
+new hook fires before believing it protects you. The git hooks have no such
+problem: they take effect on the next commit, in every shell.
 
 ## Testing a change
 
@@ -98,12 +105,16 @@ new hook fires before believing it protects you.
       | ops/mama-authority/claude-hooks/block-secret-commits.sh
 
 No output means allow; JSON with `permissionDecision: "deny"` means blocked.
-Regressions to re-check after any edit — these must DENY:
+The deny/allow regression list is in `../git-hooks/README.md` — one list, since
+both hooks run the same library. What is specific to *this* hook is repository
+resolution, and each of these must DENY on a repo with `.prod.env` staged:
 
-    .prod.env staged · AKIA<16> · BEGIN RSA PRIVATE KEY · postgres://u:pw@h/db
+    {"tool_input":{"command":"git commit -m x"},"cwd":"<repo>"}
+    {"tool_input":{"command":"git -c user.email=t@t commit -m x"},"cwd":"<repo>"}
+    {"tool_input":{"command":"echo hi && cd <repo> && git commit -m x"}}
+    {"tool_input":{"command":"git -C <repo> commit -m x"}}
 
-and these must ALLOW:
+while these must stay silent:
 
-    .env.example · dev-only-secret-key-base-… · a redaction regex source line
-    · System.fetch_env!("SECRET_KEY_BASE") · short fake fixtures · a URL with
-    no password (ecto://postgres@127.0.0.1/db)
+    {"tool_input":{"command":"git log --grep=commit"},"cwd":"<repo>"}
+    {"tool_input":{"command":"d=$(mktemp -d) && cd \"$d\" && git commit -m x"}}

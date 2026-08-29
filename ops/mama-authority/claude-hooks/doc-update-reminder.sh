@@ -2,7 +2,11 @@
 # PostToolUse/Write|Edit — when a file that defines how something RUNS is
 # changed, point at that repo's docs.
 #
-# Advisory, never blocking. Written after two stale-doc findings: the
+# Advisory, and now an EARLY warning rather than the only one: since 2026-08-29
+# the commit-msg doc gate in ../git-hooks/ refuses such a commit outright. This
+# fires at edit time so the doc gets fixed in the same pass, not at `git commit`.
+#
+# Written after two stale-doc findings: the
 # dashboard README described a herdr host path the containerised app could
 # not reach, and it documented a "reviewed upstream commit" that was 52
 # commits after the release it claimed to describe.
@@ -47,5 +51,5 @@ done
 : > "$stamp"
 jq -nc --arg f "${f#$repo/}" --arg d "$docs" --arg r "$(basename "$repo")" \
   '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:
-    ("Doc-hygiene reminder (once per repo per session): you changed \($f) in \($r), which defines how something runs. Check whether \($d) still describes reality — deployment paths, pinned versions/commits, and required env vars are what go stale. If a doc is now wrong, fix it in the same change rather than filing it for later.")}}'
+    ("Doc-hygiene reminder (once per repo per session): you changed \($f) in \($r), which defines how something runs. Check whether \($d) still describes reality — deployment paths, pinned versions/commits, and required env vars are what go stale. If a doc is now wrong, fix it in the same change rather than filing it for later. The commit-msg doc gate will refuse this commit if no doc is staged alongside; override with [docs-checked] in the message only when the docs are genuinely already correct.")}}'
 exit 0

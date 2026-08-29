@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Refuse a commit whose staged set carries a credential — every repo, every
+# actor on this box, not just the ones an agent happens to route through.
+#
+# Runs here rather than in commit-msg because a secret should be stopped as
+# early as the hook order allows.
+set -uo pipefail
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+lib="$here/lib/hygiene-scan.sh"
+
+if [ ! -r "$lib" ]; then
+  echo "git hygiene: guard library missing at $lib." >&2
+  echo "Refusing rather than committing unchecked. Reinstall from" >&2
+  echo "sprucegoose ops/mama-authority/git-hooks/, or use --no-verify knowingly." >&2
+  exit 1
+fi
+# shellcheck source=lib/hygiene-scan.sh
+. "$lib"
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || repo="."
+
+if ! reason=$(hygiene_scan "$repo"); then
+  printf '\n%s\n' "$reason" >&2
+  exit 1
+fi
+
+# Chain to whatever this repo installed for itself.
+gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+[ -x "$gitdir/hooks/pre-commit" ] || exit 0
+exec "$gitdir/hooks/pre-commit" "$@"
