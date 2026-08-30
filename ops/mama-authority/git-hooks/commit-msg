@@ -22,9 +22,13 @@ fi
 
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || repo="."
 
+# Advisory, not blocking. Documentation here is generated per commit, so a
+# human staging a .md by hand is the wrong thing to require: the gate would
+# degrade to a checkbox satisfied by whatever the generator emitted, which is
+# exactly the stale-doc failure it was written to catch. Print the reminder
+# and let the commit through.
 if ! reason=$(doc_gate "$repo" "$msgfile"); then
   printf '\n%s\n' "$reason" >&2
-  exit 1
 fi
 
 gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0

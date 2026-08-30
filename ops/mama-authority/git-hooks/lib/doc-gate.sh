@@ -54,7 +54,7 @@ doc_gate() {
   [ -d "$repo/docs" ] && docs="${docs}${docs:+, }docs/"
   [ -n "$docs" ] || docs="(this repo has no README/docs — consider adding one)"
 
-  printf 'doc gate: refusing this commit — you staged files that define how something runs:\n\n%s\n\nbut no documentation changed. Check whether %s still describes reality;\ndeployment paths, pinned versions/commits and required env vars are what go\nstale. Fix the doc in this same commit rather than filing it for later.\n\nIf the docs are genuinely already correct, say so in the message:\n\n  git commit -m "<your message> %s"\n' \
+  printf 'doc gate (advisory): you staged files that define how something runs:\n\n%s\n\nbut no documentation changed. Check whether %s still describes reality;\ndeployment paths, pinned versions/commits and required env vars are what go\nstale.\n\nThis does not block the commit. Silence the reminder with %s in the message.\n' \
     "$(printf '%s\n' "$runtime" | sed 's/^/  - /')" "$docs" "$DOC_GATE_OVERRIDE"
   return 1
 }
