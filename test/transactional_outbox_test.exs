@@ -154,7 +154,19 @@ defmodule SpruceGoose.TransactionalOutboxTest do
       )
 
     spruce_goose_config = Keyword.fetch!(config, :spruce_goose)
-    assert [plugins: [{Oban.Plugins.Cron, cron_opts}]] = Keyword.fetch!(spruce_goose_config, Oban)
+
+    # Lifeline is installed whenever Oban is enabled, not only when the outbox
+    # is: with the outbox parked, Oban previously ran with no plugins at all and
+    # nothing reclaimed orphaned `executing` jobs. The list pattern is exact, so
+    # an added, removed, or reordered plugin still fails here.
+    assert [
+             plugins: [
+               {Oban.Plugins.Lifeline, lifeline_opts},
+               {Oban.Plugins.Cron, cron_opts}
+             ]
+           ] = Keyword.fetch!(spruce_goose_config, Oban)
+
+    assert Keyword.fetch!(lifeline_opts, :rescue_after) == :timer.minutes(30)
     assert Keyword.fetch!(cron_opts, :crontab) == Dispatcher.cron_config()
   end
 
