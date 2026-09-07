@@ -52,6 +52,7 @@ defmodule SpruceGoose.DataCase do
     for role <- [
           :reader,
           :operator,
+          :evidence_linker,
           :derivation_executor,
           :artifact_verifier,
           :proposer,

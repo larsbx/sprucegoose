@@ -60,6 +60,24 @@ roadmaps:
               definition_of_done: Production Project, Roadmap, and Workflow creation, rename, and removal are unavailable outside exact verified BlueprintRevision application; existing hierarchy rows remain readable; isolated bootstrap and migration compatibility are explicit; Ash actions, CLI refusal, PostgreSQL constraints where applicable, compiled-CLI dogfood, and positive/refusal regressions pass.
               depends_on: [knowledge-projection]
               input: {}
+            - id: narrow-evidence-link-role
+              kind: openclaw
+              title: Add a narrow task evidence-link role
+              definition_of_done: A project-scoped evidence_linker role can add and remove task references through the CLI while title, description, Definition of Done, runner, and general input revision remain refused; focused and full tests, formatting, migration drift, compiled-CLI dogfood, documentation, publication, deployment, and live positive/refusal checks pass.
+              depends_on: [constitutive-mutation-lockdown]
+              input: {}
+            - id: page-anchor-title-provenance-skill
+              kind: openclaw
+              title: Apply the page-anchor title provenance skill
+              definition_of_done: The owner-approved Skill Workshop proposal captures anchor-first title resolution, explicit fallback provenance, drift recording, and regression checks; it is inspected, scanner-clean, applied, discoverable, and linked to its source evidence without direct skill-directory writes.
+              depends_on: []
+              input: {}
+            - id: source-anchor-falsifiability-gate-skill
+              kind: openclaw
+              title: Apply the source-anchor falsifiability gate skill
+              definition_of_done: The owner-approved Skill Workshop proposal captures stable source IDs, explicit observation exclusions, field-complete falsification rows, crosswalk coverage, and fail-closed gate checks; it is inspected, scanner-clean, applied, discoverable, and linked to its source evidence without direct skill-directory writes.
+              depends_on: []
+              input: {}
             - id: constitutional-vertical-slice
               kind: openclaw
               title: Implement one constitutional authorization path

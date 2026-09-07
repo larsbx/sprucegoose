@@ -475,9 +475,12 @@ defmodule SpruceGoose.CLI.Executor do
          references = Map.get(task.input, "references", []),
          target = %{"kind" => kind, "value" => value},
          true <- target in references,
-         input = Map.put(task.input, "references", List.delete(references, target)),
          {:ok, task} <-
-           task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Authz.update_changeset() do
+           task
+           |> Ash.Changeset.for_update(:link_reference, %{
+             references: List.delete(references, target)
+           })
+           |> Authz.update_changeset() do
       {:ok, task_json(task)}
     else
       false -> {:error, "reference not found"}
@@ -603,10 +606,12 @@ defmodule SpruceGoose.CLI.Executor do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
          references = Map.get(task.input, "references", []),
-         input =
-           Map.put(task.input, "references", references ++ [%{"kind" => kind, "value" => value}]),
          {:ok, task} <-
-           task |> Ash.Changeset.for_update(:revise, %{input: input}) |> Authz.update_changeset() do
+           task
+           |> Ash.Changeset.for_update(:link_reference, %{
+             references: references ++ [%{"kind" => kind, "value" => value}]
+           })
+           |> Authz.update_changeset() do
       {:ok, task_json(task)}
     end
   end

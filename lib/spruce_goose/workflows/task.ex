@@ -31,6 +31,10 @@ defmodule SpruceGoose.Workflows.Task do
       authorize_if(HasRole.artifact_verifier())
     end
 
+    policy action(:link_reference) do
+      authorize_if(HasRole.evidence_linker())
+    end
+
     policy action(:revise) do
       authorize_if(HasRole.approver())
     end
@@ -172,6 +176,20 @@ defmodule SpruceGoose.Workflows.Task do
     update :revise do
       require_atomic?(false)
       accept([:title, :description, :definition_of_done, :runner, :input])
+      change(optimistic_lock(:lock_version))
+    end
+
+    update :link_reference do
+      require_atomic?(false)
+      accept([])
+      argument(:references, {:array, :map}, allow_nil?: false)
+
+      change(fn changeset, _context ->
+        references = Ash.Changeset.get_argument(changeset, :references)
+        input = Map.put(changeset.data.input, "references", references)
+        Ash.Changeset.change_attribute(changeset, :input, input)
+      end)
+
       change(optimistic_lock(:lock_version))
     end
 

@@ -14,7 +14,7 @@ defmodule SpruceGoose.ActorsTest do
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
-  @genesis_roles ~w(admin approver artifact_verifier author derivation_executor operator proposer reader)a
+  @genesis_roles ~w(admin approver artifact_verifier author derivation_executor evidence_linker operator proposer reader)a
 
   describe "genesis" do
     test "an empty registry creates its first actor as a global admin" do
@@ -375,6 +375,51 @@ defmodule SpruceGoose.ActorsTest do
       actor("openclaw", :agent, operator: "*")
 
       assert {:error, _message} = Executor.run({:add_project, "new", "New"}, "openclaw")
+    end
+
+    test "an evidence linker changes references without gaining task revision authority" do
+      %{task: alpha_task} = fixtures("alpha")
+      %{task: beta_task} = fixtures("beta")
+      linker = actor("evidence-linker", :agent, evidence_linker: "project:alpha")
+      approver = actor("approver-only", :human, approver: "project:alpha")
+
+      assert {:ok, linked} =
+               Executor.run(
+                 {:link_task, alpha_task.task_id, "regression", "mix test test/actors_test.exs"},
+                 linker.name
+               )
+
+      assert linked.references == [
+               %{"kind" => "regression", "value" => "mix test test/actors_test.exs"}
+             ]
+
+      assert {:ok, unlinked} =
+               Executor.run(
+                 {:unlink_task, alpha_task.task_id, "regression",
+                  "mix test test/actors_test.exs"},
+                 linker.name
+               )
+
+      assert unlinked.references == []
+
+      assert {:error, _refused} =
+               Executor.run(
+                 {:link_task, beta_task.task_id, "evidence", "outside granted project"},
+                 linker.name
+               )
+
+      assert {:error, _refused} =
+               Executor.run(
+                 {:link_task, alpha_task.task_id, "evidence", "approver is not a linker"},
+                 approver.name
+               )
+
+      assert {:error, _refused} =
+               SpruceGoose.Authz.with_actor(linker, fn ->
+                 alpha_task
+                 |> Ash.Changeset.for_update(:revise, %{title: "unauthorized revision"})
+                 |> SpruceGoose.Authz.update_changeset()
+               end)
     end
   end
 

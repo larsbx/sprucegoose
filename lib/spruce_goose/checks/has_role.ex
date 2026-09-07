@@ -37,6 +37,7 @@ defmodule SpruceGoose.Checks.HasRole do
 
   @doc "Constructors so policy blocks read as prose."
   def operator, do: {__MODULE__, role: :operator}
+  def evidence_linker, do: {__MODULE__, role: :evidence_linker}
   def derivation_executor, do: {__MODULE__, role: :derivation_executor}
   def artifact_verifier, do: {__MODULE__, role: :artifact_verifier}
   def proposer, do: {__MODULE__, role: :proposer}

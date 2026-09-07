@@ -12,6 +12,7 @@ defmodule SpruceGoose.Actors.Role do
     values: [
       :reader,
       :operator,
+      :evidence_linker,
       :derivation_executor,
       :artifact_verifier,
       :proposer,
