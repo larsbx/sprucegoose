@@ -1643,6 +1643,8 @@ defmodule SpruceGoose.CLI.Executor do
       state: task.state,
       workflow_id: task.workflow_id,
       lock_version: task.lock_version,
+      inserted_at: task.inserted_at,
+      updated_at: task.updated_at,
       board_id: task.board_id,
       column_id: task.column_id,
       rank: task.rank,
