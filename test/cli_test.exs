@@ -25,10 +25,17 @@ defmodule SpruceGoose.CLITest do
 
     assert "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]" in task_help.forms
 
+    assert "review-snapshot" in task_help.forms
+
     assert {:error, :usage} = CLI.run(["unknown", "--help"])
     assert {:ok, root_help} = CLI.run(["--help"])
     assert root_help.usage == "sprucegoose <command> [args]"
     assert {:ok, %{version: _}} = CLI.run(["--version"])
+  end
+
+  test "parses the fixed review snapshot command without caller-controlled scope" do
+    assert {:ok, :review_task_snapshot} = Command.parse(["task", "review-snapshot"])
+    assert {:error, :usage} = Command.parse(["task", "review-snapshot", "--state", "queued"])
   end
 
   test "parses only provider-neutral versioned runtime envelopes" do

@@ -14,6 +14,34 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.Runtime.Shadow, as: RuntimeShadow
   alias SpruceGoose.{Authz, Ledger, Legibility, Repo, Revise, SopGate, TaskId}
 
+  @review_states ~w(blocked failed in_progress inbox proposed queued ready waiting)
+  @review_task_fields [
+    :assignees,
+    :due_at,
+    :id,
+    :inserted_at,
+    :labels,
+    :lock_version,
+    :priority,
+    :project,
+    :roadmap,
+    :state,
+    :title,
+    :updated_at,
+    :wait_reason,
+    :workflow,
+    :workflow_name
+  ]
+  @source_commit System.get_env("SG_COMMIT", "development")
+  @source_tree System.get_env("SG_TREE", "development")
+  @review_set_isolation @source_commit != "development"
+
+  if @review_set_isolation and
+       (not Regex.match?(~r/\A[0-9a-f]{40}\z/, @source_commit) or
+          not Regex.match?(~r/\A[0-9a-f]{40}\z/, @source_tree)) do
+    raise "SG_COMMIT and SG_TREE must be lowercase 40-hex source identities"
+  end
+
   alias SpruceGoose.Workflows.{
     Board,
     BoardColumn,
@@ -589,6 +617,80 @@ defmodule SpruceGoose.CLI.Executor do
          limit: limit,
          tasks: Enum.map(tasks, &task_json(&1, memberships))
        }}
+    end
+  end
+
+  defp dispatch(:review_task_snapshot) do
+    Repo.transaction(
+      fn ->
+        if @review_set_isolation do
+          Repo.query!("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY", [])
+        end
+
+        with {:ok, page_size} <- review_page_size(),
+             {:ok, started} <- review_snapshot_marker(),
+             query =
+               Task
+               |> task_scope_query(@review_states, nil, nil, nil, %{})
+               |> task_sort_query(:id),
+             {:ok, total} <- Authz.count(query),
+             {:ok, tasks} <- review_task_pages(query, total, page_size, 0, []),
+             true <- length(tasks) == total,
+             {:ok, memberships} <- workflow_memberships(),
+             rows = Enum.map(tasks, &review_task_json(&1, memberships)),
+             {:ok, completed} <- review_snapshot_marker(),
+             true <- started.postgres == completed.postgres,
+             {:ok, public_key, private_key} <- review_signing_key() do
+          payload = %{
+            schema: "sprucegoose-review-snapshot-v1",
+            authority: %{
+              kind: "centralized-ash-postgresql",
+              actor: Authz.actor!().name,
+              peer_public_key: Base.encode64(public_key)
+            },
+            source: %{
+              commit: @source_commit,
+              tree: @source_tree,
+              module_md5: __MODULE__.module_info(:md5) |> Base.encode16(case: :lower)
+            },
+            query: %{states: @review_states, page_size: page_size},
+            snapshot: %{
+              postgres: started.postgres,
+              isolation: started.isolation,
+              started_at: started.observed_at,
+              completed_at: completed.observed_at
+            },
+            total: total,
+            count: length(rows),
+            tasks: rows
+          }
+
+          payload_bytes = Jason.encode!(payload)
+          signature = :crypto.sign(:eddsa, :none, payload_bytes, [private_key, :ed25519])
+
+          {:ok,
+           %{
+             schema: "sprucegoose-review-envelope-v1",
+             receipt: %{
+               algorithm: "ed25519",
+               payload: Base.encode64(payload_bytes),
+               payload_sha256:
+                 payload_bytes
+                 |> then(&:crypto.hash(:sha256, &1))
+                 |> Base.encode16(case: :lower),
+               signature: Base.encode64(signature)
+             }
+           }}
+        else
+          false -> {:error, "review snapshot changed inside its transaction"}
+          error -> error
+        end
+      end,
+      timeout: 150_000
+    )
+    |> case do
+      {:ok, result} -> result
+      {:error, error} -> {:error, error}
     end
   end
 
@@ -1607,6 +1709,93 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp todo_admission_allowed(_task), do: :ok
 
+  defp review_page_size do
+    case Application.get_env(:spruce_goose, :review_snapshot_page_size, 500) do
+      size when is_integer(size) and size >= 1 and size <= 1_000 -> {:ok, size}
+      _ -> {:error, "review snapshot page size must be between 1 and 1000"}
+    end
+  end
+
+  defp review_task_pages(_query, total, _page_size, offset, acc) when offset == total,
+    do: {:ok, acc |> Enum.reverse() |> List.flatten()}
+
+  defp review_task_pages(_query, total, _page_size, offset, _acc) when offset > total,
+    do: {:error, "review snapshot paging exceeded total"}
+
+  defp review_task_pages(query, total, page_size, offset, acc) do
+    with {:ok, page} <- Authz.read(paginate_query(query, page_size, offset)),
+         true <- page != [],
+         next_offset = offset + length(page),
+         true <- next_offset <= total do
+      review_task_pages(query, total, page_size, next_offset, [page | acc])
+    else
+      false -> {:error, "review snapshot paging did not match total"}
+      error -> error
+    end
+  end
+
+  defp review_snapshot_marker do
+    # AUTHORIZATION: transaction metadata only; no actor-owned row is bypassed.
+    case Repo.query!(
+           "SELECT pg_current_snapshot()::text, current_setting('transaction_isolation'), clock_timestamp()",
+           []
+         ) do
+      %{rows: [[snapshot, isolation, %DateTime{} = observed_at]]} ->
+        {:ok,
+         %{
+           postgres: snapshot,
+           isolation: isolation,
+           observed_at: DateTime.to_iso8601(observed_at)
+         }}
+
+      _ ->
+        {:error, "review snapshot metadata unavailable"}
+    end
+  end
+
+  defp review_signing_key do
+    # AUTHORIZATION: internal immutable node identity, never task data. The
+    # private key stays inside the authority process and only its signature is
+    # emitted.
+    case Repo.query!(
+           "SELECT peer_public_key, peer_private_key, key_algorithm FROM spruce_goose_identity WHERE id IS TRUE",
+           []
+         ) do
+      %{rows: [[public_key, private_key, "ed25519"]]}
+      when byte_size(public_key) == 32 and byte_size(private_key) in [32, 64] ->
+        {:ok, public_key, private_key}
+
+      %{rows: []} ->
+        {:error, "review signing identity is not provisioned"}
+
+      _ ->
+        {:error, "review signing identity is invalid"}
+    end
+  end
+
+  defp review_task_json(task, memberships) do
+    membership = Map.get(memberships, task.workflow_id)
+
+    %{
+      assignees: task.assignees,
+      due_at: task.due_at,
+      id: task.task_id,
+      inserted_at: task.inserted_at,
+      labels: task.labels,
+      lock_version: task.lock_version,
+      priority: task.priority,
+      project: membership && membership.project,
+      roadmap: membership && membership.roadmap,
+      state: task.state,
+      title: task.title,
+      updated_at: task.updated_at,
+      wait_reason: Map.get(task.input, "wait_reason"),
+      workflow: membership && membership.workflow,
+      workflow_name: membership && membership.workflow_name
+    }
+    |> Map.take(@review_task_fields)
+  end
+
   defp task_json(task) do
     case workflow_memberships() do
       {:ok, memberships} -> task_json(task, memberships)
@@ -1643,6 +1832,8 @@ defmodule SpruceGoose.CLI.Executor do
       state: task.state,
       workflow_id: task.workflow_id,
       lock_version: task.lock_version,
+      inserted_at: task.inserted_at,
+      updated_at: task.updated_at,
       board_id: task.board_id,
       column_id: task.column_id,
       rank: task.rank,
