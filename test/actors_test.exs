@@ -359,6 +359,128 @@ defmodule SpruceGoose.ActorsTest do
   end
 
   describe "scoped writes" do
+    test "an operator can link and unlink evidence without approval" do
+      %{task: task} = fixtures("alpha")
+      actor("operator", :agent, operator: "project:alpha")
+
+      assert {:ok, linked} =
+               Executor.run({:link_task, task.task_id, "repo", "/repo/alpha"}, "operator")
+
+      assert linked.references == [%{"kind" => "repo", "value" => "/repo/alpha"}]
+
+      assert {:ok, unlinked} =
+               Executor.run({:unlink_task, task.task_id, "repo", "/repo/alpha"}, "operator")
+
+      assert unlinked.references == []
+      assert unlinked.title == task.title
+      assert unlinked.definition_of_done == task.definition_of_done
+    end
+
+    test "reference actions preserve definition input and reject stale writes" do
+      %{task: task} = fixtures("alpha")
+      operator = actor("operator", :agent, operator: "project:alpha")
+      task = Ash.update!(task, %{input: %{"command" => "approved"}}, action: :revise)
+      params = %{kind: "evidence", value: "/proof/one"}
+
+      assert {:ok, linked} =
+               Ash.update(task, params,
+                 action: :link_reference,
+                 actor: operator,
+                 authorize?: true
+               )
+
+      assert linked.input == %{
+               "command" => "approved",
+               "references" => [%{"kind" => "evidence", "value" => "/proof/one"}]
+             }
+
+      assert {:error, _} =
+               Ash.update(task, %{kind: "evidence", value: "/proof/two"},
+                 action: :link_reference,
+                 actor: operator,
+                 authorize?: true
+               )
+
+      assert {:error, _} =
+               Ash.update(linked, Map.put(params, :input, %{"command" => "forged"}),
+                 action: :link_reference,
+                 actor: operator,
+                 authorize?: true
+               )
+
+      assert {:error, _} =
+               Ash.update(linked, %{title: "forged"},
+                 action: :revise,
+                 actor: operator,
+                 authorize?: true
+               )
+    end
+
+    test "reference actions retain scope, reader refusal, and approver compatibility" do
+      %{task: task} = fixtures("alpha")
+      reader = actor("reader", :agent, reader: "project:alpha")
+      outsider = actor("outsider", :agent, operator: "project:beta", reader: "project:alpha")
+      approver = actor("approver", :human, approver: "project:alpha")
+
+      for denied <- [reader, outsider], action <- [:link_reference, :unlink_reference] do
+        assert {:error, _} =
+                 Ash.update(task, %{kind: "repo", value: "/repo/alpha"},
+                   action: action,
+                   actor: denied,
+                   authorize?: true
+                 )
+      end
+
+      assert {:ok, _} =
+               Ash.update(task, %{kind: "repo", value: "/repo/alpha"},
+                 action: :link_reference,
+                 actor: approver,
+                 authorize?: true
+               )
+    end
+
+    test "reference updates match the legacy approver path including exact bytes and duplicates" do
+      %{task: task} = fixtures("alpha")
+      approver = actor("approver", :human, approver: "project:alpha")
+      params = %{kind: " evidence ", value: " /proof/one "}
+      reference = %{"kind" => params.kind, "value" => params.value}
+
+      legacy = Ash.update!(task, %{input: %{"references" => [reference]}}, action: :revise)
+
+      assert {:ok, linked} =
+               Ash.update(legacy, params,
+                 action: :link_reference,
+                 actor: approver,
+                 authorize?: true
+               )
+
+      assert linked.input["references"] == [reference, reference]
+
+      assert {:ok, unlinked} =
+               Ash.update(linked, params,
+                 action: :unlink_reference,
+                 actor: approver,
+                 authorize?: true
+               )
+
+      assert unlinked.input == legacy.input
+    end
+
+    test "revoked operators cannot link references using a previously resolved actor" do
+      %{task: task} = fixtures("alpha")
+      operator = actor("operator", :agent, operator: "project:alpha")
+
+      assert {:ok, _} =
+               Executor.run({:revoke_role, "operator", "operator", "project:alpha"}, system())
+
+      assert {:error, _} =
+               Ash.update(task, %{kind: "repo", value: "/repo/alpha"},
+                 action: :link_reference,
+                 actor: operator,
+                 authorize?: true
+               )
+    end
+
     test "an operator may drive tasks in its project and not in another" do
       %{task: alpha_task} = fixtures("alpha")
       %{task: beta_task} = fixtures("beta")

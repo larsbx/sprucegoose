@@ -34,6 +34,11 @@ defmodule SpruceGoose.Workflows.Task do
     policy action(:revise) do
       authorize_if(HasRole.approver())
     end
+
+    policy action([:link_reference, :unlink_reference]) do
+      authorize_if(HasRole.operator())
+      authorize_if(HasRole.approver())
+    end
   end
 
   attributes do
@@ -175,6 +180,42 @@ defmodule SpruceGoose.Workflows.Task do
       change(optimistic_lock(:lock_version))
     end
 
+    update :link_reference do
+      require_atomic?(false)
+      accept([])
+
+      argument(:kind, :string,
+        allow_nil?: false,
+        constraints: [max_length: 4096, trim?: false, allow_empty?: true]
+      )
+
+      argument(:value, :string,
+        allow_nil?: false,
+        constraints: [max_length: 4096, trim?: false, allow_empty?: true]
+      )
+
+      change(fn changeset, _context -> change_reference(changeset, :link) end)
+      change(optimistic_lock(:lock_version))
+    end
+
+    update :unlink_reference do
+      require_atomic?(false)
+      accept([])
+
+      argument(:kind, :string,
+        allow_nil?: false,
+        constraints: [max_length: 4096, trim?: false, allow_empty?: true]
+      )
+
+      argument(:value, :string,
+        allow_nil?: false,
+        constraints: [max_length: 4096, trim?: false, allow_empty?: true]
+      )
+
+      change(fn changeset, _context -> change_reference(changeset, :unlink) end)
+      change(optimistic_lock(:lock_version))
+    end
+
     update :record_artifact_receipt do
       require_atomic?(false)
       accept([:artifact_receipts])
@@ -292,6 +333,32 @@ defmodule SpruceGoose.Workflows.Task do
       end)
 
       change(optimistic_lock(:lock_version))
+    end
+  end
+
+  defp change_reference(changeset, operation) do
+    reference = %{
+      "kind" => Ash.Changeset.get_argument(changeset, :kind),
+      "value" => Ash.Changeset.get_argument(changeset, :value)
+    }
+
+    input = changeset.data.input
+    references = Map.get(input, "references", [])
+
+    cond do
+      not is_list(references) ->
+        Ash.Changeset.add_error(changeset, field: :input, message: "references must be a list")
+
+      operation == :unlink and reference not in references ->
+        Ash.Changeset.add_error(changeset, field: :value, message: "reference not found")
+
+      true ->
+        updated =
+          if operation == :link,
+            do: references ++ [reference],
+            else: List.delete(references, reference)
+
+        Ash.Changeset.change_attribute(changeset, :input, Map.put(input, "references", updated))
     end
   end
 
