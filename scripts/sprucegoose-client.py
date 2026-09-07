@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Thin SpruceGoose CLI client for the persistent local Unix-socket service.
 
-Two client-side concerns live here, and nothing else. The service JSON contract
+Client-side concerns live here. The service JSON contract
 stays canonical; this client never invents, drops, or reorders reported data.
 
 1. Response cap (tsk-20260819T192123Z-5435f13d)
@@ -38,18 +38,20 @@ stays canonical; this client never invents, drops, or reorders reported data.
 
 import json
 import hashlib
+import math
 import os
 import shlex
 import socket
 import subprocess
 import sys
+import time
 
 SOP_PATH = "/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md"
 
 # Per-response ceiling. Unchanged from the original client on purpose.
 MAX_RESPONSE_BYTES = 1_048_576
 # Rows requested per page when auto-paginating a `task list`.
-DEFAULT_PAGE_SIZE = int(os.environ.get("SPRUCE_GOOSE_CLI_PAGE_SIZE", "100"))
+DEFAULT_PAGE_SIZE = 100
 # Absolute bounds on a reassembled listing, so pagination cannot become an
 # unbounded fetch loop against a corpus that keeps growing.
 MAX_TOTAL_ROWS = 100_000
@@ -73,6 +75,8 @@ VALUE_OPTIONS = frozenset(
         "--text",
         "--limit",
         "--offset",
+        "--sort",
+        "--blueprint",
         "--dod",
         "--sop",
         "--title",
@@ -119,6 +123,7 @@ def fail(message):
 
 
 def sop_preflight(args):
+    args = command_args(args)
     gated = (
         args[:2] == ["task", "add"]
         or args[:2] == ["task", "start"]
@@ -127,7 +132,8 @@ def sop_preflight(args):
     if not gated:
         return
     try:
-        local = hashlib.sha256(open(SOP_PATH, "rb").read()).hexdigest()
+        with open(SOP_PATH, "rb") as sop_file:
+            local = hashlib.sha256(sop_file.read()).hexdigest()
         remote = subprocess.run(
             [
                 "ssh",
@@ -157,10 +163,9 @@ def extract_format(argv):
     index = 0
     while index < len(argv):
         arg = argv[index]
-        # A value position belongs to the preceding option, never to --format.
-        if index > 0 and argv[index - 1] in VALUE_OPTIONS:
-            rest.append(arg)
-            index += 1
+        if arg in VALUE_OPTIONS:
+            rest.extend(argv[index:index + 2])
+            index += 2
             continue
         if arg == "--format":
             if index + 1 >= len(argv):
@@ -179,6 +184,31 @@ def extract_format(argv):
     return fmt, rest
 
 
+def configured_number(name, default, parser, maximum):
+    try:
+        value = parser(os.environ.get(name, str(default)))
+        if not math.isfinite(value) or not 0 < value <= maximum:
+            raise ValueError
+        return value
+    except (ValueError, OverflowError):
+        kind = "integer" if parser is int else "number"
+        fail(f"{name} must be a positive finite {kind} no greater than {maximum}")
+
+
+def command_args(args):
+    remaining = []
+    index = 0
+    while index < len(args):
+        if args[index] == "--as" and index + 1 < len(args):
+            index += 2
+        elif args[index].startswith("--as="):
+            index += 1
+        else:
+            remaining.append(args[index])
+            index += 1
+    return remaining
+
+
 def send(args, timeout, socket_path, max_bytes=MAX_RESPONSE_BYTES):
     """One request/response round trip. Returns the decoded JSON object."""
     body = json.dumps({"args": args}, separators=(",", ":")).encode()
@@ -191,14 +221,25 @@ def send(args, timeout, socket_path, max_bytes=MAX_RESPONSE_BYTES):
         + body
     )
 
-    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    client.settimeout(timeout)
+    deadline = time.monotonic() + timeout
+
+    def remaining_timeout():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("request timed out")
+        return remaining
+
+    client = None
     try:
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(remaining_timeout())
         client.connect(socket_path)
+        client.settimeout(remaining_timeout())
         client.sendall(request)
         chunks = []
         total = 0
         while True:
+            client.settimeout(remaining_timeout())
             chunk = client.recv(65_536)
             if not chunk:
                 break
@@ -209,13 +250,23 @@ def send(args, timeout, socket_path, max_bytes=MAX_RESPONSE_BYTES):
     except (OSError, TimeoutError) as error:
         fail(f"service unavailable: {error}")
     finally:
-        client.close()
+        if client is not None:
+            client.close()
 
     response = b"".join(chunks)
     try:
-        _headers, payload = response.split(b"\r\n\r\n", 1)
-        return json.loads(payload)
-    except (ValueError, json.JSONDecodeError):
+        headers, payload = response.split(b"\r\n\r\n", 1)
+        status_line = headers.split(b"\r\n", 1)[0].split(b" ", 2)
+        if len(status_line) < 2 or status_line[0] not in (b"HTTP/1.0", b"HTTP/1.1"):
+            raise ValueError
+        status = int(status_line[1])
+        decoded = json.loads(payload.decode("utf-8"))
+        if not isinstance(decoded, dict) or type(decoded.get("ok")) is not bool:
+            raise ValueError
+        if not 200 <= status <= 599 or (decoded["ok"] and status >= 300):
+            raise ValueError
+        return decoded
+    except (ValueError, RecursionError):
         fail("invalid service response")
 
 
@@ -237,11 +288,15 @@ def inject_declared_actor(args, environ=os.environ):
 
 def wants_auto_pagination(args):
     """True for a `task list` the caller did not already page itself."""
+    args = command_args(args)
     if args[:2] != ["task", "list"]:
         return False
-    for arg in args[2:]:
+    index = 2
+    while index < len(args):
+        arg = args[index]
         if arg in ("--limit", "--offset") or arg.startswith(("--limit=", "--offset=")):
             return False
+        index += 2 if arg in VALUE_OPTIONS else 1
     return True
 
 
@@ -255,7 +310,9 @@ def paginated_task_list(args, timeout, socket_path):
     rows = []
     envelope = None
     offset = 0
-    page_size = DEFAULT_PAGE_SIZE
+    page_size = configured_number(
+        "SPRUCE_GOOSE_CLI_PAGE_SIZE", DEFAULT_PAGE_SIZE, int, MAX_TOTAL_ROWS
+    )
     accumulated = 0
 
     while True:
@@ -275,8 +332,8 @@ def paginated_task_list(args, timeout, socket_path):
             return page
 
         batch = page.get("tasks")
-        if not isinstance(batch, list):
-            return page
+        if not isinstance(batch, list) or not all(isinstance(row, dict) for row in batch):
+            return {"ok": False, "error": "invalid service response"}
         if envelope is None:
             envelope = page
 
@@ -382,7 +439,9 @@ def main():
     socket_path = os.environ.get(
         "SPRUCE_GOOSE_CLI_SOCKET", f"/run/user/{os.getuid()}/sprucegoose/cli.sock"
     )
-    timeout = float(os.environ.get("SPRUCE_GOOSE_CLI_CLIENT_TIMEOUT_SECONDS", "35"))
+    timeout = configured_number(
+        "SPRUCE_GOOSE_CLI_CLIENT_TIMEOUT_SECONDS", 35, float, 86_400
+    )
 
     if wants_auto_pagination(args):
         decoded = paginated_task_list(args, timeout, socket_path)

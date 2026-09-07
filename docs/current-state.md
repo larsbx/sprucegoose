@@ -1,11 +1,22 @@
 # Current state
 
-Verified 2026-08-22 under task `tsk-20260822T230747Z-f2749517`.
+Functional baseline verified 2026-08-22 under task `tsk-20260822T230747Z-f2749517`.
+
+Operational check 2026-09-07: Mama's service is active, and the installed
+`releases/0.1.0/governed-provenance.json` identifies the clean source commit
+`b54ec54a934fc67bb56e775d79d61d8114e76899` and tree
+`4170b861e9dda7d2aec7a816f9fdea1b761f71bc`, built 2026-08-24. The backup timer
+ran on 2026-09-07 and its service reports success; restore integrity was not
+retested. The installed provenance is not a fresh runtime or database
+attestation. Behavioral and reconciliation figures below remain the dated
+August baseline, not newly measured September values. See the
+[September client audit](audits/2026-09-07-client-reliability.md) for the scoped
+source improvements and remaining operational gaps.
 
 ## Production authority
 
 - Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
-  Beta 2. The deployed application commit is
+  Beta 2 at the August functional baseline. That baseline application commit was
   `3a2dc6359fddd1f3d22d5ff633ad351ff290c30a`; its tree is
   `876e8492bde221dc30709b4c1a09f28ddae7d906`. The governed release retained
   PostgreSQL 19 Beta 2 and the deterministic authoritative-task projection,
@@ -121,7 +132,7 @@ transaction-local write flag. The empty-state gate also proved that the legacy
 reader and transactional writer remain available while the materialization is
 absent, and that rebuilding does not delete certified events.
 
-Current reconciliation is healthy at 141 certified events, zero missing task
+At the August verification, reconciliation was healthy at 141 certified events, zero missing task
 events, and zero malformed streams. Production rebuilt 708 tasks through
 authority-stream position 140 with digest integrity, dual-read parity, and
 zero lag. Direct projection writes refuse, restart preserves parity, five
