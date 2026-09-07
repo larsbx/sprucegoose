@@ -1,18 +1,188 @@
 #!/usr/bin/env bash
-# Generic passthrough for every hook this directory does not itself implement.
+# post-commit: write a doc-generation REQUEST for the commit just made.
 #
-# `core.hooksPath` replaces the per-repo hooks directory wholesale — it does
-# not merge with it. Without this, pointing the global config here would
-# silently disable every existing hook on the box, starting with the
-# post-receive on ~/agent-icm.git that mirrors main and its tags to Forgejo.
+# This hook does not generate documentation and does not call an agent. It
+# records what changed, in a form a later merge-time step can hand to the
+# SpruceGoose agent. Two reasons for the split:
 #
-# Symlinked in as each hook name; $0 tells us which one we were invoked as.
-# stdin, argv and exit status all pass straight through.
+#   1. A post-commit hook runs on the authoring box, before review. Generating
+#      docs there would mutate what you are about to push and put generator
+#      output inside the review diff.
+#   2. "On final PR acceptance" is a server-side event. This box never sees
+#      it. So the local half writes a request; the remote half consumes it.
+#
+# The request is an artifact, not an instruction to obey. It carries the facts
+# (commit, tree, changed runtime files, branch) and a prompt built from them.
+# Whoever runs it later re-reads the repository at that commit; nothing here is
+# trusted as a description of current state.
+#
+# Deliberately silent and non-fatal. A post-commit hook that fails must never
+# make it look like the commit failed -- the commit already happened.
 set -uo pipefail
 
-name=$(basename "$0")
-gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
-local_hook="$gitdir/hooks/$name"
+# Never let this hook break a commit. Any unexpected error exits 0.
+trap 'exit 0' ERR
 
-[ -x "$local_hook" ] || exit 0
-exec "$local_hook" "$@"
+# Dispatch on the name we were invoked as, BEFORE doing any post-commit work.
+#
+# `core.hooksPath` replaces the per-repo hooks directory wholesale — it does
+# not merge with it — and this file is symlinked in as every hook name. Only
+# post-commit wants the doc-request behaviour below. Every other name must
+# pass straight through to whatever the repository installed for itself, or
+# pointing the global config here silently disables it, starting with the
+# post-receive on ~/agent-icm.git that mirrors main and its tags to Forgejo.
+#
+# The bare-repo case is why this cannot be left to the tail of the script:
+# `git rev-parse --show-toplevel` fails in a bare repository, so a post-receive
+# reaching the post-commit body below would exit 0 without calling the mirror.
+name=$(basename "$0")
+if [ "$name" != "post-commit" ]; then
+  passthrough_gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+  passthrough_hook="$passthrough_gitdir/hooks/$name"
+  [ -x "$passthrough_hook" ] || exit 0
+  exec "$passthrough_hook" "$@"
+fi
+
+repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+
+# Opt out entirely: DOC_REQUEST=0 git commit ...
+[ "${DOC_REQUEST:-1}" = "0" ] && exit 0
+
+commit=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || exit 0
+tree=$(git -C "$repo" rev-parse 'HEAD^{tree}' 2>/dev/null) || exit 0
+branch=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)
+subject=$(git -C "$repo" log -1 --format=%s 2>/dev/null)
+author=$(git -C "$repo" log -1 --format='%an' 2>/dev/null)
+when=$(git -C "$repo" log -1 --format=%cI 2>/dev/null)
+
+# Repository slug, best effort. Used only as a label in the request.
+origin=$(git -C "$repo" config --get remote.forgejo.url 2>/dev/null \
+      || git -C "$repo" config --get remote.origin.url 2>/dev/null || true)
+slug=$(printf '%s' "$origin" | sed -E 's#^.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#' 2>/dev/null)
+[ -n "$slug" ] || slug=$(basename "$repo")
+
+# Changed files in this commit. First-parent so a merge commit reports the
+# merged content rather than every file from the side branch.
+#
+# A root commit has no parent, and diff-tree returns nothing for it. Fall back
+# to listing the tree so the very first commit in a repository is not silently
+# skipped -- that case is exactly when documentation is most likely absent.
+if git -C "$repo" rev-parse -q --verify HEAD^ >/dev/null 2>&1; then
+  changed=$(git -C "$repo" diff-tree --no-commit-id --name-only -r -m --first-parent HEAD 2>/dev/null)
+else
+  changed=$(git -C "$repo" ls-tree -r --name-only HEAD 2>/dev/null)
+fi
+[ -n "$changed" ] || exit 0
+
+# Which of them define how something runs. Same list the doc gate uses, kept
+# in sync deliberately: if the gate thinks a file is runtime-defining, the doc
+# request should think so too.
+runtime=$(printf '%s\n' "$changed" | grep -E \
+  -e '(^|/)config/[^/]+\.(exs|toml|ya?ml)$' \
+  -e '\.(container|service|timer|socket)$' \
+  -e '(^|/)(Containerfile|Dockerfile)$' \
+  -e '(^|/)compose[^/]*\.ya?ml$' \
+  -e '(^|/)(pg_hba|postgresql)\.conf$' \
+  -e '(^|/)bin/[^/]+\.sh$' \
+  || true)
+
+docs_changed=$(printf '%s\n' "$changed" | grep -E '\.md$|(^|/)docs/' || true)
+
+# Nothing that defines runtime behaviour changed: no request. This keeps the
+# queue about drift risk rather than logging every commit.
+[ -n "$runtime" ] || exit 0
+
+outdir="$gitdir/doc-requests"
+mkdir -p "$outdir" 2>/dev/null || exit 0
+out="$outdir/${commit}.json"
+[ -e "$out" ] && exit 0
+
+# Build with python3 so the JSON is correctly escaped. If python3 is missing,
+# skip rather than emit something a consumer would have to guess at.
+command -v python3 >/dev/null 2>&1 || exit 0
+
+python3 - "$out" "$slug" "$commit" "$tree" "$branch" "$subject" "$author" "$when" \
+         "$runtime" "$changed" "$docs_changed" <<'PY' 2>/dev/null || exit 0
+import json, os, sys, tempfile
+
+(out, slug, commit, tree, branch, subject, author, when,
+ runtime, changed, docs_changed) = sys.argv[1:12]
+
+lines   = lambda s: [x for x in s.splitlines() if x.strip()]
+runtime = lines(runtime)
+changed = lines(changed)
+docs    = lines(docs_changed)
+
+prompt = f"""Update the documentation for commit {commit[:12]} in {slug}.
+
+This commit changed files that define how something runs:
+
+{chr(10).join('  - ' + f for f in runtime)}
+
+{'It also touched documentation: ' + ', '.join(docs) + '.' if docs else 'It changed no documentation.'}
+
+Read the repository at commit {commit} (tree {tree}) and check whether the
+existing documentation still describes reality. Deployment paths, pinned
+versions and commits, required environment variables, ports, and service
+names are what go stale.
+
+Rules:
+- Read the actual files at that commit. Do not trust this request's summary,
+  the commit message, or any prior document as a description of current state.
+- Change documentation only. No code, schema, config, or policy edits.
+- If the documentation is already correct, say so and change nothing. A
+  no-op is a valid and expected outcome; do not manufacture an edit.
+- Report each file you changed and the specific claim that was wrong.
+- Do not merge, deploy, or push to a protected branch.
+
+Commit subject: {subject}
+Author: {author}
+Committed: {when}
+Branch at commit time: {branch}
+"""
+
+payload = {
+    "schema": "sprucegoose.doc_request.v1",
+    "repository": slug,
+    "commit": commit,
+    "tree": tree,
+    "branch": branch,
+    "subject": subject,
+    "author": author,
+    "committed_at": when,
+    "runtime_files": runtime,
+    "changed_files": changed,
+    "docs_changed": docs,
+    "state": "pending",
+    "prompt": prompt,
+    "note": ("Written by the post-commit hook. This is a request, not an "
+             "authorization. It confers no task, effect, or publication "
+             "authority, and its summary is not evidence of current state."),
+}
+
+# Atomic write, owner-only.
+d = os.path.dirname(out)
+fd, tmp = tempfile.mkstemp(dir=d)
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+        f.write("\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, out)
+except Exception:
+    try: os.unlink(tmp)
+    except Exception: pass
+    raise
+PY
+
+# One line, so it is visible in terminal output without being noise.
+printf 'doc request queued: %s (%d runtime file(s))\n' \
+  "${commit:0:12}" "$(printf '%s\n' "$runtime" | grep -c .)" >&2
+
+# Chain to whatever this repo installed for itself.
+local_hook="$gitdir/hooks/post-commit"
+if [ -x "$local_hook" ]; then
+  exec "$local_hook" "$@"
+fi
+exit 0
