@@ -1180,6 +1180,10 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert total == 5
     assert length(page_one) == 2
 
+    assert Enum.all?(page_one, fn row ->
+             match?(%DateTime{}, row.inserted_at) and match?(%DateTime{}, row.updated_at)
+           end)
+
     assert {:ok, %{total: 5, count: 2, offset: 2, tasks: page_two}} =
              Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2, offset: 2}})
 
