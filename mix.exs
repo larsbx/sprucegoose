@@ -14,7 +14,21 @@ defmodule SpruceGoose.MixProject do
       ],
       test_ignore_filters: [~r|^test/fixtures/|],
       releases: releases(),
+      aliases: aliases(),
       deps: deps()
+    ]
+  end
+
+  # The evidence integration lane is deliberately outside default `mix test`
+  # discovery: test/test_helper.exs puts the Repo into Sandbox :manual mode,
+  # and a sandbox transaction cannot carry the REPEATABLE READ, READ ONLY
+  # semantics this lane exists to observe. It runs its own ExUnit against
+  # disposable databases supplied by the caller.
+  defp aliases do
+    [
+      "test.evidence_integration": [
+        "run --no-start test/evidence/integration_runner.exs"
+      ]
     ]
   end
 
