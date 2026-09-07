@@ -45,9 +45,17 @@ title=$(grep -m1 '^# ' "$f" 2>/dev/null | sed 's/^# //')
 # Only nag if it is not already queued. Read-only DB check; stay silent if
 # Postgres is unreachable rather than guessing.
 queued=""
-if [ -x /home/admin-papa/pglocal19/bin/psql ]; then
-  queued=$(LD_LIBRARY_PATH=/home/admin-papa/pglocal19/lib \
-    /home/admin-papa/pglocal19/bin/psql -h /tmp -U postgres -d spruce_goose_dev -tAc \
+# Postgres sits at a different prefix on each host -- ~/pglocal19 on mama,
+# ~/data/pglocal19 on papa -- and this file is deployed to both. Resolve it
+# rather than hardcoding one, or the -x test fails on the other host and the
+# dedupe check silently degrades into nagging on every capture.
+pgprefix=""
+for _p in /home/admin-papa/pglocal19 /home/admin-papa/data/pglocal19; do
+  [ -x "$_p/bin/psql" ] && { pgprefix="$_p"; break; }
+done
+if [ -n "$pgprefix" ]; then
+  queued=$(LD_LIBRARY_PATH="$pgprefix/lib" \
+    "$pgprefix/bin/psql" -h /tmp -U postgres -d spruce_goose_dev -tAc \
     "select count(*) from inbox_items where state='pending' and body like '%${base//\'/\'\'}%'" 2>/dev/null)
 fi
 [ "${queued:-0}" != "0" ] && exit 0
