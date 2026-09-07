@@ -108,6 +108,7 @@ defmodule SpruceGoose.LegibilityTest do
     # A caller names projects only. There is no destination parameter to point
     # at the source repository or anywhere else on the authority host.
     assert {:error, _} = Command.parse(["project", "materialize"])
+
     assert {:ok, {:materialize_projects, ["legibility-confined"]}} =
              Command.parse(["project", "materialize", "legibility-confined"])
 

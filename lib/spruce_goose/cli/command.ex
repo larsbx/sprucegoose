@@ -24,6 +24,7 @@ defmodule SpruceGoose.CLI.Command do
      [
        "instantiate --project KEY --roadmap KEY --workflow ID --blueprint REVISION --definition KEY --priority N [--type task|diagnosis]",
        "list [--state S] [--project KEY] [--roadmap KEY] [--workflow ID] [--type T] [--label L] [--assignee A] [--priority N] [--text T]",
+       "review-snapshot",
        "show ID",
        "blockers ID",
        "impact ID",
@@ -255,6 +256,7 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["task", "show", id]), do: {:ok, {:show_task, id}}
   def parse(["task", "blockers", id]), do: {:ok, {:task_blockers, id}}
   def parse(["task", "impact", id]), do: {:ok, {:task_impact, id}}
+  def parse(["task", "review-snapshot"]), do: {:ok, :review_task_snapshot}
 
   def parse(["task", "list" | args]) do
     case OptionParser.parse(args,

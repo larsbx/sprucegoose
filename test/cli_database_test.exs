@@ -1180,6 +1180,10 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert total == 5
     assert length(page_one) == 2
 
+    assert Enum.all?(page_one, fn row ->
+             match?(%DateTime{}, row.inserted_at) and match?(%DateTime{}, row.updated_at)
+           end)
+
     assert {:ok, %{total: 5, count: 2, offset: 2, tasks: page_two}} =
              Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2, offset: 2}})
 
@@ -1191,6 +1195,79 @@ defmodule SpruceGoose.CLIDatabaseTest do
              Executor.run({:list_tasks, %{workflow: "read-flow", limit: 2, offset: 4}})
 
     assert length(tail) == 1
+  end
+
+  test "review snapshot is complete, allowlisted, transaction-bound, and authority-signed" do
+    list_fixture()
+    for n <- 1..5, do: admit("Review row #{n}", 2)
+
+    previous_page_size = Application.get_env(:spruce_goose, :review_snapshot_page_size)
+    Application.put_env(:spruce_goose, :review_snapshot_page_size, 2)
+    SpruceGoose.Identity.Local.peer_id()
+
+    on_exit(fn ->
+      if previous_page_size,
+        do: Application.put_env(:spruce_goose, :review_snapshot_page_size, previous_page_size),
+        else: Application.delete_env(:spruce_goose, :review_snapshot_page_size)
+    end)
+
+    assert {:ok, envelope} = Executor.run(:review_task_snapshot)
+    assert Map.keys(envelope) |> Enum.sort() == [:receipt, :schema]
+    assert envelope.schema == "sprucegoose-review-envelope-v1"
+
+    assert Map.keys(envelope.receipt) |> Enum.sort() ==
+             [:algorithm, :payload, :payload_sha256, :signature]
+
+    assert envelope.receipt.algorithm == "ed25519"
+    payload_bytes = Base.decode64!(envelope.receipt.payload)
+
+    assert envelope.receipt.payload_sha256 ==
+             :crypto.hash(:sha256, payload_bytes) |> Base.encode16(case: :lower)
+
+    payload = Jason.decode!(payload_bytes)
+    signature = Base.decode64!(envelope.receipt.signature)
+    public_key = Base.decode64!(payload["authority"]["peer_public_key"])
+
+    assert :crypto.verify(:eddsa, :none, payload_bytes, signature, [public_key, :ed25519])
+    assert payload["schema"] == "sprucegoose-review-snapshot-v1"
+    assert payload["authority"]["kind"] == "centralized-ash-postgresql"
+    assert payload["authority"]["actor"] == "test-system"
+
+    assert payload["query"]["states"] ==
+             ~w(blocked failed in_progress inbox proposed queued ready waiting)
+
+    assert payload["query"]["page_size"] == 2
+    assert payload["snapshot"]["postgres"] =~ ~r/^\d+:\d+:/
+
+    expected_isolation =
+      if payload["source"]["commit"] == "development",
+        do: "read committed",
+        else: "repeatable read"
+
+    assert payload["snapshot"]["isolation"] == expected_isolation
+    assert %DateTime{} = DateTime.from_iso8601(payload["snapshot"]["started_at"]) |> elem(1)
+    assert %DateTime{} = DateTime.from_iso8601(payload["snapshot"]["completed_at"]) |> elem(1)
+    assert payload["total"] == 5
+    assert payload["count"] == 5
+    assert length(payload["tasks"]) == 5
+
+    expected_keys =
+      ~w(assignees due_at id inserted_at labels lock_version priority project roadmap state title updated_at wait_reason workflow workflow_name)
+
+    assert Enum.all?(payload["tasks"], fn row ->
+             Map.keys(row) |> Enum.sort() == expected_keys and
+               is_binary(row["id"]) and row["id"] != "" and
+               is_binary(row["title"]) and
+               is_integer(row["lock_version"]) and not is_boolean(row["lock_version"]) and
+               is_list(row["assignees"]) and is_list(row["labels"]) and
+               match?({:ok, _, 0}, DateTime.from_iso8601(row["inserted_at"])) and
+               match?({:ok, _, 0}, DateTime.from_iso8601(row["updated_at"]))
+           end)
+
+    assert payload["source"]["commit"] == System.get_env("SG_COMMIT", "development")
+    assert payload["source"]["tree"] == System.get_env("SG_TREE", "development")
+
+    assert payload["source"]["module_md5"] =~ ~r/^[0-9a-f]{32}$/
   end
 
   defp ids(rows), do: rows |> Enum.map(& &1.id) |> MapSet.new()
