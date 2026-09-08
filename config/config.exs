@@ -70,7 +70,28 @@ config :spruce_goose, :allow_legacy_hierarchy_mutation, false
 config :spruce_goose, :start_cli_service, false
 config :spruce_goose, :cli_socket_path, nil
 config :spruce_goose, :cli_request_timeout, 30_000
-config :spruce_goose, :artifact_store_root, "/tmp/sprucegoose-artifacts"
+# Configuration, not a source default. These were hardcoded fallbacks inside
+# SpruceGoose.Blueprints.ForgejoVerifier, which meant production ran against
+# whatever was compiled in and no deployment could say otherwise without an
+# override that did not exist. runtime.exs takes the environment.
+config :spruce_goose,
+       :forgejo_api_url,
+       "https://ubuntu-8gb-hil-1.tail2188e6.ts.net:8448/api/v1"
+
+config :spruce_goose,
+       :forgejo_read_token_file,
+       "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
+
+# A blueprint manifest is a small YAML file. The verifier refuses anything
+# larger rather than buffering it.
+config :spruce_goose, :blueprint_max_bytes, 1_048_576
+
+# No default. runtime.exs sets this for every environment that evaluates it;
+# the sprucegoose-direct escript does not, and a world-writable /tmp default
+# meant the recovery artifact silently kept its content-addressed store where
+# any local user could pre-create the path. Failing to start is the better
+# answer than storing custody evidence somewhere unowned.
+config :spruce_goose, :artifact_store_root, nil
 config :spruce_goose, :artifact_max_bytes, 67_108_864
 
 # Delivery is deliberately opt-in. Runtime configuration must name a module
@@ -86,3 +107,8 @@ config :spruce_goose,
 config :spruce_goose, :sop_grandfather_version, "1.0.0"
 
 import_config "#{config_env()}.exs"
+
+# Ash 3.33 requires an explicit string-length counting strategy. SpruceGoose
+# declares no string length constraints, so this is inert for its own resources;
+# it is required because any loaded resource triggers the transformer.
+config :ash, :default_string_length_count, :codepoints

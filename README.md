@@ -17,9 +17,11 @@ Allowed task kinds map to Oban, TaskFlow, or OpenClaw. Those runtimes remain
 effect executors; Postgres/Ash owns orchestration state and invariants.
 
 The production operator CLI is a thin client for a persistent OTP service over
-`$XDG_RUNTIME_DIR/sprucegoose/cli.sock`. The socket directory is mode `0700`,
-each request runs in its own supervised task, and every request has a bounded
-deadline. One stalled request therefore cannot head-of-line block another.
+`$XDG_RUNTIME_DIR/sprucegoose/cli.sock`. The socket directory must be mode
+`0700` and the service refuses to bind when it is not — the socket is the only
+authentication boundary on a fully privileged admin API, so the application
+asserts it rather than trusting its systemd unit to. Each request runs in its
+own supervised task, and every request has a bounded deadline. One stalled request therefore cannot head-of-line block another.
 There is no cold-start fallback: an unavailable service fails fast so an
 operator never mistakes a second application boot for a successful command.
 
@@ -62,7 +64,12 @@ The normative, operative, evidentiary, and projection boundaries are defined
 in [`docs/authority-planes.md`](docs/authority-planes.md). The current kernel
 conformance gaps and dependency-ordered remediation are recorded in the
 [`v0.2 audit`](docs/audits/2026-08-21-abstract-deontic-kernel-v0.2.md) and
-[`remediation plan`](docs/abstract-kernel-remediation-plan.md).
+[`remediation plan`](docs/abstract-kernel-remediation-plan.md). The
+[`2026-09-08 project audit`](docs/audits/2026-09-08-project-audit.md) re-checks
+that remediation against the delivered source and records the reproducibility,
+security, and correctness findings that block re-verification; its work is
+ordered by the
+[`2026-09-08 remediation plan`](docs/audit-remediation-plan-2026-09-08.md).
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
@@ -92,9 +99,12 @@ grants, approvals, shell commands, or deployments.
 forms: structured data, Markdown, and Graphviz DOT. The view includes stable
 project, roadmap, workflow, task, and blueprint identifiers. Generated text is
 explicitly labeled as a projection and is never accepted as mutation input.
-Blueprint registration independently reads the commit, tree, and path bytes
-through Forgejo. SpruceGoose derives the manifest digest; callers cannot supply
-the tree or digest recorded by the Ash action. Apply validates the whole
+Blueprint registration reads the commit, tree, and path bytes through Forgejo
+and checks each against an identity a previous response committed to: the
+commit names its tree, the tree names its subtrees and its blobs, and every one
+is recomputed from the bytes returned. Substituting any object requires a SHA-1
+preimage rather than a cooperative server. SpruceGoose derives the manifest
+digest; callers cannot supply the tree or digest recorded by the Ash action. Apply validates the whole
 versioned YAML package before writing, then creates or revises its project-scoped
 roadmaps and workflows in one database transaction. Any invalid definition or
 write failure leaves both hierarchy and revision receipt unchanged.
@@ -177,12 +187,14 @@ roadmaps:
 ./sprucegoose revise approve rev-... --task tsk-... --digest <sha256> --as lars
 ```
 
-PostgreSQL 19 exposes task dependencies as the read-only property graph
-`sprucegoose_task_dependency_graph`. The three graph commands authorize the
-named task or workflow through Ash before executing workflow-scoped SQL. The
-relational task and dependency tables remain authoritative; graph queries do
-not transition tasks or change edges. See
-[`docs/property-graph-queries.md`](docs/property-graph-queries.md).
+The three dependency-graph commands authorize the named task or workflow
+through Ash, then select workflow-scoped edges relationally and traverse them
+in memory. This previously used a SQL/PGQ property graph, which exists only in
+an unreleased PostgreSQL beta and so made the schema uncreatable on every
+supported GA release; the property graph supplied an edge list and nothing
+else. The task and dependency tables remain authoritative; graph queries do not
+transition tasks or change edges. See
+[`docs/dependency-graph-queries.md`](docs/dependency-graph-queries.md).
 
 Inbox captures are content-addressed and idempotent. They remain pending and
 non-executable; typed project/roadmap/workflow membership and a DoD are still

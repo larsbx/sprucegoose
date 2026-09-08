@@ -38,7 +38,7 @@ $crash
 EOF
 
 mix deps.get
-mix hex.audit
+scripts/audit-dependencies
 mix format --check-formatted
 mix compile --warnings-as-errors
 
@@ -52,6 +52,15 @@ trap cleanup_test_database EXIT
 MIX_ENV=test mix ecto.create --quiet
 MIX_ENV=test mix ash.migrate
 mix test
+
+# The :separate_sessions group is excluded by test_helper.exs because it needs
+# genuinely separate database sessions rather than the sandbox. It covers
+# genesis races, contiguous certified append positions, ledger recovery, and
+# runtime-shadow concurrency — the claims the audit trail leans on hardest — and
+# it had never run in CI, which is how a stale genesis assertion survived. Not
+# optional: a concurrency regression here is a correctness regression.
+mix test --only separate_sessions --seed 0 --max-cases 1
+
 MIX_ENV=test mix ecto.drop --force --quiet
 trap - EXIT
 

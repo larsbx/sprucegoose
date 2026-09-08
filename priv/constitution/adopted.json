@@ -1,0 +1,21 @@
+{
+  "artifacts": {
+    "deontic-kernel-amendment": {
+      "custody": "absent",
+      "digest": null,
+      "note": "The SpruceGoose amendment artifact required by Phase 0 alongside the candidate specification: ArtifactStore/EventLedger operations, certified events distinct from audit observations, the exact root set, the Kernel namespace, and the ordering/idempotency/rebuild invariants. Neither written nor adopted."
+    },
+    "deontic-kernel-spec-v0.2": {
+      "custody": "absent",
+      "digest": "sha256:b98ef9045aa55b005e07a3e792360e1c92e21f1f109b2b11f9a2b1246f5897c0",
+      "note": "The specification every kernel phase is measured against. Its bytes are not in this repository, so no reviewer working from the repository can check any invariant against its actual text, and Phases 1-6 are reported complete on top of a Phase 0 that has no artifact. The digest is the one recorded by the 2026-08-21 audit; recording it here means the bytes can be checked the moment whoever holds them commits the file. custody=absent is the honest state, not a placeholder to be treated as adoption."
+    },
+    "systemwide-sop": {
+      "custody": "external",
+      "deployment_path_setting": "systemwide_sop_path",
+      "digest": "sha256:560ad3ab31e3aaf72663cd8cd350e7b760f3d553b4af6e028a3b42809b04afbd",
+      "note": "The governed Systemwide SOP is authored and versioned in the openclaw-system vault, not here, because scripts/vault-write-authorization.py enforces the same rule against the same bytes. This record adopts its exact digest so the norm root is reviewable from this repository alone. SpruceGoose.SopGate.verify_adoption/0 checks the deployed bytes against it at boot; the digest changes only through a reviewed commit here."
+    }
+  },
+  "schema": "sprucegoose-adopted-artifacts-v1"
+}

@@ -4,11 +4,11 @@ Verified 2026-08-22 under task `tsk-20260822T230747Z-f2749517`.
 
 ## Production authority
 
-- Mama runs the persistent SpruceGoose OTP service backed by PostgreSQL 19
-  Beta 2. The deployed application commit is
+- Mama runs the persistent SpruceGoose OTP service. The deployed application
+  commit is
   `3a2dc6359fddd1f3d22d5ff633ad351ff290c30a`; its tree is
-  `876e8492bde221dc30709b4c1a09f28ddae7d906`. The governed release retained
-  PostgreSQL 19 Beta 2 and the deterministic authoritative-task projection,
+  `876e8492bde221dc30709b4c1a09f28ddae7d906`. The governed release retained the
+  deployed database major and the deterministic authoritative-task projection,
   and added immutable certified derivation outcomes without transferring task
   read or write authority.
 - The thin `sprucegoose` client talks to the owner-only Unix socket. Direct
@@ -42,9 +42,17 @@ and five concurrent clients. Runtime execution authority has not moved to
 SpruceGoose, and this contract does not depend on OpenClaw, TaskFlow, Pi, or
 any other specific provider.
 
-PostgreSQL 19 Beta 2 is an explicit production deviation. It is operationally
-verified but is not a supported GA baseline, so production and development
-parity remains weaker than the intended Twelve-Factor baseline.
+The production database is a PostgreSQL beta, which is an explicit deviation:
+operationally verified, not a supported GA baseline. Three documents in this
+tree said "PostgreSQL 19 Beta 2" while the live system was on a different beta
+major, so no version is stated here until one has been read off the running
+server and recorded with its evidence.
+
+The schema no longer *requires* a beta. `CREATE PROPERTY GRAPH` was the only
+SQL/PGQ dependency and it made the schema uncreatable on every GA release — no
+developer, CI runner, or recovery environment could build the database at all.
+Dependency edges are now selected relationally, so the GA upgrade is an
+ordinary upgrade rather than a blocked one.
 
 ## Artifact boundary
 
@@ -59,7 +67,16 @@ parity remains weaker than the intended Twelve-Factor baseline.
   Each execution can append at most one immutable, content-addressed outcome
   receipt and one `DerivationOutcomeCertified` ledger event with the same
   roots. The receipt and event commit together, retries refuse, and PostgreSQL
-  rejects permit or receipt updates and deletes.
+  rejects permit or receipt updates and deletes. The resource does still
+  *declare* `state`, `executor_id`, `evidence_digest`, `artifact_digest`,
+  `failure_reason`, `claimed_at`, and `completed_at`: with no update action
+  these are dead fields rather than live state, but they remain on the public
+  read surface until they are removed.
+- A handler that aborts its transaction — a PostgreSQL exception rather than an
+  Elixir one — still records a typed failed outcome. The handler call runs in a
+  savepoint, so the receipt is writable whatever the handler did. A failure to
+  *record* an outcome retries; `derivation reschedule` returns a permit left
+  without a terminal receipt to the queue, and refuses once one exists.
 - A root-managed `artifact-signer` identity holds the Ed25519 private key. The
   SpruceGoose/Oban executor cannot read or replace it.
 - The signer has no IP network, no CAS write access, no repository, build, or
@@ -90,18 +107,33 @@ metadata, ArtifactStore and EventLedger ports, and reference in-memory
 adapters. Focused tests prove altered-content and wrong-adapter refusal plus
 idempotent append only for byte-identical events.
 
-The deployed kernel also provides one deterministic, content-addressed path
-from an exact ontology version through proposition, evidence, claim,
+The release also contains `SpruceGoose.Kernel.Constitution`, which builds one
+content-addressed path from a root set through proposition, evidence, claim,
 justification, norm, grant, resolution, authorization, and an unexecuted
-`EffectIntent`. It refuses missing or substituted roots, undefined predicates,
-unbound referents, unsupported or contested evidence, incompatible norms,
-stale or expired grants, insufficient authority, conflicts, omitted input
-identity, and unauthorized effects. The only licensed action in this slice is
-`verify_artifact`; the path stores no command and cannot execute an effect.
+`EffectIntent`. Two things must be said plainly about it.
 
-The deployed PostgreSQL EventLedger now appends immutable, per-stream ordered
-certified events with exact content identities, required constitutional roots,
-and conflict-safe idempotency. Database constraints recheck identities and
+It has no caller outside its own test. Nothing in the CLI, the ledger, the
+projector, or any Ash action reaches it, so it is code that ships rather than
+behaviour the system exhibits.
+
+And it derives none of the questions it appears to answer: `claim_supported?`,
+`evidence_status`, `ontology_norm_compatible?`, `authority`, `conflicts`, and
+the lists that `defined_predicate?/1` and `bound_referent?/1` check against are
+all fields the caller supplies. `authorize/2` is a total function of its
+arguments and reads no store. What it provides is a tamper-evident record that
+a caller asserted a set of premises — real, and not the independently
+answerable constitutional questions the v0.2 audit requires. Its disposition is
+[decision D-4](decisions/2026-09-08-kernel-and-ledger-shape.md).
+
+The deployed PostgreSQL EventLedger appends immutable, per-stream ordered
+certified events with exact content identities, root-shape validation, and
+conflict-safe idempotency. Two qualifications belong with that claim: the
+events carry whole aggregate snapshots rather than certified transitions, so
+replay is last-write-wins and a dropped event is invisible whenever a later
+snapshot survives; and "required constitutional roots" is a check that eight
+named strings are 64-hex, not that they resolve to anything. See decisions
+[D-2](decisions/2026-09-08-kernel-and-ledger-shape.md) and
+[D-3](decisions/2026-09-08-kernel-and-ledger-shape.md). Database constraints recheck identities and
 required roots, and a trigger refuses updates and deletes. Its recovery,
 separate-session concurrency, retry, and conflict behavior has passed. The
 supported mutation path now appends one root-valid candidate event in the same
@@ -145,3 +177,13 @@ The active conformance baseline is
 [`audits/2026-08-21-abstract-deontic-kernel-v0.2.md`](audits/2026-08-21-abstract-deontic-kernel-v0.2.md),
 with work ordered by
 [`abstract-kernel-remediation-plan.md`](abstract-kernel-remediation-plan.md).
+
+[`audits/2026-09-08-project-audit.md`](audits/2026-09-08-project-audit.md) is
+also active, with outcomes recorded in its
+[remediation plan](audit-remediation-plan-2026-09-08.md) and the four
+architectural decisions it raised in
+[`decisions/2026-09-08-kernel-and-ledger-shape.md`](decisions/2026-09-08-kernel-and-ledger-shape.md). It re-checks that baseline against the delivered source, and
+records reproducibility, security, and correctness findings from a build and
+test run outside the production host. It makes no claim about live state:
+production was not reachable from the audit environment. Its work is ordered by
+[`audit-remediation-plan-2026-09-08.md`](audit-remediation-plan-2026-09-08.md).

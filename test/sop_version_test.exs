@@ -186,6 +186,36 @@ defmodule SpruceGoose.SopVersionTest do
 
   # -- helpers ----------------------------------------------------------------
 
+  describe "adoption" do
+    test "the adopted digest is readable from the repository alone", %{} do
+      assert {:ok, "sha256:" <> hex} = SopGate.adopted_digest()
+      assert String.match?(hex, ~r/\A[0-9a-f]{64}\z/)
+    end
+
+    test "a deployed SOP that diverges from the adopted digest is refused", %{path: path} do
+      write(path, "1.0.0", "Deployed bytes that were never reviewed here.\n")
+
+      assert {:error, message} = SopGate.verify_adoption()
+      assert {:ok, adopted} = SopGate.adopted_digest()
+
+      # Both digests are named: which bytes are being served, and which were
+      # reviewed. An operator has to be able to tell those apart to act.
+      assert message =~ adopted
+
+      assert message =~
+               "sha256:" <> sha256("1.0.0", "Deployed bytes that were never reviewed here.\n")
+
+      assert message =~ path
+    end
+
+    test "an unreadable SOP path is refused rather than skipped", %{path: path} do
+      File.rm_rf!(Path.dirname(path))
+
+      assert {:error, message} = SopGate.verify_adoption()
+      assert message =~ "cannot read configured Systemwide SOP"
+    end
+  end
+
   defp write(path, nil, body), do: File.write!(path, body)
 
   defp write(path, version, body),

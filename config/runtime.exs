@@ -75,8 +75,23 @@ config :spruce_goose,
   forgejo_read_token_file:
     System.get_env(
       "SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE",
-      "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
-    )
+      Application.get_env(
+        :spruce_goose,
+        :forgejo_read_token_file,
+        "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
+      )
+    ),
+  forgejo_api_url:
+    System.get_env(
+      "SPRUCE_GOOSE_FORGEJO_API_URL",
+      Application.get_env(
+        :spruce_goose,
+        :forgejo_api_url,
+        "https://ubuntu-8gb-hil-1.tail2188e6.ts.net:8448/api/v1"
+      )
+    ),
+  blueprint_max_bytes:
+    String.to_integer(System.get_env("SPRUCE_GOOSE_BLUEPRINT_MAX_BYTES", "1048576"))
 
 config :spruce_goose,
   artifact_store_root:
@@ -99,10 +114,25 @@ end
 cli_service_enabled? =
   System.get_env("SPRUCE_GOOSE_CLI_SERVICE_ENABLED", "false") in ["1", "true"]
 
-runtime_dir = System.get_env("XDG_RUNTIME_DIR", "/run/user/#{System.get_env("UID", "")}")
-
+# `UID` is a bash shell variable, not an exported environment variable, so the
+# old fallback resolved to "/run/user/" and the socket landed at
+# /run/user/sprucegoose/cli.sock — outside the per-user runtime directory whose
+# 0700 mode is the entire authentication boundary. Refuse instead of guessing.
 cli_socket_path =
-  System.get_env("SPRUCE_GOOSE_CLI_SOCKET", Path.join(runtime_dir, "sprucegoose/cli.sock"))
+  case {System.get_env("SPRUCE_GOOSE_CLI_SOCKET"), System.get_env("XDG_RUNTIME_DIR")} do
+    {path, _} when is_binary(path) and path != "" ->
+      path
+
+    {_, runtime_dir} when is_binary(runtime_dir) and runtime_dir != "" ->
+      Path.join(runtime_dir, "sprucegoose/cli.sock")
+
+    _ ->
+      if cli_service_enabled? do
+        raise "XDG_RUNTIME_DIR is unset; set it or name the socket explicitly with " <>
+                "SPRUCE_GOOSE_CLI_SOCKET. The socket directory's mode is the only " <>
+                "authentication boundary on the CLI service"
+      end
+  end
 
 config :spruce_goose,
   start_cli_service: cli_service_enabled?,
@@ -196,9 +226,32 @@ if config_env() == :prod do
   ssl_flag = System.get_env("DATABASE_SSL", "true")
   ssl = ssl_flag != "false" and ssl_flag != "0"
 
+  # `ssl: true` alone leaves peer verification to library and OTP defaults, so
+  # whether the connection was actually verified depended on nothing stated
+  # here. For a system whose entire authority lives in this database, that is
+  # pinned explicitly. DATABASE_CA_CERT_FILE names a bundle; otherwise the
+  # system store is used, which OTP exposes as :public_key.cacerts_get/0.
+  ssl_opts =
+    if ssl do
+      cacert =
+        case System.get_env("DATABASE_CA_CERT_FILE") do
+          value when is_binary(value) and value != "" -> [cacertfile: value]
+          _ -> [cacerts: :public_key.cacerts_get()]
+        end
+
+      [
+        verify: :verify_peer,
+        depth: 3,
+        server_name_indication: String.to_charlist(URI.parse(database_url).host || ""),
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ]
+      ] ++ cacert
+    end
+
   config :spruce_goose, SpruceGoose.Repo,
     url: database_url,
-    ssl: ssl,
+    ssl: if(ssl, do: ssl_opts, else: false),
     pool_size: String.to_integer(System.get_env("POOL_SIZE", "10"))
 
   config :spruce_goose,

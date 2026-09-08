@@ -174,11 +174,31 @@ defmodule SpruceGoose.ReleaseValidator do
     end
   end
 
+  # This is the tool an operator runs against an archive *before* trusting it,
+  # so the decompressed size is an attacker-chosen quantity. `System.cmd/3`
+  # buffers the whole stream, and the tar members are buffered again after it: a
+  # small crafted .tar.xz would exhaust memory in the one place that exists to
+  # catch a bad archive.
+  #
+  # `--memlimit-decompress` bounds what xz itself will allocate; the byte
+  # ceiling bounds what we accept from it. Both are needed — a low-memory
+  # dictionary can still decompress to an unbounded stream.
+  @max_decompressed_bytes 512 * 1024 * 1024
+  @xz_memlimit "256MiB"
+
   defp archive_payload(path, bytes) do
     if String.ends_with?(path, ".tar.xz") do
-      case System.cmd("xz", ["-dc", path], stderr_to_stdout: true) do
-        {tar_bytes, 0} -> {:ok, tar_bytes}
-        {message, _} -> {:error, "invalid xz archive: #{String.trim(message)}"}
+      case System.cmd("xz", ["-dc", "--memlimit-decompress=#{@xz_memlimit}", path],
+             stderr_to_stdout: true
+           ) do
+        {tar_bytes, 0} when byte_size(tar_bytes) <= @max_decompressed_bytes ->
+          {:ok, tar_bytes}
+
+        {_tar_bytes, 0} ->
+          {:error, "xz archive decompresses to more than #{@max_decompressed_bytes} bytes"}
+
+        {message, _} ->
+          {:error, "invalid xz archive: #{String.trim(message)}"}
       end
     else
       {:ok, bytes}
