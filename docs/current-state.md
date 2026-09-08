@@ -145,3 +145,9 @@ The active conformance baseline is
 [`audits/2026-08-21-abstract-deontic-kernel-v0.2.md`](audits/2026-08-21-abstract-deontic-kernel-v0.2.md),
 with work ordered by
 [`abstract-kernel-remediation-plan.md`](abstract-kernel-remediation-plan.md).
+
+[`audits/2026-09-08-project-audit.md`](audits/2026-09-08-project-audit.md) is
+also active. It re-checks that baseline against the delivered source, and
+records reproducibility, security, and correctness findings from a build and
+test run outside the production host. It makes no claim about live state:
+production was not reachable from the audit environment.
