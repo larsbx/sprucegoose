@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLI.Executor do
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
-  alias SpruceGoose.Derivations.{Executor, Permit}
+  alias SpruceGoose.Derivations.{Executor, OutcomeReceipt, Permit}
   alias SpruceGoose.Kernel.{ShadowEvents, TaskProjector}
   alias SpruceGoose.Kernel.GrandfatheredBaseline
   alias SpruceGoose.Runtime.Shadow, as: RuntimeShadow
@@ -150,6 +150,26 @@ defmodule SpruceGoose.CLI.Executor do
     with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
          {:ok, task} <- Authz.read_one(Task, id: permit.task_id) do
       {:ok, derivation_json(permit, task.task_id)}
+    end
+  end
+
+  # A derivation whose outcome could not be recorded leaves a permit with no
+  # terminal receipt. Oban retries that case now, but a job can still be
+  # exhausted or discarded, and the permit is immutable — so there has to be a
+  # supported way back that does not involve inserting Oban rows by hand.
+  #
+  # Refuses when a receipt already exists: re-running a completed derivation is
+  # what `one_terminal_receipt_per_permit` exists to prevent.
+  defp dispatch({:reschedule_derivation, permit_id}) do
+    with {:ok, permit} <- Authz.read_one(Permit, permit_id: permit_id),
+         {:ok, task} <- Authz.read_one(Task, id: permit.task_id),
+         :ok <- refuse_completed_derivation(permit_id) do
+      # AUTHORIZATION: the actor-bound reads above established derivation-executor
+      # authority over this permit's project before its job is re-queued.
+      case %{permit_id: permit.permit_id} |> Executor.new() |> Oban.insert() do
+        {:ok, _job} -> {:ok, derivation_json(permit, task.task_id)}
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
@@ -1715,6 +1735,17 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp filter_json(filter),
     do: %{id: filter.id, board_id: filter.board_id, name: filter.name, criteria: filter.criteria}
+
+  defp refuse_completed_derivation(permit_id) do
+    OutcomeReceipt
+    |> Ash.Query.filter_input(permit_id: permit_id)
+    |> Authz.read()
+    |> case do
+      {:ok, []} -> :ok
+      {:ok, _} -> {:error, "derivation #{permit_id} already has a terminal receipt"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp derivation_json(permit, task_id) do
     %{
