@@ -45,6 +45,19 @@ mix compile --warnings-as-errors
 ci_db_suffix=${CI_PIPELINE_NUMBER:-local}
 [[ $ci_db_suffix =~ ^([0-9]+|local)$ ]] || fail "invalid CI pipeline number for test database"
 export SPRUCE_GOOSE_TEST_DATABASE="spruce_goose_ci_${ci_db_suffix}"
+# Credentials for the isolated test database, when the server requires them.
+# Unset means trust authentication, which is the local default. A runner whose
+# PostgreSQL wants a password sets these; the alternative was skipping the test
+# gate entirely, which is how a release candidate reaches a deployment host
+# with its suite unexecuted.
+: "${SPRUCE_GOOSE_TEST_DATABASE_USERNAME:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_PASSWORD:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_PORT:=}"
+for var in SPRUCE_GOOSE_TEST_DATABASE_USERNAME SPRUCE_GOOSE_TEST_DATABASE_PASSWORD \
+           SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME SPRUCE_GOOSE_TEST_DATABASE_PORT; do
+  [[ -n ${!var} ]] && export "$var"
+done
 cleanup_test_database() {
   MIX_ENV=test mix ecto.drop --force --quiet >/dev/null 2>&1 || true
 }
