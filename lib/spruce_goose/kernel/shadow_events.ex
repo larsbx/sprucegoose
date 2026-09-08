@@ -161,6 +161,19 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
   end
 
   defp decode_json({:ok, bytes}), do: Jason.decode(bytes)
+
+  # A result the shadow schema cannot encode rolls the mutation back, which is
+  # the right direction — but the drop list below is a denylist, so adding a
+  # relationship to any shadowed resource starts failing writes at runtime. Name
+  # the field that broke, so that failure is diagnosable rather than opaque.
+  #
+  # The structural fix is to project the fields the schema declares instead of
+  # dropping the ones it cannot handle. That changes the payload, and the
+  # payload's shape is the open decision recorded as R-10 (transitions versus
+  # snapshots) — so it is deliberately not pre-empted here.
+  defp decode_json({:error, %Protocol.UndefinedError{value: value}}),
+    do: {:error, {:noncanonical_shadow_result, inspect(value)}}
+
   defp decode_json({:error, _error}), do: {:error, :noncanonical_shadow_result}
 
   defp json_result(%_{} = result) do
@@ -179,13 +192,18 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
 
   defp json_result(result), do: result
 
+  # `inserted_at` is a transaction timestamp, so it is identical for every row
+  # one transaction produces and the tie-break decides. Event keys are shaped
+  # `task:<uuid>:<lock_version>`, and comparing them as text put `…:9` above
+  # `…:10`. status/0 already parses the same field as a bigint; these two have
+  # to agree, or reconciliation checks a different row than the one bound here.
   defp outbox_event_key(%{"id" => id, "lock_version" => _lock, "board_revision" => _board}) do
     # AUTHORIZATION: the actor-bound mutation has completed in this transaction; this binds its trigger-created outbox identity.
     case Repo.query(
            """
            SELECT event_key FROM outbox_events
            WHERE aggregate_type = 'task' AND aggregate_id = $1
-           ORDER BY inserted_at DESC, event_key DESC LIMIT 1
+           ORDER BY inserted_at DESC, split_part(event_key, ':', 3)::bigint DESC LIMIT 1
            """,
            [id]
          ) do

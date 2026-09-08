@@ -86,7 +86,12 @@ config :spruce_goose,
 # larger rather than buffering it.
 config :spruce_goose, :blueprint_max_bytes, 1_048_576
 
-config :spruce_goose, :artifact_store_root, "/tmp/sprucegoose-artifacts"
+# No default. runtime.exs sets this for every environment that evaluates it;
+# the sprucegoose-direct escript does not, and a world-writable /tmp default
+# meant the recovery artifact silently kept its content-addressed store where
+# any local user could pre-create the path. Failing to start is the better
+# answer than storing custody evidence somewhere unowned.
+config :spruce_goose, :artifact_store_root, nil
 config :spruce_goose, :artifact_max_bytes, 67_108_864
 
 # Delivery is deliberately opt-in. Runtime configuration must name a module

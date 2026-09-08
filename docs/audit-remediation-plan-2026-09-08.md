@@ -31,6 +31,13 @@ schema will not build on a released database wastes the answer.
 
 ## The list
 
+> **Execution status, 2026-09-08.** T0, T1, T2 and T5 are implemented and
+> verified; R-11 and R-12 are implemented as far as their inputs allow; D-2,
+> D-3 and D-4 are recorded in
+> [`decisions/2026-09-08-kernel-and-ledger-shape.md`](decisions/2026-09-08-kernel-and-ledger-shape.md)
+> as proposals awaiting owner sign-off, because each changes what future
+> immutable history means. See **Outcome** at the end of this document.
+
 | # | Item | Closes | Tier | Kind | Size |
 | --- | --- | --- | --- | --- | --- |
 | R-01 | Make `mix hex.audit` pass | D-01, C-01 | T0 | patch | S — **verified below** |
@@ -710,3 +717,53 @@ system's trust root. Review, then apply deliberately.
               depends_on: [decide-root-semantics, decide-certified-stream-shape]
               input: {}
 ```
+
+
+---
+
+## Outcome — 2026-09-08
+
+| # | State | Evidence |
+| --- | --- | --- |
+| R-01 | **done** | 41 advisories → 0 via `ash 3.33` string-length config, the OAuth `ClientResource` extension (no migration), in-range updates, and `ash_ai ~> 1.0` — all drop-in, MCP surface kept. `scripts/audit-dependencies` replaces bare `mix hex.audit` so the gate blocks on *new* advisories rather than staying red; verified to fail on unlisted, expired, and malformed entries. |
+| R-02 | **done** | `priv/constitution/adopted.json` carries the reviewed SOP digest; `SopGate.verify_adoption/0` checks the deployed bytes at boot. The root-policy test runs on any host, and its `schema` assertion executed for the first time. |
+| R-03 | **done** | SQL/PGQ replaced by a relational edge query with three-way `workflow_id` agreement. Schema migrates on PostgreSQL 18.6 GA. Graph semantics tests unchanged; the two graph-object tests retired. |
+| R-04 | **done** | Concurrency suite runs as a non-optional CI step, 8/8. Genesis grant count derives from `Role.values/0`. Sandbox mode set through one guarded helper, so the dogfood pool works. Timing assertion no longer measures scheduler contention. |
+| R-05 | **done** | README, `current-state.md`, and the recovery runbook corrected: PostgreSQL version, kernel reachability, permit vestigial fields, blueprint verification strength, ledger snapshot semantics. `property-graph-queries.md` → `dependency-graph-queries.md`. |
+| R-06 | **done** | Commit → tree → subtree → blob, each recomputed and checked against an identity a prior response committed to. Recursive listings refused; response size bounded; API base and token path moved into configuration. Nine tests over an in-memory git repository with real object identities. |
+| R-07 | **done** | `SocketPath.verify_directory/1` refuses a group- or world-reachable directory before binding. The `UID` fallback is gone. The service test no longer binds sockets into mode-1777 `/tmp`. |
+| R-08 | **done** | Handler call savepointed, so a PostgreSQL exception still yields a typed failed receipt. Retries reserved for failures to *record* an outcome. `derivation reschedule` recovers a permit with no terminal receipt and refuses once one exists. |
+| R-09 | **recorded** | D-2 — proposed: transitions, per-project streams, periodic snapshots. Not implemented: changes future history. |
+| R-10 | **recorded** | D-2, same record. Carries a deadline: events written before it are written in the shape being decided. |
+| R-11 | **done** | `minor_version: 2` pinned; independent-verifiability claim withdrawn at its source. Verified byte-identical to the previous default across seven sample terms, so no identity changed and no history was re-rooted. |
+| R-12 | **partial** | The adoption mechanism exists and records the v0.2 specification and the amendment with `custody: "absent"` and the digest the v0.2 audit recorded. The bytes are not in the repository and cannot be synthesised; whoever holds them completes this by committing the file. |
+| R-13 | **recorded** | D-3 — proposed: rename roots to provenance terms. `ontology == interpreter` must go either way. |
+| R-14 | **recorded** | D-4 — proposed: rename the kernel to describe assertion sealing. |
+| R-15 | **done** | B-02 notifications routed through the shadow collector; B-05 CAS writes atomic via temp-and-rename; B-06 outbox keys ordered numerically; B-07 failure names the offending field (the structural fix belongs to D-2); B-08 claim narrowed to what mtime resolution supports; B-09 dead policy clause removed; B-11 `reject_me` probe deleted and the replay wipe gated; C-04 key no longer minted as a read side effect (external custody remains open); C-05 xz bounded; C-06 `verify_peer` pinned; C-07 `/tmp` default removed. |
+
+### Verification
+
+On OTP 28.3.1 / Elixir 1.19.5-otp-28 / **PostgreSQL 18.6 GA**, on a host with
+no `/home/admin-papa`:
+
+```text
+scripts/audit-dependencies                     PASS (1 accepted, 0 blocking)
+mix format --check-formatted                   exit 0
+mix compile --warnings-as-errors               exit 0
+mix ash_postgres.generate_migrations --check   exit 0   (no drift)
+mix test                                       422 tests, 0 failures
+mix test --only separate_sessions              8 tests, 0 failures
+```
+
+Compare with the audit's starting position: 407 tests / 16 failures, schema
+uncreatable on any released PostgreSQL, CI unable to reach its second gate, and
+the concurrency suite unrun.
+
+### What remains open
+
+- **C-04** — the peer Ed25519 private key is still plaintext in the application
+  database. External custody is a deployment change.
+- **R-12** — Phase 0 has no artifact until the specification bytes are
+  committed.
+- **D-2, D-3, D-4** — three architectural decisions, each irreversible in the
+  history it shapes. D-2 is the one with a deadline.

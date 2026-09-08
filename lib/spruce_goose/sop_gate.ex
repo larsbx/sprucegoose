@@ -68,8 +68,13 @@ defmodule SpruceGoose.SopGate do
   """
   def adopted_digest do
     case Jason.decode(@adopted_bytes) do
-      {:ok, %{"artifacts" => %{@id => %{"digest" => "sha256:" <> _ = digest}}}} -> {:ok, digest}
-      _ -> {:error, "the adopted-artifact record does not declare a #{@id} digest"}
+      {:ok,
+       %{"artifacts" => %{@id => %{"digest" => "sha256:" <> _ = digest, "custody" => custody}}}}
+      when custody != "absent" ->
+        {:ok, digest}
+
+      _ ->
+        {:error, "the adopted-artifact record does not declare an adopted #{@id} digest"}
     end
   end
 
