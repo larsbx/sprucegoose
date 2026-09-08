@@ -53,11 +53,7 @@ defmodule SpruceGoose.CLI.SocketServiceTest do
   end
 
   test "a stale managed Unix socket is reclaimed on restart" do
-    socket_path =
-      Path.join(
-        System.tmp_dir!(),
-        "restartable-sprucegoose-#{System.unique_integer([:positive])}.sock"
-      )
+    socket_path = Path.join(owner_only_dir(), "restartable-sprucegoose.sock")
 
     request_supervisor = start_supervised!(Task.Supervisor)
 
@@ -88,6 +84,52 @@ defmodule SpruceGoose.CLI.SocketServiceTest do
     :ok = Supervisor.stop(restarted)
     assert :ok = SpruceGoose.CLI.SocketPath.remove(socket_path)
     refute File.exists?(socket_path)
+  end
+
+  describe "socket directory boundary" do
+    test "an owner-only directory is accepted" do
+      assert :ok = SpruceGoose.CLI.SocketPath.verify_directory(owner_only_dir())
+    end
+
+    test "a group- or world-reachable directory is refused" do
+      # This is the shape /tmp itself has, and the shape this test file used to
+      # bind its sockets into. The socket is the whole authentication boundary,
+      # so a directory anyone can traverse is not a configuration to accept
+      # quietly.
+      dir = owner_only_dir()
+      File.chmod!(dir, 0o755)
+
+      assert {:error, message} = SpruceGoose.CLI.SocketPath.verify_directory(dir)
+      assert message =~ "is mode 0755"
+      assert message =~ "owner-only"
+    end
+
+    test "a missing directory is refused rather than created" do
+      dir = Path.join(owner_only_dir(), "absent")
+
+      assert {:error, message} = SpruceGoose.CLI.SocketPath.verify_directory(dir)
+      assert message =~ "cannot inspect CLI socket directory"
+    end
+
+    test "the service refuses to start on a world-reachable directory" do
+      dir = owner_only_dir()
+      File.chmod!(dir, 0o777)
+
+      assert {:error, message} =
+               SpruceGoose.CLI.SocketPath.start_link(Path.join(dir, "cli.sock"))
+
+      assert message =~ "owner-only"
+    end
+  end
+
+  defp owner_only_dir do
+    dir =
+      Path.join(System.tmp_dir!(), "sprucegoose-socket-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    File.chmod!(dir, 0o700)
+    on_exit(fn -> File.rm_rf(dir) end)
+    dir
   end
 
   defp eventually(fun, attempts \\ 50)

@@ -70,6 +70,22 @@ config :spruce_goose, :allow_legacy_hierarchy_mutation, false
 config :spruce_goose, :start_cli_service, false
 config :spruce_goose, :cli_socket_path, nil
 config :spruce_goose, :cli_request_timeout, 30_000
+# Configuration, not a source default. These were hardcoded fallbacks inside
+# SpruceGoose.Blueprints.ForgejoVerifier, which meant production ran against
+# whatever was compiled in and no deployment could say otherwise without an
+# override that did not exist. runtime.exs takes the environment.
+config :spruce_goose,
+       :forgejo_api_url,
+       "https://ubuntu-8gb-hil-1.tail2188e6.ts.net:8448/api/v1"
+
+config :spruce_goose,
+       :forgejo_read_token_file,
+       "/home/admin-papa/.config/sprucegoose/forgejo-read-token"
+
+# A blueprint manifest is a small YAML file. The verifier refuses anything
+# larger rather than buffering it.
+config :spruce_goose, :blueprint_max_bytes, 1_048_576
+
 config :spruce_goose, :artifact_store_root, "/tmp/sprucegoose-artifacts"
 config :spruce_goose, :artifact_max_bytes, 67_108_864
 
