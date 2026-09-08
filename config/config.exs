@@ -86,3 +86,8 @@ config :spruce_goose,
 config :spruce_goose, :sop_grandfather_version, "1.0.0"
 
 import_config "#{config_env()}.exs"
+
+# Ash 3.33 requires an explicit string-length counting strategy. SpruceGoose
+# declares no string length constraints, so this is inert for its own resources;
+# it is required because any loaded resource triggers the transformer.
+config :ash, :default_string_length_count, :codepoints

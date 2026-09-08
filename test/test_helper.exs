@@ -1,6 +1,30 @@
 ExUnit.start(exclude: [:separate_sessions])
 
-Ecto.Adapters.SQL.Sandbox.mode(SpruceGoose.Repo, :manual)
+defmodule SpruceGoose.SandboxMode do
+  @moduledoc """
+  Set the sandbox mode, but only where there is a sandbox.
+
+  `SPRUCE_GOOSE_TEST_DOGFOOD=true` switches the pool to
+  `DBConnection.ConnectionPool` so the `:separate_sessions` group can hold
+  genuinely separate database sessions. Every `Sandbox.mode/2` call then raises
+  — including the one at the top of this file, which aborted the whole run
+  before a single test loaded and made the only documented way to run that
+  group unusable.
+
+  Under the real pool the tests already have what `:auto` was asking for, so
+  there is nothing to do.
+  """
+
+  def set(mode) do
+    if SpruceGoose.Repo.config()[:pool] == Ecto.Adapters.SQL.Sandbox do
+      Ecto.Adapters.SQL.Sandbox.mode(SpruceGoose.Repo, mode)
+    end
+
+    :ok
+  end
+end
+
+SpruceGoose.SandboxMode.set(:manual)
 
 defmodule SpruceGoose.DataCase do
   use ExUnit.CaseTemplate

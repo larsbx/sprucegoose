@@ -1,28 +1,32 @@
 defmodule SpruceGoose.Workflows.Graph do
   @moduledoc """
-  Read-only PostgreSQL 19 property-graph queries over workflow dependencies.
+  Read-only relational queries over workflow dependencies.
 
   PostgreSQL supplies the authorized, workflow-scoped vertices and edges. The
   bounded traversal and topological dynamic programming run in memory so a
   dense DAG cannot make the database enumerate every possible path.
+
+  This previously selected edges through a SQL/PGQ `GRAPH_TABLE`, which is
+  available only in an unreleased PostgreSQL beta and therefore made the schema
+  uncreatable on every supported GA release. The property graph supplied no
+  traversal, recursion, or ordering — only an edge list — so the relational
+  query below is equivalent. The three-way `workflow_id` agreement reproduces
+  the vertex-membership constraint the `MATCH` pattern enforced: an edge whose
+  endpoints are not both tasks of this workflow is excluded rather than
+  admitted with a dangling vertex.
   """
 
   alias SpruceGoose.Repo
   alias SpruceGoose.Workflows.{Task, Workflow}
 
   @edge_rows """
-  SELECT predecessor_id, successor_id
-  FROM GRAPH_TABLE (
-    sprucegoose_task_dependency_graph
-    MATCH (predecessor IS task)-[edge IS dependency]->(successor IS task)
-    WHERE predecessor.workflow_id = $1::uuid
-      AND successor.workflow_id = $1::uuid
-      AND edge.workflow_id = $1::uuid
-    COLUMNS (
-      predecessor.id AS predecessor_id,
-      successor.id AS successor_id
-    )
-  )
+  SELECT edge.predecessor_id, edge.successor_id
+  FROM task_dependencies AS edge
+  JOIN workflow_tasks AS predecessor
+    ON predecessor.id = edge.predecessor_id AND predecessor.workflow_id = $1::uuid
+  JOIN workflow_tasks AS successor
+    ON successor.id = edge.successor_id AND successor.workflow_id = $1::uuid
+  WHERE edge.workflow_id = $1::uuid
   """
 
   @task_rows """
