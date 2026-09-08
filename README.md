@@ -62,7 +62,10 @@ The normative, operative, evidentiary, and projection boundaries are defined
 in [`docs/authority-planes.md`](docs/authority-planes.md). The current kernel
 conformance gaps and dependency-ordered remediation are recorded in the
 [`v0.2 audit`](docs/audits/2026-08-21-abstract-deontic-kernel-v0.2.md) and
-[`remediation plan`](docs/abstract-kernel-remediation-plan.md).
+[`remediation plan`](docs/abstract-kernel-remediation-plan.md). The
+[`2026-09-08 project audit`](docs/audits/2026-09-08-project-audit.md) re-checks
+that remediation against the delivered source and records the reproducibility,
+security, and correctness findings that block re-verification.
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
