@@ -21,6 +21,16 @@ defmodule SpruceGoose.Identity.Local do
   The peer keypair lives in `spruce_goose_identity`, a raw single-row table
   guarded by a DB trigger that rejects changes to either key half. Retaining the
   private seed is mandatory so the peer can later prove ownership.
+
+  That seed is stored in plaintext, in the application's own database, and the
+  trigger protects it against *modification* rather than disclosure: any read of
+  that table, any backup, any `pg_dump` carries it. `docs/current-state.md`
+  describes the right custody model for the artifact-signer key — a root-managed
+  identity the application cannot read or replace — and this key has none of it.
+  Closing that needs external custody, which is a deployment change rather than
+  a code one; it is recorded in the 2026-09-08 audit as C-04 and is not fixed
+  here. What is fixed is that the key is no longer minted as a side effect of a
+  read.
   """
 
   @behaviour SpruceGoose.Identity
@@ -31,8 +41,20 @@ defmodule SpruceGoose.Identity.Local do
   def peer_id do
     # AUTHORIZATION: internal singleton node identity, not actor-owned task data.
     case Repo.query!("SELECT peer_public_key FROM spruce_goose_identity WHERE id IS TRUE", []) do
-      %{rows: [[key]]} when is_binary(key) -> key
-      %{rows: []} -> provision_peer_key()
+      %{rows: [[key]]} when is_binary(key) ->
+        key
+
+      %{rows: []} ->
+        # Minting an Ed25519 keypair is a provisioning act, not a read. Doing it
+        # lazily from here meant the peer's long-term private key came into
+        # existence as a side effect of whichever request happened to ask for
+        # the peer id first, with no authorization and no record of the moment.
+        if Application.get_env(:spruce_goose, :auto_provision_peer_key, true) do
+          provision_peer_key()
+        else
+          raise "this store has no peer identity. Provision one explicitly with " <>
+                  "SpruceGoose.Identity.Local.provision_peer_key/0"
+        end
     end
   end
 

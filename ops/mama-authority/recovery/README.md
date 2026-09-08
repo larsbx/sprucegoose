@@ -1,5 +1,21 @@
 # PostgreSQL 19 and actor-schema recovery (`corr-7`)
 
+> **Superseded in part, 2026-09-08.** This document records a rehearsal as it
+> was run, and is kept for that evidence. Two of its premises no longer hold:
+>
+> - It states that "the reviewed migration set has no supported GA PostgreSQL
+>   target today". That was the correct conclusion at the time. The migration
+>   set no longer requires SQL/PGQ — see
+>   [`docs/dependency-graph-queries.md`](../../../docs/dependency-graph-queries.md)
+>   — so a GA target exists and this upgrade is no longer blocked on a beta.
+> - It names the production major as PostgreSQL 19. Three documents in this
+>   tree said so while the live system was on a different beta major. Read the
+>   version off the running server before planning against any number here.
+>
+> Everything below describes the rehearsal as performed. Do not re-plan a
+> cutover from it without re-establishing both premises.
+
+
 ## Status and authority
 
 > **Historical rehearsal and recovery record.** This document captures the

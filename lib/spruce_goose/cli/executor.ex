@@ -190,7 +190,7 @@ defmodule SpruceGoose.CLI.Executor do
              end
            end) do
         {:ok, {permit, notifications}} ->
-          Ash.Notifier.notify(notifications)
+          notify(notifications)
           {:ok, derivation_json(permit, task.task_id)}
 
         {:error, reason} ->
@@ -969,7 +969,7 @@ defmodule SpruceGoose.CLI.Executor do
                {:error, error} -> Repo.rollback(error)
              end
            end) do
-      Ash.Notifier.notify(notifications)
+      notify(notifications)
 
       {:ok,
        %{
@@ -1595,7 +1595,7 @@ defmodule SpruceGoose.CLI.Executor do
     end)
     |> case do
       {:ok, {:ok, todo, notifications}} ->
-        Ash.Notifier.notify(notifications)
+        notify(notifications)
         {:ok, todo}
 
       {:ok, result} ->
@@ -1735,6 +1735,22 @@ defmodule SpruceGoose.CLI.Executor do
 
   defp filter_json(filter),
     do: %{id: filter.id, board_id: filter.board_id, name: filter.name, criteria: filter.criteria}
+
+  # `apply_blueprint` and `admit_derivation` are shadowed verbs, so they run
+  # inside ShadowEvents.transaction/2. Notifying directly from there delivered
+  # notifications for a mutation the certified-event append could still roll
+  # back — the collector exists so they fire after commit, and these were the
+  # paths that bypassed it by using the *_with_notifications variants, which
+  # never route through Authz.notify/1.
+  #
+  # Latent while no resource declares `notifiers`; live the day one does.
+  defp notify(notifications) do
+    if ShadowEvents.collecting_notifications?(),
+      do: ShadowEvents.collect_notifications(notifications),
+      else: Ash.Notifier.notify(notifications)
+
+    :ok
+  end
 
   defp refuse_completed_derivation(permit_id) do
     OutcomeReceipt

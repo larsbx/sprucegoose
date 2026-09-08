@@ -1,5 +1,17 @@
 # Project audit — 2026-09-08
 
+> **Remediated 2026-09-08.** All findings below except C-04 (partial), A-04
+> (partial), A-01, A-02, A-03 and A-05 are closed; see
+> [`../audit-remediation-plan-2026-09-08.md`](../audit-remediation-plan-2026-09-08.md)
+> for what was done and
+> [`../decisions/2026-09-08-kernel-and-ledger-shape.md`](../decisions/2026-09-08-kernel-and-ledger-shape.md)
+> for the four architectural decisions the rest turn on. The findings are left
+> as written: an audit that gets edited to match the fix stops being evidence
+> that the fix was needed.
+>
+> On PostgreSQL 18.6 GA, on a host with no `/home/admin-papa`: **422 tests, 0
+> failures**, clean compile, no drift, dependency gate green.
+
 **Verdict:** the delivered engineering is strong and the *transactional* story is
 sound. The *constitutional* story is not: the kernel that the v0.2 remediation
 was supposed to produce exists as a pure module with no caller outside its own

@@ -226,9 +226,32 @@ if config_env() == :prod do
   ssl_flag = System.get_env("DATABASE_SSL", "true")
   ssl = ssl_flag != "false" and ssl_flag != "0"
 
+  # `ssl: true` alone leaves peer verification to library and OTP defaults, so
+  # whether the connection was actually verified depended on nothing stated
+  # here. For a system whose entire authority lives in this database, that is
+  # pinned explicitly. DATABASE_CA_CERT_FILE names a bundle; otherwise the
+  # system store is used, which OTP exposes as :public_key.cacerts_get/0.
+  ssl_opts =
+    if ssl do
+      cacert =
+        case System.get_env("DATABASE_CA_CERT_FILE") do
+          value when is_binary(value) and value != "" -> [cacertfile: value]
+          _ -> [cacerts: :public_key.cacerts_get()]
+        end
+
+      [
+        verify: :verify_peer,
+        depth: 3,
+        server_name_indication: String.to_charlist(URI.parse(database_url).host || ""),
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ]
+      ] ++ cacert
+    end
+
   config :spruce_goose, SpruceGoose.Repo,
     url: database_url,
-    ssl: ssl,
+    ssl: if(ssl, do: ssl_opts, else: false),
     pool_size: String.to_integer(System.get_env("POOL_SIZE", "10"))
 
   config :spruce_goose,
