@@ -7,7 +7,7 @@ defmodule SpruceGoose.ActorsSeparateSessionsTest do
   alias SpruceGoose.Repo
 
   setup do
-    Ecto.Adapters.SQL.Sandbox.mode(Repo, :auto)
+    SpruceGoose.SandboxMode.set(:auto)
     clear_registry()
     previous_expected = Application.get_env(:spruce_goose, :expected_genesis_actor)
     Application.delete_env(:spruce_goose, :expected_genesis_actor)
@@ -21,7 +21,7 @@ defmodule SpruceGoose.ActorsSeparateSessionsTest do
         Application.delete_env(:spruce_goose, :expected_genesis_actor)
       end
 
-      Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
+      SpruceGoose.SandboxMode.set(:manual)
     end)
 
     :ok
@@ -58,7 +58,10 @@ defmodule SpruceGoose.ActorsSeparateSessionsTest do
 
     assert Enum.count(results, &match?({:ok, %{genesis: true}}, &1)) == 1
     assert length(actors) == 1
-    assert length(grants) == 7
+    # Derived, not literal: this asserted 7 while Role.values/0 had grown to 8,
+    # and nothing caught it because the group is excluded by default and CI ran
+    # plain `mix test`. The invariant is "genesis grants every role once".
+    assert length(grants) == length(SpruceGoose.Actors.Role.values())
     assert Enum.all?(grants, &(&1.actor_id == hd(actors).id and &1.granted_by == "genesis"))
   end
 

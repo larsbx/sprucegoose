@@ -11,8 +11,8 @@ defmodule SpruceGoose.RuntimeShadowSeparateSessionsTest do
   alias SpruceGoose.Workflows.Task, as: WorkflowTask
 
   setup do
-    Ecto.Adapters.SQL.Sandbox.mode(Repo, :auto)
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual) end)
+    SpruceGoose.SandboxMode.set(:auto)
+    on_exit(fn -> SpruceGoose.SandboxMode.set(:manual) end)
     :ok
   end
 
