@@ -65,7 +65,9 @@ conformance gaps and dependency-ordered remediation are recorded in the
 [`remediation plan`](docs/abstract-kernel-remediation-plan.md). The
 [`2026-09-08 project audit`](docs/audits/2026-09-08-project-audit.md) re-checks
 that remediation against the delivered source and records the reproducibility,
-security, and correctness findings that block re-verification.
+security, and correctness findings that block re-verification; its work is
+ordered by the
+[`2026-09-08 remediation plan`](docs/audit-remediation-plan-2026-09-08.md).
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity

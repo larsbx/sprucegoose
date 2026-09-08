@@ -150,4 +150,5 @@ with work ordered by
 also active. It re-checks that baseline against the delivered source, and
 records reproducibility, security, and correctness findings from a build and
 test run outside the production host. It makes no claim about live state:
-production was not reachable from the audit environment.
+production was not reachable from the audit environment. Its work is ordered by
+[`audit-remediation-plan-2026-09-08.md`](audit-remediation-plan-2026-09-08.md).
