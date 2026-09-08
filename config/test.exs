@@ -29,10 +29,35 @@ config :spruce_goose, SpruceGoose.Web.Endpoint,
   server: false,
   secret_key_base: String.duplicate("test-only-secret-key-base-", 4)
 
+# Test-database connection, environment-driven.
+#
+# Only the database *name* was overridable, and `config/config.exs` declares no
+# `password` at all — so on any server that requires one, Postgrex raised
+# `KeyError: key :password not found` from its SCRAM handshake and the suite
+# could not run. There was no supported way to supply credentials, which left
+# an operator on such a host choosing between "no test gate" and "point the
+# tests at the production authority database". Neither is acceptable, and the
+# second is dangerous.
+#
+# Defaults are exactly the previous values, so a local trust-auth setup is
+# unaffected.
 config :spruce_goose, SpruceGoose.Repo,
   database: System.get_env("SPRUCE_GOOSE_TEST_DATABASE", "spruce_goose_test"),
+  username: System.get_env("SPRUCE_GOOSE_TEST_DATABASE_USERNAME", "postgres"),
+  hostname: System.get_env("SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME", "localhost"),
+  port: String.to_integer(System.get_env("SPRUCE_GOOSE_TEST_DATABASE_PORT", "5432")),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 5
+
+# Set only when present. Postgrex distinguishes "no password" from "empty
+# password", and a blank default would break trust authentication.
+case System.get_env("SPRUCE_GOOSE_TEST_DATABASE_PASSWORD") do
+  value when is_binary(value) and value != "" ->
+    config :spruce_goose, SpruceGoose.Repo, password: value
+
+  _ ->
+    :ok
+end
 
 config :logger, level: :warning
 
