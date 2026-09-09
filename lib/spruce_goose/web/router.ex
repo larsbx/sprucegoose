@@ -45,6 +45,11 @@ defmodule SpruceGoose.Web.Router do
     oauth2_server_consent_routes(oauth2_server: SpruceGoose.Oauth2Server)
   end
 
+  scope "/admin" do
+    pipe_through(:browser)
+    forward("/", SpruceGoose.Web.AdminPlug)
+  end
+
   scope "/" do
     pipe_through(:api)
     oauth2_server_protocol_routes(oauth2_server: SpruceGoose.Oauth2Server)

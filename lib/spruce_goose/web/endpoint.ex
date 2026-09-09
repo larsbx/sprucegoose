@@ -1,11 +1,12 @@
 defmodule SpruceGoose.Web.Endpoint do
   @moduledoc """
-  Minimal Phoenix endpoint hosting the OAuth 2.1 authorization server and the
-  Ash AI MCP server.
+  Phoenix endpoint hosting the OAuth 2.1 server, Ash AI MCP server, and the
+  read-only administrator dashboard.
 
   SpruceGoose remains a CLI-first application. This endpoint exists only to
-  serve the MCP tool surface and its OAuth token flow, and it is bound to
-  loopback by configuration. It is not a general web UI.
+  serve those controlled web interfaces, and it is bound to loopback by
+  configuration. Tailscale Serve may proxy the administrator dashboard while
+  SpruceGoose verifies its identity header arrived from loopback.
   """
   # Bandit rather than Cowboy. Phoenix defaults to Cowboy, which is not a
   # dependency here, so the adapter is set in the endpoint config
