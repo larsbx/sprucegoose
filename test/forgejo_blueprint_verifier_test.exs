@@ -62,6 +62,28 @@ defmodule SpruceGoose.ForgejoBlueprintVerifierTest do
     assert Enum.any?(commit_request[:headers], &match?({"authorization", "token test-token"}, &1))
   end
 
+  test "accepts Forgejo's commit-as-tree sentinel and records the recomputed root tree" do
+    repository = build_repository()
+
+    Application.put_env(:spruce_goose, :blueprint_http_request, fn opts ->
+      if String.contains?(opts[:url], "/git/commits/") do
+        {:ok,
+         %Req.Response{
+           status: 200,
+           body: %{"sha" => @commit, "commit" => %{"tree" => %{"sha" => @commit}}}
+         }}
+      else
+        respond(repository, opts)
+      end
+    end)
+
+    assert {:ok, %{tree: tree, digest: digest, bytes: @bytes}} =
+             ForgejoVerifier.verify("root/legible", @commit, @path)
+
+    assert tree == repository.root_sha
+    assert digest == :crypto.hash(:sha256, @bytes) |> Base.encode16(case: :lower)
+  end
+
   test "refuses a mismatched commit response" do
     Application.put_env(:spruce_goose, :blueprint_http_request, fn _opts ->
       {:ok, %Req.Response{status: 200, body: %{"sha" => String.duplicate("d", 40)}}}
