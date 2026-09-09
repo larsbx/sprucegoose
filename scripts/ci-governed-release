@@ -83,7 +83,8 @@ epoch=$(git show -s --format=%ct HEAD)
 build_time=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)
 export SOURCE_DATE_EPOCH="$epoch"
 export SPRUCE_GOOSE_BUILDER="woodpecker-local-backend"
-export SPRUCE_GOOSE_TASK="tsk-20260813T140419Z-d8dbffc5"
+: "${SPRUCE_GOOSE_TASK:?SPRUCE_GOOSE_TASK must name governing task}"
+export SPRUCE_GOOSE_TASK
 export SPRUCE_GOOSE_TRANSACTION="woodpecker-${CI_PIPELINE_NUMBER:-local}-${commit}"
 export SPRUCE_GOOSE_BUILD_TIME_UTC="$build_time"
 export SPRUCE_GOOSE_OUTPUT_DIR="$archive_root"
