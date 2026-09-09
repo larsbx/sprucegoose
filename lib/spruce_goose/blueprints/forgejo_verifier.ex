@@ -17,19 +17,21 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
   consistent and independently arbitrary: a Forgejo instance that was
   compromised, misconfigured, or impersonated returned a "verified" blueprint.
 
-  Now every fetched object is checked against an identity some *other* response
-  committed to first:
+  Every fetched object is checked against an identity another response named
+  first, except for one Forgejo compatibility case:
 
   ```text
   commit.sha            == the commit that was asked for
-  sha1(tree entries)    == commit.commit.tree.sha        (declared by the commit)
+  sha1(tree entries)    == commit.commit.tree.sha        (when Forgejo returns it)
   sha1(subtree entries) == the entry sha that was followed (declared by its parent)
   sha1(blob bytes)      == the blob entry sha            (declared by the tree)
   ```
 
-  Each link is a git object identity recomputed from the bytes actually
-  returned, so the chain is only satisfiable by the real objects. Substituting
-  any one of them requires a SHA-1 preimage, not merely a cooperative server.
+  Forgejo 12 may return the commit SHA again in `commit.tree.sha`. That value is
+  a sentinel, not a tree identity. In that case SpruceGoose records the root
+  identity recomputed from the exact tree listing and retains the remaining
+  subtree and blob checks. A different non-sentinel tree identity must still
+  match exactly.
   """
 
   @behaviour SpruceGoose.Blueprints.SourceVerifier
@@ -43,10 +45,10 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
          {:ok, token} <- token(),
          request = Application.get_env(:spruce_goose, :blueprint_http_request, &Req.request/1),
          {:ok, declared_tree} <- fetch_commit(owner, repo, commit, token, request),
-         {:ok, entries} <- fetch_tree(owner, repo, commit, declared_tree, token, request),
+         {:ok, tree, entries} <- fetch_tree(owner, repo, commit, declared_tree, token, request),
          {:ok, blob} <- resolve_blob(owner, repo, entries, segments, token, request),
          {:ok, bytes} <- fetch_bytes(owner, repo, commit, path, blob, token, request) do
-      {:ok, %{tree: declared_tree, digest: sha256(bytes), bytes: bytes}}
+      {:ok, %{tree: tree, digest: sha256(bytes), bytes: bytes}}
     end
   end
 
@@ -60,7 +62,7 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
       {:ok, %{status: 200, body: %{"sha" => ^commit, "commit" => %{"tree" => %{"sha" => tree}}}}}
       when is_binary(tree) ->
         if Regex.match?(@hex40, tree),
-          do: {:ok, tree},
+          do: {:ok, if(tree == commit, do: :commit_sentinel, else: tree)},
           else: {:error, "Forgejo returned an invalid tree identity for #{commit}"}
 
       {:ok, %{status: 200, body: %{"sha" => ^commit}}} ->
@@ -77,12 +79,17 @@ defmodule SpruceGoose.Blueprints.ForgejoVerifier do
   defp fetch_tree(owner, repo, commit, expected, token, request) do
     with {:ok, entries} <- tree_entries(owner, repo, commit, token, request),
          {:ok, recomputed} <- git_tree_id(entries) do
-      if recomputed == expected do
-        {:ok, entries}
-      else
-        {:error,
-         "Forgejo tree listing for #{commit} hashes to #{recomputed}, but the commit " <>
-           "declares tree #{expected}"}
+      case expected do
+        :commit_sentinel ->
+          {:ok, recomputed, entries}
+
+        ^recomputed ->
+          {:ok, recomputed, entries}
+
+        _ ->
+          {:error,
+           "Forgejo tree listing for #{commit} hashes to #{recomputed}, but the commit " <>
+             "declares tree #{expected}"}
       end
     end
   end
