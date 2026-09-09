@@ -132,6 +132,14 @@ defmodule SpruceGoose.Artifacts.Store do
     end
   end
 
+  # Catches the ordinary cases — the file grew, shrank, or was replaced — but
+  # `File.stat` reports mtime at one-second resolution, so an in-place write
+  # within the same second that preserves size and inode is not detected. The
+  # receipt stays internally consistent either way, because the digest covers
+  # the bytes actually read and those are the bytes persisted; what is bounded
+  # is the claim that they were the file's content at any single instant.
+  # Establishing that against a writer we do not control is not something a
+  # reader can do.
   defp stable?(before_stat, after_stat, size),
     do:
       before_stat.size == size and after_stat.size == size and
@@ -149,8 +157,22 @@ defmodule SpruceGoose.Artifacts.Store do
     end
   end
 
+  # Written to a temporary name and renamed into place.
+  #
+  # The previous version opened the destination `:exclusive` and wrote in situ,
+  # so a failed write or sync — ENOSPC, EIO — left a partial file at the content
+  # address. Every later attempt then took the `File.exists?` branch into
+  # `verify_existing/3` and returned "collision or corruption" forever, at mode
+  # 0440 if the chmod was what failed. Nothing in the store could heal it.
+  #
+  # `rename/2` is atomic within a filesystem, so a failure leaves the address
+  # untouched and retryable. The mode is set before the rename, which also
+  # closes the window where the file sat at the process umask.
   defp create(destination, digest, bytes) do
-    case File.open(destination, [:write, :binary, :exclusive]) do
+    scratch =
+      destination <> ".partial." <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+
+    case File.open(scratch, [:write, :binary, :exclusive]) do
       {:ok, io} ->
         result = IO.binwrite(io, bytes)
         sync = :file.sync(io)
@@ -158,16 +180,39 @@ defmodule SpruceGoose.Artifacts.Store do
 
         with :ok <- result,
              :ok <- sync,
-             :ok <- File.chmod(destination, 0o440),
-             do: :ok
-
-      {:error, :eexist} ->
-        verify_existing(destination, digest, byte_size(bytes))
+             :ok <- File.chmod(scratch, 0o440),
+             :ok <- publish(scratch, destination, digest, byte_size(bytes)) do
+          :ok
+        else
+          {:error, _} = error ->
+            _ = File.rm(scratch)
+            normalize_write_error(error)
+        end
 
       {:error, reason} ->
         {:error, "cannot persist artifact: #{:file.format_error(reason)}"}
     end
   end
+
+  # A concurrent writer may have published the same content first. That is not a
+  # collision — content addressing means their bytes are these bytes — so the
+  # existing entry is verified rather than overwritten.
+  defp publish(scratch, destination, digest, size) do
+    if File.exists?(destination) do
+      _ = File.rm(scratch)
+      verify_existing(destination, digest, size)
+    else
+      case File.rename(scratch, destination) do
+        :ok -> :ok
+        {:error, reason} -> {:error, "cannot persist artifact: #{:file.format_error(reason)}"}
+      end
+    end
+  end
+
+  defp normalize_write_error({:error, message}) when is_binary(message), do: {:error, message}
+
+  defp normalize_write_error({:error, reason}),
+    do: {:error, "cannot persist artifact: #{:file.format_error(reason)}"}
 
   defp verify_existing(path, digest, size) do
     with {:ok, bytes} <- File.read(path),

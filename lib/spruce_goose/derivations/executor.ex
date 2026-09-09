@@ -7,9 +7,16 @@ defmodule SpruceGoose.Derivations.Executor do
   input.
   """
 
+  # A handler failure is a terminal outcome and commits a receipt, so it needs no
+  # retry. A *receipt-write* failure is infrastructure: at max_attempts: 1 it
+  # discarded the job and left the permit with no terminal outcome and no way
+  # back, which is the one thing this worker exists to prevent. Retries are
+  # therefore reserved for that case — `perform/1` returns `:discard` for every
+  # outcome that was successfully recorded, so a retry only ever follows a
+  # failure to record one.
   use Oban.Worker,
     queue: :derivations,
-    max_attempts: 1,
+    max_attempts: 3,
     unique: [period: :infinity, fields: [:worker, :args]]
 
   require Ash.Query
@@ -36,8 +43,16 @@ defmodule SpruceGoose.Derivations.Executor do
   defp execute(permit_id, executor_id) do
     # AUTHORIZATION: executor_actor/0 resolved an active derivation_executor before this transaction.
     case Repo.transaction(fn -> execute_locked(permit_id, executor_id) end) do
-      {:ok, result} -> result
-      {:error, reason} -> {:discard, message(reason)}
+      {:ok, result} ->
+        result
+
+      # Only a failure to *record* an outcome is worth another attempt. An
+      # absent permit or an already-terminal one will not improve.
+      {:error, {:retry, reason}} ->
+        {:error, message(reason)}
+
+      {:error, reason} ->
+        {:discard, message(reason)}
     end
   end
 
@@ -65,14 +80,7 @@ defmodule SpruceGoose.Derivations.Executor do
   end
 
   defp invoke_handler(handler, permit, executor_id) do
-    result =
-      try do
-        handler.run(permit)
-      rescue
-        exception -> {:error, Exception.message(exception)}
-      catch
-        kind, reason -> {:error, "#{kind}: #{inspect(reason)}"}
-      end
+    result = run_in_savepoint(handler, permit)
 
     case result do
       {:ok, %{evidence_digest: evidence} = outcome} ->
@@ -93,6 +101,45 @@ defmodule SpruceGoose.Derivations.Executor do
           "handler returned malformed outcome: #{inspect(other)}"
         )
     end
+  end
+
+  # The handler runs inside the transaction that will record its outcome, so an
+  # exception raised by PostgreSQL leaves that transaction aborted and every
+  # later statement failing with 25P02 — the failure receipt could not be
+  # written for exactly the class of failure where it matters most.
+  #
+  # A savepoint scopes the damage: rolling back to it restores a usable
+  # transaction, so the outcome is recordable whatever the handler did.
+  @savepoint "derivation_handler"
+
+  defp run_in_savepoint(handler, permit) do
+    savepoint("SAVEPOINT")
+
+    try do
+      case handler.run(permit) do
+        {:ok, _outcome} = ok ->
+          savepoint("RELEASE SAVEPOINT")
+          ok
+
+        other ->
+          savepoint("ROLLBACK TO SAVEPOINT")
+          other
+      end
+    rescue
+      exception ->
+        savepoint("ROLLBACK TO SAVEPOINT")
+        {:error, Exception.message(exception)}
+    catch
+      kind, reason ->
+        savepoint("ROLLBACK TO SAVEPOINT")
+        {:error, "#{kind}: #{inspect(reason)}"}
+    end
+  end
+
+  defp savepoint(statement) do
+    # AUTHORIZATION: executor_actor/0 resolved an active derivation_executor before this
+    # transaction. These statements only bound the handler's failure; they read no data.
+    Repo.query!("#{statement} #{@savepoint}")
   end
 
   defp record_failure(permit, executor_id, reason) do
@@ -131,7 +178,7 @@ defmodule SpruceGoose.Derivations.Executor do
          {:ok, _identity, _ledger} <- EventLedger.append(EventLedger.new(), event) do
       :ok
     else
-      {:error, reason} -> Repo.rollback(reason)
+      {:error, reason} -> Repo.rollback({:retry, reason})
     end
   end
 

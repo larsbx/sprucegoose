@@ -107,7 +107,8 @@ defmodule SpruceGoose.CLI.Command do
     {"derivation",
      [
        "admit --task ID --source-event ID --forge-instance ID --repository OWNER/REPO --commit OID --tree OID --ref REF --pipeline-digest SHA256 --ontology-root CID --schema-root CID --norm-root CID --policy-root CID --grant-epoch-root CID --agent-charter-root CID --interpreter-root CID --evidence-policy-root CID --action test|build_release|verify_artifact [--input-artifact SHA256]",
-       "show PERMIT_ID"
+       "show PERMIT_ID",
+       "reschedule PERMIT_ID"
      ]},
     {"release",
      [
@@ -493,6 +494,9 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 
   def parse(["derivation", "show", permit_id]), do: {:ok, {:show_derivation, permit_id}}
+
+  def parse(["derivation", "reschedule", permit_id]),
+    do: {:ok, {:reschedule_derivation, permit_id}}
 
   def parse(["runtime", verb, task_id, json]) when verb in ["shadow", "parity"] do
     with {:ok, envelope} <- runtime_envelope(json) do

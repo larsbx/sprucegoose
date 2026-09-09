@@ -52,26 +52,22 @@ defmodule SpruceGoose.MigrationUpgradeTest do
                """
              )
 
-    assert %{rows: [["sprucegoose_task_dependency_graph"]]} =
-             Ecto.Adapters.SQL.query!(
-               UpgradeRepo,
-               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
-             )
-
+    # Round-trip the tail of the migration set. The property-graph assertions
+    # that used to sit here were retired with the object itself (see
+    # `20260908000000_drop_task_dependency_property_graph`); what this still
+    # proves is that the backfilled hierarchy survives a down/up cycle.
     Ecto.Migrator.run(UpgradeRepo, @migrations, :down, to: 20_260_810_133_000)
-
-    assert %{rows: []} =
-             Ecto.Adapters.SQL.query!(
-               UpgradeRepo,
-               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
-             )
-
     Ecto.Migrator.run(UpgradeRepo, @migrations, :up, all: true)
 
-    assert %{rows: [["sprucegoose_task_dependency_graph"]]} =
+    assert %{rows: [["preexisting", "preexisting", "legacy-import"]]} =
              Ecto.Adapters.SQL.query!(
                UpgradeRepo,
-               "SELECT property_graph_name FROM information_schema.property_graphs WHERE property_graph_name = 'sprucegoose_task_dependency_graph'"
+               """
+               SELECT workflows.workflow_id, workflows.name, roadmaps.key
+               FROM workflows
+               JOIN roadmaps ON roadmaps.id = workflows.roadmap_id
+               WHERE workflows.workflow_id = 'preexisting'
+               """
              )
 
     GenServer.stop(UpgradeRepo)

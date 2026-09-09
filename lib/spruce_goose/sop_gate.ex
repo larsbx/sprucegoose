@@ -49,6 +49,60 @@ defmodule SpruceGoose.SopGate do
   def id, do: @id
   def path, do: Application.fetch_env!(:spruce_goose, :systemwide_sop_path)
 
+  @adoption "constitution/adopted.json"
+  @adoption_path Path.expand("../../priv/#{@adoption}", __DIR__)
+  @external_resource @adoption_path
+  @adopted_bytes File.read!(@adoption_path)
+
+  @doc """
+  The digest this repository has adopted for the Systemwide SOP.
+
+  The SOP's bytes live in the openclaw-system vault rather than here, because
+  `scripts/vault-write-authorization.py` enforces the same rule against the same
+  document. That is a deliberate split, but it left the `norm` constitutional
+  root as the digest of a file nobody outside one host could hash — so the test
+  that validated the root set could only ever run on that host.
+
+  `priv/constitution/adopted.json` closes that: the adopted digest is reviewable
+  from this repository alone and changes only through a reviewed commit.
+  """
+  def adopted_digest do
+    case Jason.decode(@adopted_bytes) do
+      {:ok,
+       %{"artifacts" => %{@id => %{"digest" => "sha256:" <> _ = digest, "custody" => custody}}}}
+      when custody != "absent" ->
+        {:ok, digest}
+
+      _ ->
+        {:error, "the adopted-artifact record does not declare an adopted #{@id} digest"}
+    end
+  end
+
+  @doc """
+  Check the deployed SOP against the adopted digest.
+
+  Stronger than the test it replaces: that ran once, at CI time, on whichever
+  machine happened to hold the file. This runs on the machine actually serving
+  requests, against the bytes it will actually gate on.
+
+  Returns `:ok` when they agree, and names both digests when they do not.
+  """
+  def verify_adoption do
+    with {:ok, adopted} <- adopted_digest(),
+         {:ok, body} <- read(path()) do
+      deployed = "sha256:" <> digest(body)
+
+      if deployed == adopted do
+        :ok
+      else
+        {:error,
+         "the deployed Systemwide SOP at #{path()} digests to #{deployed}, but this " <>
+           "release adopted #{adopted}. Either the deployment is serving an unreviewed " <>
+           "SOP, or priv/constitution/adopted.json is behind a reviewed SOP change"}
+      end
+    end
+  end
+
   @doc """
   The version a *version-less* acknowledgment is treated as having read.
 

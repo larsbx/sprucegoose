@@ -26,6 +26,17 @@ defmodule SpruceGoose.DerivationsTest do
     def run(%Permit{}), do: raise("bounded handler failed")
   end
 
+  # Raises from inside PostgreSQL rather than from Elixir, which leaves the
+  # surrounding transaction aborted. Before the handler call was savepointed,
+  # every later statement failed with 25P02 and the failure receipt — the whole
+  # point of the worker — could not be written.
+  defmodule DatabasePoisoningHandler do
+    def run(%Permit{}) do
+      SpruceGoose.Repo.query!("SELECT 1 FROM table_that_does_not_exist")
+      {:ok, %{evidence_digest: String.duplicate("d", 64)}}
+    end
+  end
+
   test "the domain exposes one typed authority resource" do
     assert Ash.Domain.Info.resources(Domain) == [Permit, OutcomeReceipt]
   end
@@ -283,6 +294,70 @@ defmodule SpruceGoose.DerivationsTest do
     failed = receipt!(permit.permit_id)
     assert failed.outcome == :failed
     assert failed.failure_reason == "bounded handler failed"
+  end
+
+  test "a handler that aborts the transaction still records a typed failed outcome" do
+    task = in_progress_task("handler-poison")
+    operator = actor_with_role("operator-handler-poison", :operator)
+    executor = actor_with_role("executor-handler-poison", :derivation_executor)
+
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
+    on_exit(fn ->
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: DatabasePoisoningHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:discard, reason} =
+             Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert reason =~ "table_that_does_not_exist"
+
+    failed = receipt!(permit.permit_id)
+    assert failed.outcome == :failed
+    assert failed.failure_reason =~ "table_that_does_not_exist"
+    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
+  end
+
+  test "a derivation without a terminal receipt can be rescheduled through the CLI" do
+    task = in_progress_task("reschedule")
+    operator = actor_with_role("operator-reschedule", :operator)
+    executor = actor_with_role("executor-reschedule", :derivation_executor)
+
+    previous_actor = Application.get_env(:spruce_goose, :derivation_executor_actor)
+    previous_handlers = Application.get_env(:spruce_goose, :derivation_handlers)
+
+    on_exit(fn ->
+      restore_env(:derivation_executor_actor, previous_actor)
+      restore_env(:derivation_handlers, previous_handlers)
+    end)
+
+    Application.put_env(:spruce_goose, :derivation_executor_actor, executor.name)
+    Application.put_env(:spruce_goose, :derivation_handlers, %{test: SuccessfulHandler})
+
+    {:ok, permit} =
+      as_actor(operator, fn -> Authz.create(Permit, permit_attrs(task), action: :admit) end)
+
+    assert {:ok, %{permit_id: rescheduled}} =
+             CLIExecutor.run({:reschedule_derivation, permit.permit_id}, executor.name)
+
+    assert rescheduled == permit.permit_id
+
+    # Once the derivation is terminal, rescheduling is exactly the re-run that
+    # one_terminal_receipt_per_permit exists to refuse.
+    assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
+
+    assert {:error, message} =
+             CLIExecutor.run({:reschedule_derivation, permit.permit_id}, executor.name)
+
+    assert message =~ "already has a terminal receipt"
   end
 
   test "the fixed verify_artifact handler verifies CAS input and stores deterministic evidence" do

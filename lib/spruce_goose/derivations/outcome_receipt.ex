@@ -16,10 +16,11 @@ defmodule SpruceGoose.Derivations.OutcomeReceipt do
   end
 
   policies do
-    policy action_type(:read) do
-      authorize_if(Readable)
-      authorize_if(HasRole.derivation_executor())
-    end
+    # `HasRole` resolves its subject from a changeset, so on a read action it can
+    # never match — the clause that used to sit here read as "or a derivation
+    # executor may read any receipt" and authorized nothing. `Readable` already
+    # covers the executor: every grant implies :reader within its own scope.
+    policy action_type(:read), do: authorize_if(Readable)
 
     policy action(:record), do: authorize_if(HasRole.derivation_executor())
   end

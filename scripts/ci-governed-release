@@ -38,13 +38,26 @@ $crash
 EOF
 
 mix deps.get
-mix hex.audit
+scripts/audit-dependencies
 mix format --check-formatted
 mix compile --warnings-as-errors
 
 ci_db_suffix=${CI_PIPELINE_NUMBER:-local}
 [[ $ci_db_suffix =~ ^([0-9]+|local)$ ]] || fail "invalid CI pipeline number for test database"
 export SPRUCE_GOOSE_TEST_DATABASE="spruce_goose_ci_${ci_db_suffix}"
+# Credentials for the isolated test database, when the server requires them.
+# Unset means trust authentication, which is the local default. A runner whose
+# PostgreSQL wants a password sets these; the alternative was skipping the test
+# gate entirely, which is how a release candidate reaches a deployment host
+# with its suite unexecuted.
+: "${SPRUCE_GOOSE_TEST_DATABASE_USERNAME:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_PASSWORD:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME:=}"
+: "${SPRUCE_GOOSE_TEST_DATABASE_PORT:=}"
+for var in SPRUCE_GOOSE_TEST_DATABASE_USERNAME SPRUCE_GOOSE_TEST_DATABASE_PASSWORD \
+           SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME SPRUCE_GOOSE_TEST_DATABASE_PORT; do
+  [[ -n ${!var} ]] && export "$var"
+done
 cleanup_test_database() {
   MIX_ENV=test mix ecto.drop --force --quiet >/dev/null 2>&1 || true
 }
@@ -52,6 +65,15 @@ trap cleanup_test_database EXIT
 MIX_ENV=test mix ecto.create --quiet
 MIX_ENV=test mix ash.migrate
 mix test
+
+# The :separate_sessions group is excluded by test_helper.exs because it needs
+# genuinely separate database sessions rather than the sandbox. It covers
+# genesis races, contiguous certified append positions, ledger recovery, and
+# runtime-shadow concurrency — the claims the audit trail leans on hardest — and
+# it had never run in CI, which is how a stale genesis assertion survived. Not
+# optional: a concurrency regression here is a correctness regression.
+mix test --only separate_sessions --seed 0 --max-cases 1
+
 MIX_ENV=test mix ecto.drop --force --quiet
 trap - EXIT
 
@@ -61,7 +83,8 @@ epoch=$(git show -s --format=%ct HEAD)
 build_time=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)
 export SOURCE_DATE_EPOCH="$epoch"
 export SPRUCE_GOOSE_BUILDER="woodpecker-local-backend"
-export SPRUCE_GOOSE_TASK="tsk-20260813T140419Z-d8dbffc5"
+: "${SPRUCE_GOOSE_TASK:?SPRUCE_GOOSE_TASK must name governing task}"
+export SPRUCE_GOOSE_TASK
 export SPRUCE_GOOSE_TRANSACTION="woodpecker-${CI_PIPELINE_NUMBER:-local}-${commit}"
 export SPRUCE_GOOSE_BUILD_TIME_UTC="$build_time"
 export SPRUCE_GOOSE_OUTPUT_DIR="$archive_root"

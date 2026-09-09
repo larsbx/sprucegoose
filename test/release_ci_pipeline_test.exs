@@ -25,6 +25,12 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
     refute text =~ "systemctl"
   end
 
+  test "CI requires the governing task instead of attributing releases to a stale task" do
+    text = File.read!(@script)
+    assert text =~ ~s(SPRUCE_GOOSE_TASK:?SPRUCE_GOOSE_TASK must name governing task)
+    refute text =~ ~s(export SPRUCE_GOOSE_TASK="tsk-)
+  end
+
   test "CI refuses dependencies with known security advisories" do
     text = File.read!(@script)
     assert before?(text, "mix hex.audit", "mix compile --warnings-as-errors")

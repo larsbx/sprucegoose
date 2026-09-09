@@ -3,7 +3,8 @@ defmodule SpruceGoose.Accounts.OauthClient do
     otp_app: :spruce_goose,
     domain: SpruceGoose.Accounts,
     data_layer: AshPostgres.DataLayer,
-    authorizers: [Ash.Policy.Authorizer]
+    authorizers: [Ash.Policy.Authorizer],
+    extensions: [AshAuthentication.Oauth2Server.ClientResource]
 
   postgres do
     table "oauth_clients"
