@@ -53,6 +53,8 @@ end
 config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler,
+  admin_tailscale_login: System.get_env("SPRUCE_GOOSE_ADMIN_TAILSCALE_LOGIN"),
+  admin_actor: System.get_env("SPRUCE_GOOSE_ADMIN_ACTOR"),
   derivation_executor_actor:
     (case System.get_env("SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR") do
        value when is_binary(value) and value != "" -> value
