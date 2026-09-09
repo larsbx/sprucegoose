@@ -11,6 +11,7 @@ defmodule SpruceGoose.RuntimeRecoveryConfigTest do
     IO.puts(\"plugins=\#{inspect(Keyword.fetch!(oban, :plugins))}\")
     IO.puts(\"expected_genesis_actor=\#{Keyword.fetch!(app, :expected_genesis_actor)}\")
     IO.puts(\"oauth_client_actor_bindings=\#{inspect(Keyword.get(app, :oauth_client_actor_bindings, %{}))}\")
+    IO.puts("start_web_endpoint=\#{inspect(Keyword.fetch!(app, :start_web_endpoint))}")
     """
 
     genesis_env =
@@ -70,6 +71,19 @@ defmodule SpruceGoose.RuntimeRecoveryConfigTest do
 
     assert status != 0
     assert output =~ "SPRUCE_GOOSE_OAUTH_ACTOR_BINDINGS is required when MCP is enabled"
+  end
+
+  test "admin dashboard can start the endpoint without enabling MCP" do
+    {output, status} =
+      read_runtime([
+        {"SPRUCE_GOOSE_ADMIN_ENABLED", "true"},
+        {"SPRUCE_GOOSE_OBAN_ENABLED", "false"},
+        {"SECRET_KEY_BASE", String.duplicate("s", 64)}
+      ])
+
+    assert status == 0, output
+    assert output =~ "start_web_endpoint=true"
+    assert output =~ "oauth_client_actor_bindings=%{}"
   end
 
   test "MCP production runtime parses immutable OAuth client ID to actor ID bindings" do
