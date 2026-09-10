@@ -13,6 +13,7 @@ defmodule SpruceGoose.Actors.Role do
       :reader,
       :operator,
       :derivation_executor,
+      :deployment_executor,
       :artifact_verifier,
       :proposer,
       :approver,

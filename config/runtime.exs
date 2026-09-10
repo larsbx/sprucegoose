@@ -57,6 +57,11 @@ config :spruce_goose,
     (case System.get_env("SPRUCE_GOOSE_DERIVATION_EXECUTOR_ACTOR") do
        value when is_binary(value) and value != "" -> value
        _ -> nil
+     end),
+  deployment_executor_actor:
+    (case System.get_env("SPRUCE_GOOSE_DEPLOYMENT_EXECUTOR_ACTOR") do
+       value when is_binary(value) and value != "" -> value
+       _ -> nil
      end)
 
 if not oban_enabled? do

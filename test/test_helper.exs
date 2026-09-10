@@ -77,6 +77,7 @@ defmodule SpruceGoose.DataCase do
           :reader,
           :operator,
           :derivation_executor,
+          :deployment_executor,
           :artifact_verifier,
           :proposer,
           :approver,
