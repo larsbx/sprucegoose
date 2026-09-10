@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Pure contract tests; no Mix dependencies, application startup, network or database.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+exec elixir -r 'lib/spruce_goose/deployment/*.ex' -e '
+  ExUnit.start()
+  Path.wildcard("test/deployment/*_test.exs") |> Enum.each(&Code.require_file/1)
+'

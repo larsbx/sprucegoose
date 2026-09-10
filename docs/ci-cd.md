@@ -1,6 +1,11 @@
 # CI, artifact delivery, and hooks
 
-GitHub checks every pull request and main push. The workflows use disposable
+Forgejo is the canonical source, review, and merge authority. Woodpecker is the
+canonical CI/build plane; deployment acceptance and authorization belong in
+SpruceGoose. See [deployment integration](deployment-domain.md) for the evidence
+contract, reconciliation prerequisites, and adapter acceptance gates.
+
+The GitHub mirror checks every pull request and main push. Its workflows use disposable
 GitHub-hosted Ubuntu 24.04 runners, the versions in `.tool-versions`, and Hex
 2.5.1. PostgreSQL 16 service containers hold only test data. No deployment
 credentials, production database, authority signer, or service socket is needed.
@@ -75,16 +80,21 @@ shell cleanup, but GitHub tears down the job's disposable service container.
 No workflow calls the activation script, applies production migrations, updates
 the live symlink, or restarts a service. An uploaded archive is not a deployment.
 
-For a future deployment hook, consume the successful Artifact delivery run and
-bind its repository, main ref, commit, run/attempt, archive digest, and receipt.
-Reconcile the canonical source first, then use the existing destination validator
-and activation runbook under a separate deployment authorization. Do not trigger
-activation from a PR event or an unverified artifact name. This PR creates no
-deployment endpoint, credential, repository webhook, or host-side service.
+For the deployment hook, consume verified canonical Woodpecker evidence bound
+to the Forgejo repository, reviewed ref, commit/tree, pipeline run/attempt,
+configuration digest, typed artifact digest, and receipt. GitHub Artifact delivery
+is optional mirror evidence and does not substitute for canonical acceptance.
+Reconcile the canonical source first; activation needs a separate SpruceGoose
+authorization and the host-adapter recovery gates. A PR event or an artifact name
+cannot authorize activation. These workflows create no deployment endpoint,
+credential, repository webhook, or host-side service.
 
 ## Enabling and observing automation
 
-After merge, confirm Actions is enabled and inspect the first main run. Expected
+After canonical merge, inspect the exact candidate's Woodpecker gates and mirror
+the accepted source downstream. Inspect Forgejo branch protection and canonical
+runner isolation separately; GitHub settings do not enforce either. On the
+GitHub mirror, confirm Actions is enabled and inspect its main run. Expected
 CI checks are `Fast checks`, `Tests (scram-sha-256)`, and `Tests (trust)`. Once these
 run successfully, make those checks required in the repository's main ruleset if
 merges must be gated. Workflow files alone do not enforce branch protection.
