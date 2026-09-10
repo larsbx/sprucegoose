@@ -275,3 +275,8 @@ separate, requests are concurrent and disposable, logs remain event streams,
 and administrative commands use the same running release. The Unix socket is
 a stronger local security boundary than application port binding and is an
 intentional host-level extension beyond the application factors.
+
+## Automation
+
+See [CI, artifact delivery, and hooks](docs/ci-cd.md) for GitHub checks, daily
+dependency audits, release artifact builds, and `scripts/install-git-hooks`.

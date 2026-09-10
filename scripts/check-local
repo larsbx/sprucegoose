@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fast checks shared by Git hooks and CI; no real database or network calls.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+git diff --check
+python3 -B -m unittest discover -s test -p '*_test.py' -v
+while IFS= read -r -d '' script; do
+  if head -1 "$script" | grep -Eq '^#!/(usr/bin/env bash|bin/bash|bin/sh)$'; then
+    bash -n "$script"
+  fi
+done < <(git ls-files -z scripts .githooks)
