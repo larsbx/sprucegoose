@@ -64,6 +64,11 @@ defmodule SpruceGoose.Web.AdminPlugTest do
 
     assert conn.status == 200
     assert conn.resp_body =~ "SpruceGoose admin"
+    assert conn.resp_body =~ ~s(class="app-shell")
+    assert conn.resp_body =~ ~s(aria-label="Administration")
+    assert conn.resp_body =~ ~s(class="task-list")
+    assert conn.resp_body =~ ~s(class="state state--in-progress")
+    assert conn.resp_body =~ "Operations"
     assert conn.resp_body =~ "tsk-20260909T165852Z-b80d7dc7"
     assert conn.resp_body =~ "Review &lt;script&gt;alert(&#39;no&#39;)&lt;/script&gt;"
 
