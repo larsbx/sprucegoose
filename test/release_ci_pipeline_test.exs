@@ -27,7 +27,7 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
 
   test "CI refuses dependencies with known security advisories" do
     text = File.read!(@script)
-    assert before?(text, "mix hex.audit", "mix compile --warnings-as-errors")
+    assert before?(text, "scripts/audit-dependencies", "mix compile --warnings-as-errors")
   end
 
   test "CI creates, migrates, and removes an isolated pipeline test database" do
@@ -56,5 +56,10 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
   end
 
   defp executable?(path), do: Bitwise.band(File.stat!(path).mode, 0o111) != 0
-  defp before?(text, left, right), do: :binary.match(text, left) < :binary.match(text, right)
+  defp before?(text, left, right) do
+    case {:binary.match(text, left), :binary.match(text, right)} do
+      {{left_index, _}, {right_index, _}} -> left_index < right_index
+      _ -> false
+    end
+  end
 end

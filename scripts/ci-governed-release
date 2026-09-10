@@ -56,7 +56,11 @@ export SPRUCE_GOOSE_TEST_DATABASE="spruce_goose_ci_${ci_db_suffix}"
 : "${SPRUCE_GOOSE_TEST_DATABASE_PORT:=}"
 for var in SPRUCE_GOOSE_TEST_DATABASE_USERNAME SPRUCE_GOOSE_TEST_DATABASE_PASSWORD \
            SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME SPRUCE_GOOSE_TEST_DATABASE_PORT; do
-  [[ -n ${!var} ]] && export "$var"
+  if [[ -n ${!var} ]]; then
+    export "$var"
+  else
+    unset "$var"
+  fi
 done
 cleanup_test_database() {
   MIX_ENV=test mix ecto.drop --force --quiet >/dev/null 2>&1 || true
@@ -83,7 +87,9 @@ epoch=$(git show -s --format=%ct HEAD)
 build_time=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)
 export SOURCE_DATE_EPOCH="$epoch"
 export SPRUCE_GOOSE_BUILDER="woodpecker-local-backend"
-export SPRUCE_GOOSE_TASK="tsk-20260813T140419Z-d8dbffc5"
+[[ ${SPRUCE_GOOSE_TASK:-} =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] ||
+  fail "SPRUCE_GOOSE_TASK must identify the governing task for this build"
+export SPRUCE_GOOSE_TASK
 export SPRUCE_GOOSE_TRANSACTION="woodpecker-${CI_PIPELINE_NUMBER:-local}-${commit}"
 export SPRUCE_GOOSE_BUILD_TIME_UTC="$build_time"
 export SPRUCE_GOOSE_OUTPUT_DIR="$archive_root"
