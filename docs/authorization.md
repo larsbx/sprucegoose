@@ -48,8 +48,10 @@ granted this, and when" and "revoke exactly this one".
 | `reader` | read within scope |
 | `operator` | task lifecycle, board moves, metadata, todos, dependencies, inbox triage |
 | `artifact_verifier` | verify and record artifact-custody receipts |
+| `derivation_executor` | record derivation outcome receipts |
+| `deployment_executor` | start, complete, and observe deployment operations |
 | `proposer` | propose and withdraw revisions |
-| `approver` | approve revisions, and the entity `:revise` actions they apply through |
+| `approver` | approve revisions, the entity `:revise` actions they apply through, and (humans only) deployment execution authorizations |
 | `author` | create and remove project, roadmap, workflow, board, column, filter; `rename` |
 | `admin` | manage the actor registry itself |
 
@@ -59,11 +61,11 @@ operating on is not a coherent grant.
 
 `admin` is registry authority, not superuser. An admin holding nothing else can
 grant roles and create actors, and cannot touch a single task — though it can of
-course grant itself anything, which is why Genesis hands out the complete seven-role
-set—seven global grants—rather than making the first operator run six more commands
-for no safety gain. The disposable recovery rehearsal later adds one separate
-`operator` grant for `recovery-agent`, so its expected database inventory is eight
-grant rows in total; that is not an eighth Genesis role.
+course grant itself anything, which is why Genesis hands out the complete role
+set — one global grant per role in `SpruceGoose.Actors.Role` — rather than making
+the first operator run the same commands by hand for no safety gain. The
+disposable recovery rehearsal later adds one separate `operator` grant for
+`recovery-agent`; that is not a Genesis role.
 
 ### Scopes
 

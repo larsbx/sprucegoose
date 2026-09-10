@@ -199,6 +199,8 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  defp dispatch({:deployment, verb, args}), do: SpruceGoose.Deployment.CLI.run(verb, args)
+
   defp dispatch({:validate_id, id}) do
     if TaskId.valid?(id), do: {:ok, %{id: id, valid: true}}, else: {:error, "invalid task ID"}
   end
