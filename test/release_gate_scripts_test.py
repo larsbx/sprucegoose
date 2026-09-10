@@ -242,6 +242,27 @@ class ScriptTest(unittest.TestCase):
         self.assertEqual(self.commands()[-1]["args"], ["ecto.drop", "--force", "--quiet"])
         self.assertFalse((self.work / "builder-trace").exists())
 
+    def test_check_mode_ignores_existing_or_invalid_release_output(self):
+        archive = self.work / "sprucegoose-ci-releases"
+        archive.mkdir()
+        retained = archive / "prior-release.tar.xz"
+        retained.write_bytes(b"prior release must remain unchanged")
+        for overrides in [{}, {"CI_RELEASE_OUTPUT_ROOT": "relative/unused"}]:
+            result = self.invoke("ci-governed-release", args=("--check",),
+                                 TEST_MIX_TEST_STATUS="0", **overrides)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(retained.read_bytes(), b"prior release must remain unchanged")
+            self.assertFalse((self.work / "builder-trace").exists())
+            shutil.rmtree(self.repo / "ci-evidence")
+
+    def test_release_mode_still_refuses_existing_or_invalid_output(self):
+        (self.work / "sprucegoose-ci-releases").mkdir()
+        for overrides in [{}, {"CI_RELEASE_OUTPUT_ROOT": "relative/refused"}]:
+            result = self.invoke("ci-governed-release", args=("--release",), **overrides)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(self.trace.exists())
+            self.assertFalse((self.repo / "ci-evidence").exists())
+
     def test_unknown_mode_refuses_before_mix_or_evidence(self):
         for args in [("--skip-tests",), ("--check", "--release")]:
             result = self.invoke("ci-governed-release", args=args)
