@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+current=$(git config --get core.hooksPath || true)
+if [[ -n $current && $current != .githooks ]]; then
+  printf 'Existing core.hooksPath=%s; integrate the tracked hooks there first.\n' "$current" >&2
+  exit 2
+fi
+if [[ -z $current ]]; then
+  for hook in pre-commit pre-push; do
+    path=$(git rev-parse --git-path "hooks/$hook")
+    if [[ -f $path ]]; then
+      printf 'Existing %s; integrate the tracked hooks before installing.\n' "$path" >&2
+      exit 2
+    fi
+  done
+fi
+git config --local core.hooksPath .githooks
+printf 'Installed pre-commit and pre-push hooks for this checkout.\n'

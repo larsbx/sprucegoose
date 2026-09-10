@@ -3,18 +3,25 @@ set -euo pipefail
 umask 077
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
+mode=${1:---release}
+[[ $# -le 1 && ( $mode == --check || $mode == --release ) ]] ||
+  fail "usage: scripts/ci-governed-release [--check|--release]"
 repo=$(git rev-parse --show-toplevel 2>/dev/null) || fail "not a git worktree"
 cd "$repo"
 git diff-index --quiet HEAD -- || fail "dirty tracked workspace refused"
 [[ -z $(git ls-files --others --exclude-standard) ]] || fail "dirty untracked workspace refused"
 
 evidence=${CI_EVIDENCE_DIR:-$repo/ci-evidence}
-archive_root=${CI_RELEASE_OUTPUT_ROOT:-$(dirname "$repo")/sprucegoose-ci-releases}
-[[ $evidence = /* && $archive_root = /* ]] || fail "CI evidence and release paths must be absolute"
+[[ $evidence = /* ]] || fail "CI evidence path must be absolute"
 case "$evidence" in "$repo"|"$repo"/*) ;; *) fail "CI evidence must be reviewer-resolvable inside the workspace";; esac
-case "$archive_root" in "$repo"|"$repo"/*) fail "release output must be outside the workspace";; esac
 [[ ! -e $evidence && ! -L $evidence ]] || fail "CI evidence path must not exist"
-[[ ! -e $archive_root && ! -L $archive_root ]] || fail "CI release output path must not exist"
+archive_root=not-used-in-check-mode
+if [[ $mode == --release ]]; then
+  archive_root=${CI_RELEASE_OUTPUT_ROOT:-$(dirname "$repo")/sprucegoose-ci-releases}
+  [[ $archive_root = /* ]] || fail "CI release output path must be absolute"
+  case "$archive_root" in "$repo"|"$repo"/*) fail "release output must be outside the workspace";; esac
+  [[ ! -e $archive_root && ! -L $archive_root ]] || fail "CI release output path must not exist"
+fi
 mkdir -m 0700 -- "$evidence"
 
 crash="$evidence/erl-crash-${CI_PIPELINE_NUMBER:-local}-$$.dump"
@@ -24,6 +31,16 @@ snapshot() {
   find . -path './.git' -prune -o -path './_build' -prune -o -path './deps' -prune \
     -o -path './ci-evidence' -prune -o -type f -print0 |
     LC_ALL=C sort -z | xargs -0r sha256sum
+}
+verify_workspace() {
+  snapshot >"$evidence/workspace-after.sha256"
+  cmp "$evidence/workspace-before.sha256" "$evidence/workspace-after.sha256" ||
+    fail "undeclared candidate workspace mutation detected"
+  if [[ -e $crash ]]; then
+    chmod 0600 "$crash"
+    sha256sum "$crash" >"$evidence/erl-crash.sha256"
+    fail "runtime crash dump produced; preserved in CI evidence"
+  fi
 }
 snapshot >"$evidence/workspace-before.sha256"
 cat >"$evidence/declared-paths.txt" <<EOF
@@ -81,16 +98,22 @@ mix test --only separate_sessions --seed 0 --max-cases 1
 MIX_ENV=test mix ecto.drop --force --quiet
 trap - EXIT
 
+if [[ $mode == --check ]]; then
+  verify_workspace
+  printf 'ci-check=PASS\nevidence=%s\n' "$evidence"
+  exit 0
+fi
+
 commit=$(git rev-parse HEAD)
 tree=$(git rev-parse HEAD^{tree})
 epoch=$(git show -s --format=%ct HEAD)
 build_time=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)
 export SOURCE_DATE_EPOCH="$epoch"
-export SPRUCE_GOOSE_BUILDER="woodpecker-local-backend"
+export SPRUCE_GOOSE_BUILDER="${SPRUCE_GOOSE_BUILDER:-woodpecker-local-backend}"
 [[ ${SPRUCE_GOOSE_TASK:-} =~ ^tsk-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] ||
   fail "SPRUCE_GOOSE_TASK must identify the governing task for this build"
 export SPRUCE_GOOSE_TASK
-export SPRUCE_GOOSE_TRANSACTION="woodpecker-${CI_PIPELINE_NUMBER:-local}-${commit}"
+export SPRUCE_GOOSE_TRANSACTION="${SPRUCE_GOOSE_TRANSACTION:-woodpecker-${CI_PIPELINE_NUMBER:-local}-${commit}}"
 export SPRUCE_GOOSE_BUILD_TIME_UTC="$build_time"
 export SPRUCE_GOOSE_OUTPUT_DIR="$archive_root"
 scripts/build-governed-release >"$evidence/build.txt"
@@ -105,15 +128,7 @@ scripts/validate-governed-release "$archive" --receipt "$receipt" \
   --expected-commit "$commit" --expected-tree "$tree" --artifact-only \
   >"$evidence/validation.txt"
 
-snapshot >"$evidence/workspace-after.sha256"
-cmp "$evidence/workspace-before.sha256" "$evidence/workspace-after.sha256" ||
-  fail "undeclared candidate workspace mutation detected"
-
-if [[ -e $crash ]]; then
-  chmod 0600 "$crash"
-  sha256sum "$crash" >"$evidence/erl-crash.sha256"
-  fail "runtime crash dump produced; preserved in CI evidence"
-fi
+verify_workspace
 
 sha256sum "$archive" "$receipt" "$evidence/provenance.json" \
   "$evidence/validation.txt" >"$evidence/evidence.sha256"
