@@ -39,13 +39,29 @@ config :spruce_goose, SpruceGoose.Web.Endpoint,
 # tests at the production authority database". Neither is acceptable, and the
 # second is dangerous.
 #
-# Defaults are exactly the previous values, so a local trust-auth setup is
-# unaffected.
+# Normalize empty CI-provider values for direct mix test invocations too.
+test_env = fn name, fallback ->
+  case System.get_env(name) do
+    nil -> fallback
+    "" -> fallback
+    value -> value
+  end
+end
+
+test_port =
+  case Integer.parse(test_env.("SPRUCE_GOOSE_TEST_DATABASE_PORT", "5432")) do
+    {port, ""} when port in 1..65_535 ->
+      port
+
+    _ ->
+      raise ArgumentError, "SPRUCE_GOOSE_TEST_DATABASE_PORT must be an integer in 1..65535"
+  end
+
 config :spruce_goose, SpruceGoose.Repo,
-  database: System.get_env("SPRUCE_GOOSE_TEST_DATABASE", "spruce_goose_test"),
-  username: System.get_env("SPRUCE_GOOSE_TEST_DATABASE_USERNAME", "postgres"),
-  hostname: System.get_env("SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME", "localhost"),
-  port: String.to_integer(System.get_env("SPRUCE_GOOSE_TEST_DATABASE_PORT", "5432")),
+  database: test_env.("SPRUCE_GOOSE_TEST_DATABASE", "spruce_goose_test"),
+  username: test_env.("SPRUCE_GOOSE_TEST_DATABASE_USERNAME", "postgres"),
+  hostname: test_env.("SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME", "localhost"),
+  port: test_port,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: 5
 

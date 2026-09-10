@@ -40,7 +40,7 @@ schema will not build on a released database wastes the answer.
 
 | # | Item | Closes | Tier | Kind | Size |
 | --- | --- | --- | --- | --- | --- |
-| R-01 | Make `mix hex.audit` pass | D-01, C-01 | T0 | patch | S — **verified below** |
+| R-01 | Restore the dependency acceptance gate | D-01, C-01 | T0 | patch | S — **verified below** |
 | R-02 | Adopt the SOP as a repository artifact | D-02, A-03(`norm`) | T0 | patch | S |
 | R-03 | Drop the SQL/PGQ dependency | D-03 | T0 | patch | S — **~20 lines** |
 | R-04 | Run the concurrency suite in CI | D-04, D-05, D-06 | T0 | patch | S |
@@ -82,9 +82,9 @@ Carried forward from the kernel plan, plus two the audit adds:
 
 Nothing downstream is checkable until these four land. Target: one working day.
 
-### R-01 · Make `mix hex.audit` pass
+### R-01 · Restore the dependency acceptance gate
 
-**Problem.** `scripts/ci-governed-release` runs `mix hex.audit` at line 2 under
+**Original audit observation.** `scripts/ci-governed-release` ran bare `mix hex.audit` under
 `set -euo pipefail`. It exits 1 with 41 advisories, so every gate after it —
 formatting, compilation, tests, the release build, provenance validation, the
 workspace-mutation check — is unreachable.
@@ -139,8 +139,9 @@ and steps 1–3 are drop-in:
    mandatory expiry date and a named owner, so `hex.audit` blocks on *new*
    advisories. Not a fix; a way to keep the other 12 gates running.
 
-**Exit gate.** `mix hex.audit` exits 0 (or exits 0 with an allowlist whose every
-entry has an unexpired date and an owner). `mix compile --warnings-as-errors`,
+**Exit gate.** `scripts/audit-dependencies` exits 0 after a complete supported
+audit; every accepted finding has a valid unexpired entry with an owner and
+rationale. See [the current gate contract](dependency-audit.md). `mix compile --warnings-as-errors`,
 `mix format --check-formatted`, and `mix ash_postgres.generate_migrations --check`
 all exit 0. Full suite failure set is unchanged from before the upgrade.
 
@@ -612,8 +613,9 @@ audit forces:
 7. Deploy only with backup, rollback, health, and source parity proof.
 8. **New —** every gate must run on a machine that is not Mama. A test that
    passes only on the production host has not run.
-9. **New —** no item is complete while `mix hex.audit` is red, because nothing
-   after it in the pipeline executes.
+9. No item is complete while `scripts/audit-dependencies` fails. Bare audit
+   diagnostics may report individually accepted findings; the wrapper owns
+   the acceptance decision.
 
 ## Completion
 
@@ -647,7 +649,7 @@ system's trust root. Review, then apply deliberately.
             - id: restore-dependency-audit-gate
               kind: openclaw
               title: Restore the dependency advisory gate
-              definition_of_done: mix hex.audit exits zero or blocks only on unexpired owner-attributed allowlist entries; the string-length-count configuration and OAuth client-resource extension are in place; warnings-as-errors compilation, formatting, migration drift, and the full suite pass with no new failures relative to the pre-upgrade baseline; the ash_ai disposition is recorded as an explicit upgrade or removal decision.
+              definition_of_done: scripts/audit-dependencies exits zero on a complete supported report with no unaccepted findings and a valid unexpired owner-attributed allowlist; the string-length-count configuration and OAuth client-resource extension are in place; warnings-as-errors compilation, formatting, migration drift, and the full suite pass with no new failures relative to the pre-upgrade baseline; the ash_ai disposition is recorded as an explicit upgrade or removal decision.
               depends_on: []
               input: {}
             - id: adopt-systemwide-sop-artifact
