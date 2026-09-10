@@ -56,6 +56,7 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
   end
 
   defp executable?(path), do: Bitwise.band(File.stat!(path).mode, 0o111) != 0
+
   defp before?(text, left, right) do
     case {:binary.match(text, left), :binary.match(text, right)} do
       {{left_index, _}, {right_index, _}} -> left_index < right_index
