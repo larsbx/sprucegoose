@@ -140,6 +140,7 @@ defmodule SpruceGoose.Web.AdminPlug do
         .panel{overflow:hidden;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 1px 2px rgb(20 40 25/.04)}.panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}.panel-head h2{margin:0;font-size:15px}
         .task-list{width:100%;border-collapse:collapse}.task-list th,.task-list td{padding:11px 14px;text-align:left;border-bottom:1px solid #edf0ed;vertical-align:middle}.task-list th{background:#fafbfa;color:#667069;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}.task-list tr:last-child td{border-bottom:0}.task-list tbody tr:hover{background:#f8faf8}
         code{font:12px ui-monospace,SFMono-Regular,Consolas,monospace;color:#465149}.task-title{min-width:260px;font-weight:600}.project{color:var(--muted)}
+        details{margin-top:7px;color:var(--muted);font-weight:400}summary{width:max-content;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer}.task-details{margin-top:8px;padding:9px 10px;border-left:3px solid #d5ddd7;background:#f7f9f7}.task-details p{margin:0 0 7px}.task-details ul{margin:0;padding-left:18px}.task-details li+li{margin-top:3px}.detail-kind{font-weight:700;text-transform:capitalize}
         .priority{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border:1px solid #ccd4ce;border-radius:5px;background:#f8faf8;font-weight:700}
         .state{display:inline-block;padding:3px 8px;border-radius:999px;background:#e9eeea;color:#4c5950;font-size:11px;font-weight:800;white-space:nowrap;text-transform:capitalize}.state--in-progress{background:#dcebea;color:#17615c}.state--waiting{background:#fff0ce;color:#755300}.state--completed{background:#dff0e3;color:#21603a}.state--ready{background:#e7e4f7;color:#51468c}.state--queued,.state--proposed{background:#e4ecf6;color:#355e83}
         form{margin:0}button{padding:6px 10px;border:1px solid #286b44;border-radius:6px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer}button:hover{background:#266b44}button:focus-visible,a:focus-visible{outline:3px solid #8fc9a3;outline-offset:2px}
@@ -169,8 +170,32 @@ defmodule SpruceGoose.Web.AdminPlug do
 
   defp task_row(task) do
     """
-    <tr><td><span class="priority">#{escape(task.priority || "-")}</span></td><td><span class="state #{state_class(task.state)}">#{state_label(task.state)}</span></td><td><code>#{escape(task.id)}</code></td><td class="project">#{escape(task.project || "-")}</td><td class="task-title">#{escape(task.title)}</td><td>#{task_control(task)}</td></tr>
+    <tr><td><span class="priority">#{escape(task.priority || "-")}</span></td><td><span class="state #{state_class(task.state)}">#{state_label(task.state)}</span></td><td><code>#{escape(task.id)}</code></td><td class="project">#{escape(task.project || "-")}</td><td class="task-title">#{escape(task.title)}#{task_details(task)}</td><td>#{task_control(task)}</td></tr>
     """
+  end
+
+  defp task_details(task) do
+    wait_reason = Map.get(task, :wait_reason)
+    references = Map.get(task, :references, [])
+
+    if wait_reason || references != [] do
+      reason =
+        if wait_reason, do: "<p><strong>Waiting:</strong> #{escape(wait_reason)}</p>", else: ""
+
+      refs =
+        Enum.map_join(references, "", fn reference ->
+          kind = Map.get(reference, "kind") || Map.get(reference, :kind, "reference")
+          value = Map.get(reference, "value") || Map.get(reference, :value, "")
+
+          "<li><span class=\"detail-kind\">#{escape(kind)}</span> <code>#{escape(value)}</code></li>"
+        end)
+
+      list = if refs == "", do: "", else: "<ul>#{refs}</ul>"
+
+      "<details><summary>Operational details</summary><div class=\"task-details\">#{reason}#{list}</div></details>"
+    else
+      ""
+    end
   end
 
   defp active?(%{state: state}), do: state in [:in_progress, "in_progress"]

@@ -43,7 +43,12 @@ defmodule SpruceGoose.Web.AdminPlugTest do
              title: "Review <script>alert('no')</script>",
              state: "in_progress",
              priority: 1,
-             project: "sprucegoose-dogfood"
+             project: "sprucegoose-dogfood",
+             wait_reason: "Release blocked: migration <drift>",
+             references: [
+               %{"kind" => "repo", "value" => "root/sprucegoose@df293f02"},
+               %{"kind" => "regression", "value" => "431/431 passing"}
+             ]
            }
          ]
        }}
@@ -71,6 +76,9 @@ defmodule SpruceGoose.Web.AdminPlugTest do
     assert conn.resp_body =~ "Operations"
     assert conn.resp_body =~ "tsk-20260909T165852Z-b80d7dc7"
     assert conn.resp_body =~ "Review &lt;script&gt;alert(&#39;no&#39;)&lt;/script&gt;"
+    assert conn.resp_body =~ "Release blocked: migration &lt;drift&gt;"
+    assert conn.resp_body =~ "root/sprucegoose@df293f02"
+    assert conn.resp_body =~ "431/431 passing"
 
     assert conn.resp_body =~
              ~s(action="/admin/tasks/tsk-20260909T165852Z-b80d7dc7/done")
