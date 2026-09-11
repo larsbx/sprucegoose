@@ -110,6 +110,7 @@ defmodule SpruceGoose.CLI.Command do
        "show PERMIT_ID",
        "reschedule PERMIT_ID"
      ]},
+    {"deployment", SpruceGoose.Deployment.CLI.usage()},
     {"release",
      [
        "inspect-provenance ARCHIVE",
@@ -494,6 +495,7 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 
   def parse(["derivation", "show", permit_id]), do: {:ok, {:show_derivation, permit_id}}
+  def parse(["deployment" | args]), do: SpruceGoose.Deployment.CLI.parse(args)
 
   def parse(["derivation", "reschedule", permit_id]),
     do: {:ok, {:reschedule_derivation, permit_id}}

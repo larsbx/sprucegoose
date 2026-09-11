@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLITest do
 
   test "returns scoped help for every command family and rejects unknown families" do
     families =
-      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger runtime outbox derivation)
+      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger runtime outbox derivation deployment)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -143,6 +143,108 @@ defmodule SpruceGoose.CLITest do
 
     assert {:error, "invalid derivation admit arguments"} =
              Command.parse(["derivation", "admit", "--action", "shell"])
+  end
+
+  test "parses the deployment command family into actor-bound verbs" do
+    hex = "sha256:" <> String.duplicate("1", 64)
+
+    assert {:ok, {:deployment, :accept_release, %{project: "sprucegoose", attrs: attrs}}} =
+             Command.parse(
+               ~w(deployment release-accept sprucegoose --forge-instance mama --repository root/sprucegoose --commit) ++
+                 [
+                   String.duplicate("a", 40),
+                   "--pipeline-number",
+                   "7",
+                   "--pipeline-digest",
+                   String.duplicate("c", 64),
+                   "--archive",
+                   hex,
+                   "--image",
+                   hex
+                 ]
+             )
+
+    assert attrs.pipeline_number == 7
+    assert attrs.artifacts == %{archive: hex, image: hex}
+
+    assert {:error, "invalid deployment release-accept arguments"} =
+             Command.parse(~w(deployment release-accept sprucegoose --commit abc))
+
+    assert {:ok,
+            {:deployment, :create, %{release_id: "rel-x", environment: :production, pinned: true}}} =
+             Command.parse(~w(deployment create rel-x production --pinned))
+
+    assert {:error, :usage} = Command.parse(~w(deployment create rel-x prod))
+
+    assert {:ok, {:deployment, :stage, %{deployment_id: "dpl-1"}}} =
+             Command.parse(~w(deployment stage dpl-1))
+
+    assert {:ok, {:deployment, :cancel, %{deployment_id: "dpl-1", reason: "stop"}}} =
+             Command.parse(~w(deployment cancel dpl-1 stop))
+
+    assert {:ok, {:deployment, :observe_health, %{status: :unhealthy, detail: "probe failed"}}} =
+             Command.parse(["deployment", "observe-health", "dpl-1", "unhealthy", "probe failed"])
+
+    assert {:ok,
+            {:deployment, :authorize,
+             %{
+               deployment_id: "dpl-1",
+               attrs: %{
+                 action: :execute_rollback,
+                 approval_reference: "sop-1",
+                 target_deployment_id: "dpl-0",
+                 ttl_seconds: 60
+               }
+             }}} =
+             Command.parse(
+               ~w(deployment authorize dpl-1 --action execute_rollback --reference sop-1 --target dpl-0 --ttl 60)
+             )
+
+    assert {:error, "invalid deployment action"} =
+             Command.parse(~w(deployment authorize dpl-1 --action sudo --reference r))
+
+    routing =
+      Jason.encode!(%{
+        observation: %{
+          observed_at: "2026-09-10T12:00:00Z",
+          hostname: "h",
+          resolved_addresses: ["1.1.1.1"],
+          certificate: %{not_after: "2026-12-01T00:00:00Z", sans: ["h"], trusted: true},
+          route: %{upstream: "u", state: "active"},
+          recovery: %{restore_verified: true, config_backup: "b"}
+        },
+        expected: %{hostname: "h", address: "1.1.1.1", upstream: "u"}
+      })
+
+    assert {:ok, {:deployment, :request, %{authorization_id: "dpa-1", opts: opts}}} =
+             Command.parse([
+               "deployment",
+               "request",
+               "dpa-1",
+               "--routing",
+               routing,
+               "--recovery-verified"
+             ])
+
+    assert %DateTime{} = opts[:routing].observation.observed_at
+    assert opts[:routing].observation.certificate.trusted == true
+    assert opts[:policy] == %{recovery: %{restore_verified: true}}
+
+    assert {:error, message} =
+             Command.parse(["deployment", "request", "dpa-1", "--routing", "{}"])
+
+    assert message =~ "routing evidence"
+
+    assert {:ok, {:deployment, :list, %{project: "sprucegoose"}}} =
+             Command.parse(~w(deployment list --project sprucegoose))
+
+    assert {:ok, {:deployment, :events, %{deployment_id: "dpl-1"}}} =
+             Command.parse(~w(deployment events dpl-1))
+
+    assert {:ok, {:deployment, :reconcile, %{operation_id: "dpo-1"}}} =
+             Command.parse(~w(deployment reconcile dpo-1))
+
+    assert {:error, :usage} = Command.parse(~w(deployment execute dpl-1))
   end
 
   test "unbound task add is retired from the public command surface" do

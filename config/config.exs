@@ -8,6 +8,7 @@ config :spruce_goose,
     SpruceGoose.Accounts,
     SpruceGoose.Actors,
     SpruceGoose.Derivations.Domain,
+    SpruceGoose.Deployment.Domain,
     SpruceGoose.Notes,
     SpruceGoose.Runtime.Domain,
     SpruceGoose.Workflows,
@@ -47,11 +48,14 @@ config :spruce_goose, SpruceGoose.Web.Endpoint,
 
 config :spruce_goose, Oban,
   repo: SpruceGoose.Repo,
-  queues: [outbox: 1, derivations: 1]
+  queues: [outbox: 1, derivations: 1, deployments: 1]
 
 config :spruce_goose, :start_outbox_dispatcher, false
 config :spruce_goose, :outbox_handler, nil
 config :spruce_goose, :derivation_executor_actor, nil
+config :spruce_goose, :deployment_executor_actor, nil
+config :spruce_goose, :deployment_host_adapter, nil
+config :spruce_goose, :deployment_operation_timeout_ms, 600_000
 
 config :spruce_goose, :derivation_handlers, %{
   verify_artifact: SpruceGoose.Derivations.VerifyArtifact
