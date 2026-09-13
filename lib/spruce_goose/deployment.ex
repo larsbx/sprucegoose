@@ -423,11 +423,11 @@ defmodule SpruceGoose.Deployment do
   # observation is a refusal there, never a pass. Where it is not required, a
   # supplied observation is still evaluated rather than ignored.
   defp routing_evidence(%{requires_routing: true}, nil), do: {:error, :routing_evidence_required}
-  defp routing_evidence(_record, nil), do: {:ok, nil}
+  defp routing_evidence(%{requires_routing: false}, nil), do: {:ok, nil}
 
-  defp routing_evidence(_record, %{observation: observation, expected: expected}) do
-    case Routing.evaluate(observation, expected) do
-      {:ok, :routing_ready} ->
+  defp routing_evidence(%{requires_routing: true}, %{observation: observation, expected: expected}) do
+    case Routing.check_requirement({:required, expected}, observation) do
+      :ok ->
         {:ok,
          %{
            "routing" => "routing_ready",
@@ -435,10 +435,13 @@ defmodule SpruceGoose.Deployment do
            "upstream" => expected[:upstream]
          }}
 
-      {:error, reasons} ->
-        {:error, {:routing_unsafe, reasons}}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  defp routing_evidence(%{requires_routing: false}, _observation),
+    do: {:error, :routing_not_declared}
 
   defp routing_evidence(_record, _), do: {:error, :invalid_routing_observation}
 

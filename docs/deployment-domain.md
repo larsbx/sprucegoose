@@ -100,8 +100,8 @@ Preconditions:
 
 - **deploy**: state `staged`; where routing is required, fresh routing
   evidence that `Routing.evaluate/3` accepts — omitted evidence is
-  `:routing_evidence_required`, never a pass; supplied evidence is evaluated
-  even where not required.
+  `:routing_evidence_required`, never a pass. Routing evidence is refused when
+  the authoritative deployment record declares the environment unrouted.
 - **rollback**: state in `ready | failed | deploying | verifying`; target is a
   distinct, `ready` deployment of a different release in the same project and
   environment.
@@ -169,3 +169,20 @@ in-process structs: the database, not a signature, is the authority.
 Historical native ledger rows are not imported by this change; they keep
 their meaning under the unchanged state vocabulary and can be imported as a
 grandfathered baseline in a separate governed transaction.
+
+## Mirror reconciliation provenance
+
+The deterministic build-manifest, typed artifact-verification, routing-boundary,
+and fail-closed retention corrections were reconciled from GitHub mirror PR #8
+commits `fa15a5bbb839def46c24fb54cfb29115552a4d5d` and
+`28045fa16c7dbd1113a510f1d6fdc06c3dd61aec` onto the deployment domain merged
+through PRs #9 and #10. The older `Contract`, `StateMachine`, `Release`, and
+`Operation` modules were not copied over their newer lifecycle and Ash resource
+counterparts.
+
+This reconciliation does not authenticate adapter receipts or alter the
+persistent operation schema. Binding authenticated completion evidence to the
+operation, deployment, action, release, and observation time remains a separate
+admission/adapter change requiring a migration and end-to-end recovery tests.
+Forgejo remains merge authority and Woodpecker remains canonical CI; this GitHub
+branch is review evidence only.
