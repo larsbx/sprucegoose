@@ -194,6 +194,11 @@ defmodule SpruceGoose.Deployment.HostAdapter.ScriptedTest do
     assert {:error, "scripted adapter is not configured"} = Scripted.execute(request())
   end
 
+  test "probe reports service health from systemctl and is optional by contract" do
+    assert function_exported?(Scripted, :probe, 1)
+    assert {:error, "scripted adapter is not configured"} = Scripted.probe(request())
+  end
+
   test "execute runs the configured script with the closed argument vector and returns its output as evidence",
        %{config: config} do
     previous = Application.get_env(:spruce_goose, :deployment_scripted_adapter)

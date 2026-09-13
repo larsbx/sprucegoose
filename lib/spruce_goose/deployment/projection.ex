@@ -92,7 +92,9 @@ defmodule SpruceGoose.Deployment.Projection do
          release_id: payload["release_id"],
          requires_routing: payload["requires_routing"] == true,
          state: :queued,
-         health: %{status: :unknown, detail: nil},
+         active: false,
+         superseded_by: nil,
+         health: %{status: :unknown, detail: nil, source: nil},
          cancellation_reason: nil,
          rollback_target: nil,
          operations: %{},
@@ -120,10 +122,26 @@ defmodule SpruceGoose.Deployment.Projection do
       {:ok,
        %{
          projection
-         | health: %{status: String.to_existing_atom(status), detail: payload["detail"]}
+         | health: %{
+             status: String.to_existing_atom(status),
+             detail: payload["detail"],
+             source: payload["source"]
+           }
        }}
     end
   end
+
+  # The live-release pointer moves only through these two events.
+  defp step("DeploymentActivated", _payload, projection) do
+    with :ok <- admitted(projection, :activate),
+         do: {:ok, %{projection | active: true, superseded_by: nil}}
+  end
+
+  defp step("DeploymentSuperseded", %{"by" => by}, %{active: true} = projection)
+       when is_binary(by) and by != "",
+       do: {:ok, %{projection | active: false, superseded_by: by}}
+
+  defp step("DeploymentSuperseded", _payload, _projection), do: {:error, :not_active}
 
   defp step("DeploymentCancellationRequested", %{"reason" => reason}, projection)
        when is_binary(reason) and reason != "" and byte_size(reason) <= @max_reason do

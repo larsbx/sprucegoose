@@ -51,6 +51,7 @@ defmodule SpruceGoose.Deployment do
       transaction(fn ->
         input = %{
           release_id: release.id,
+          project_id: release.project_id,
           environment: environment,
           pinned: Keyword.get(opts, :pinned, false)
         }
@@ -101,25 +102,37 @@ defmodule SpruceGoose.Deployment do
 
   def cancel(_, _), do: {:error, :invalid_cancellation_reason}
 
-  @doc "Record a verification outcome: healthy promotes to ready, unhealthy fails closed."
-  def observe_health(deployment_id, status, detail) when status in [:healthy, :unhealthy] do
+  @doc """
+  Record a verification outcome: healthy promotes to ready, unhealthy fails
+  closed. `source` names who observed it: `"adapter"` for a host probe,
+  `"operator"` for an assertion. The ledger keeps the distinction.
+  """
+  def observe_health(deployment_id, status, detail, source \\ "operator")
+
+  def observe_health(deployment_id, status, detail, source)
+      when status in [:healthy, :unhealthy] and source in ["operator", "adapter"] do
     mutate(deployment_id, fn record ->
       with :ok <- require_admitted(record, :health),
            {:ok, head} <-
              Ledger.append(
                record.deployment_id,
                "DeploymentHealthObserved",
-               %{"status" => Atom.to_string(status), "detail" => detail},
+               %{"status" => Atom.to_string(status), "detail" => detail, "source" => source},
                record.last_event
              ),
            {:ok, record} <-
-             project_row(record, %{health_status: status, health_detail: detail, last_event: head}) do
+             project_row(record, %{
+               health_status: status,
+               health_detail: detail,
+               health_source: source,
+               last_event: head
+             }) do
         transition(record, if(status == :healthy, do: :ready, else: :failed))
       end
     end)
   end
 
-  def observe_health(_, _, _), do: {:error, :invalid_verification_status}
+  def observe_health(_, _, _, _), do: {:error, :invalid_verification_status}
 
   # --- authorization and execution requests ---------------------------------------
 
@@ -297,6 +310,20 @@ defmodule SpruceGoose.Deployment do
 
   # --- reads --------------------------------------------------------------------------------
 
+  @doc "The deployment whose release is live in `environment`, if any."
+  def active(project_key, environment) do
+    with {:ok, project} <- Authz.read_one(Project, key: project_key) do
+      Record
+      |> Ash.Query.filter_input(project_id: project.id, environment: environment, active: true)
+      |> Authz.read()
+      |> case do
+        {:ok, [record]} -> {:ok, record}
+        {:ok, []} -> {:ok, nil}
+        error -> error
+      end
+    end
+  end
+
   @doc "The projection replayed from the certified stream alone."
   def projection(deployment_id), do: Ledger.project(deployment_id)
 
@@ -308,6 +335,9 @@ defmodule SpruceGoose.Deployment do
         [
           {:state, record.state, projection.state},
           {:health, record.health_status, projection.health.status},
+          {:health_source, record.health_source, projection.health.source},
+          {:active, record.active, projection.active},
+          {:superseded_by, record.superseded_by, projection.superseded_by},
           {:cancellation_reason, record.cancellation_reason, projection.cancellation_reason},
           {:rollback_target, record.rollback_target_id,
            projection.rollback_target && projection.rollback_target.deployment_id},
@@ -334,14 +364,27 @@ defmodule SpruceGoose.Deployment do
     end
   end
 
+  # Two locks, always in this order: the environment first, because activation
+  # touches two deployments of one environment and a fixed order is what keeps
+  # concurrent mutations from deadlocking; then the deployment itself.
   defp mutate(deployment_id, fun) do
     transaction(fn ->
-      # AUTHORIZATION: the actor-bound read below is the first data access; the lock only serializes this deployment.
-      Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [deployment_id])
-
-      with {:ok, record} <- Authz.read_one(Record, deployment_id: deployment_id), do: fun.(record)
+      with {:ok, record} <- Authz.read_one(Record, deployment_id: deployment_id) do
+        lock(environment_key(record))
+        lock(deployment_id)
+        # Re-read under the locks: the first read only located the environment.
+        with {:ok, record} <- Authz.read_one(Record, deployment_id: deployment_id),
+             do: fun.(record)
+      end
     end)
   end
+
+  defp lock(key) do
+    # AUTHORIZATION: the actor-bound read in mutate/2 precedes this; the lock only serializes writers.
+    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
+  end
+
+  defp environment_key(record), do: "environment:#{record.project_id}:#{record.environment}"
 
   defp with_operation(operation_id, fun) do
     with {:ok, operation} <- Authz.read_one(Operation, operation_id: operation_id),
@@ -365,12 +408,77 @@ defmodule SpruceGoose.Deployment do
       terminal_at =
         if Lifecycle.terminal?(to) and is_nil(record.terminal_at), do: DateTime.utc_now()
 
-      project_row(record, %{
-        state: to,
-        last_event: head,
-        terminal_at: terminal_at || record.terminal_at
-      })
+      with {:ok, record} <-
+             project_row(record, %{
+               state: to,
+               last_event: head,
+               terminal_at: terminal_at || record.terminal_at
+             }) do
+        if to == :ready, do: activate(record, "ready"), else: {:ok, record}
+      end
     end
+  end
+
+  # Move the environment's live-release pointer to `record`. The deployment it
+  # displaces is told so on its own stream; a pointer already on `record` moves
+  # nothing. Runs under the environment lock taken in mutate/2.
+  defp activate(record, cause) do
+    with {:ok, current} <- current_active(record),
+         {:ok, _} <- supersede(current, record, cause) do
+      if current && current.id == record.id do
+        {:ok, record}
+      else
+        with {:ok, head} <-
+               Ledger.append(
+                 record.deployment_id,
+                 "DeploymentActivated",
+                 %{"cause" => cause, "supersedes" => current && current.deployment_id},
+                 record.last_event
+               ),
+             do:
+               project_row(record, %{
+                 active: true,
+                 superseded_at: nil,
+                 superseded_by: nil,
+                 last_event: head
+               })
+      end
+    end
+  end
+
+  defp current_active(record) do
+    Record
+    |> Ash.Query.filter_input(
+      project_id: record.project_id,
+      environment: record.environment,
+      active: true
+    )
+    |> Authz.read()
+    |> case do
+      {:ok, [current]} -> {:ok, current}
+      {:ok, []} -> {:ok, nil}
+      error -> error
+    end
+  end
+
+  defp supersede(nil, _successor, _cause), do: {:ok, nil}
+  defp supersede(%{id: id}, %{id: id}, _cause), do: {:ok, nil}
+
+  defp supersede(current, successor, cause) do
+    with {:ok, head} <-
+           Ledger.append(
+             current.deployment_id,
+             "DeploymentSuperseded",
+             %{"by" => successor.deployment_id, "cause" => cause},
+             current.last_event
+           ),
+         do:
+           project_row(current, %{
+             active: false,
+             superseded_at: DateTime.utc_now(),
+             superseded_by: successor.deployment_id,
+             last_event: head
+           })
   end
 
   defp project_row(record, attrs) do
@@ -542,6 +650,16 @@ defmodule SpruceGoose.Deployment do
     do: project_row(record, %{reclaimed_at: DateTime.utc_now()})
 
   defp after_completion(%{action: :execute_reclaim}, record), do: {:ok, record}
+
+  defp after_completion(%{action: :execute_rollback, outcome: :succeeded} = operation, record) do
+    with {:ok, record} <- transition_or_refuse(record, :rolled_back, operation.operation_id),
+         {:ok, target} <- Authz.read_one(Record, deployment_id: record.rollback_target_id),
+         :ok <- require_admitted(target, :activate),
+         {:ok, _target} <- activate(target, "rollback") do
+      # The pointer moved to the target; this record's own view of `active` is stale.
+      Authz.read_one(Record, deployment_id: record.deployment_id)
+    end
+  end
 
   defp after_completion(operation, record),
     do: transition_or_refuse(record, lifecycle_after(operation), operation.operation_id)

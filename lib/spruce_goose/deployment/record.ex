@@ -15,6 +15,7 @@ defmodule SpruceGoose.Deployment.Record do
 
   alias SpruceGoose.Checks.{HasRole, Readable}
   alias SpruceGoose.Deployment.{Lifecycle, Release}
+  alias SpruceGoose.Workflows.Project
 
   postgres do
     table("deployments")
@@ -59,6 +60,12 @@ defmodule SpruceGoose.Deployment.Record do
     )
 
     attribute(:health_detail, :string, public?: true)
+    attribute(:health_source, :string, public?: true)
+    # The live-release pointer: at most one active deployment per project and
+    # environment, enforced by a partial unique index.
+    attribute(:active, :boolean, allow_nil?: false, default: false, public?: true)
+    attribute(:superseded_at, :utc_datetime_usec, public?: true)
+    attribute(:superseded_by, :string, public?: true)
     attribute(:cancellation_reason, :string, public?: true)
     attribute(:rollback_target_id, :string, public?: true)
     attribute(:pinned, :boolean, allow_nil?: false, default: false, public?: true)
@@ -74,6 +81,12 @@ defmodule SpruceGoose.Deployment.Record do
       attribute_writable?(true)
       public?(true)
     end
+
+    belongs_to :project, Project do
+      allow_nil?(false)
+      attribute_writable?(true)
+      public?(true)
+    end
   end
 
   actions do
@@ -81,7 +94,7 @@ defmodule SpruceGoose.Deployment.Record do
 
     create :create do
       primary?(true)
-      accept([:release_id, :environment, :pinned])
+      accept([:release_id, :project_id, :environment, :pinned])
 
       change(fn changeset, _context ->
         environment = Ash.Changeset.get_attribute(changeset, :environment)
@@ -104,6 +117,10 @@ defmodule SpruceGoose.Deployment.Record do
         :state,
         :health_status,
         :health_detail,
+        :health_source,
+        :active,
+        :superseded_at,
+        :superseded_by,
         :cancellation_reason,
         :rollback_target_id,
         :terminal_at,

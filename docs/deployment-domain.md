@@ -70,6 +70,33 @@ is deploying exactly while its deploy operation is open, and **at most one
 operation may be open per deployment**. A request while one is open is
 refused as `:operation_in_flight`, by the facade and on replay alike.
 
+### The live-release pointer
+
+Each project and environment has at most one **active** deployment: the one
+whose release is live. `deployments_one_active_per_environment` is a partial
+unique index, so the pointer is a database invariant. It moves only through
+two events:
+
+| Event | On whose stream | When |
+| --- | --- | --- |
+| `DeploymentActivated` (`cause: ready` or `rollback`, `supersedes`) | the deployment gaining the pointer | it reaches `ready`, or it is the target of a rollback that landed |
+| `DeploymentSuperseded` (`by`, `cause`) | the deployment losing it | another deployment in its environment was activated |
+
+`deployment active PROJECT ENV` reads the pointer. Every mutation takes the
+environment's advisory lock before the deployment's, so activation, which
+touches two deployments, cannot deadlock against either of their own
+mutations.
+
+### Health
+
+`DeploymentHealthObserved` carries a `source`: `adapter` when the executor
+probed the host through `HostAdapter.probe/1`, `operator` when a person
+asserted it with `deployment observe-health`. The row keeps it as
+`health_source`. `probe/1` is optional; an adapter without it leaves
+verification to an operator, and the ledger says which happened. After a
+deploy completes the executor probes; a failed probe leaves the deployment
+`verifying` and retries the probe alone, never the effect.
+
 ### Certified stream
 
 Every mutation appends one event on `deployment:<deployment_id>` in the same
@@ -90,6 +117,7 @@ Events distinguish what was requested from what happened:
 | `DeploymentOperationCompleted` | outcome, with `source` = `executor` (adapter receipt) or `observation` (host inspection) |
 | `DeploymentOperationObserved` | what host inspection reported |
 | `DeploymentTransitionRefused` | a completion was recorded although the lifecycle could not move on it; names `from` and `to` |
+| `DeploymentActivated`, `DeploymentSuperseded` | the live-release pointer moved |
 
 A deploy is not "executed" until its completion is recorded. Completion is
 total: the host's outcome is never discarded because the lifecycle refused a
@@ -148,13 +176,13 @@ success, because that is a reconcile, not an abandonment. Completion advances th
 
 ### Host adapters
 
-`SpruceGoose.Deployment.HostAdapter` is the behaviour: `execute/1` and
-`observe/1` over an identity-only request. `HostAdapter.Scripted` drives the
+`SpruceGoose.Deployment.HostAdapter` is the behaviour: `execute/1`,
+`observe/1`, and optional `probe/1` over an identity-only request. `HostAdapter.Scripted` drives the
 existing `scripts/activate-sprucegoose-release`: it derives every path from
 static configuration and the release's governed receipt, passes the operation
 ID as the script's `--task` and confirmation token, and observes by reading
 the activation record and failed-release marker the script itself leaves
-behind. The script's "activation record already exists" check is the host-side
+behind. Its probe is `systemctl --user is-active` on the configured service. The script's "activation record already exists" check is the host-side
 duplicate detection.
 
 The live host has not run this adapter. Before the standalone control plane
@@ -172,6 +200,7 @@ sprucegoose deployment request AUTHORIZATION_ID [--routing JSON] [--recovery-ver
 sprucegoose deployment observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]
 sprucegoose deployment reconcile|abandon OPERATION_ID [REASON]
 sprucegoose deployment show|events DEPLOYMENT_ID
+sprucegoose deployment active PROJECT preview|staging|production
 sprucegoose deployment list [--project KEY]
 ```
 

@@ -68,6 +68,7 @@ defmodule SpruceGoose.Deployment.Lifecycle do
   ledger refuses any history the facade could not have written.
   """
   def admits?(state, _environment, :health), do: state == :verifying
+  def admits?(state, _environment, :activate), do: state == :ready
   def admits?(state, _environment, :cancel), do: match?({:ok, _}, transition(state, :cancelled))
   def admits?(state, _environment, :rollback), do: state in @rollback_sources
   def admits?(state, _environment, {:operation, :execute_deploy}), do: state == :staged

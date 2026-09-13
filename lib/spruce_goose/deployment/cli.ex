@@ -100,6 +100,13 @@ defmodule SpruceGoose.Deployment.CLI do
          do: {:ok, %{deployments: Enum.map(records, &record_json/1)}}
   end
 
+  def run(:active, %{project: project, environment: environment}) do
+    with {:ok, record} <- Deployment.active(project, environment),
+         do:
+           {:ok,
+            %{project: project, environment: environment, active: record && record_json(record)}}
+  end
+
   def run(:events, %{deployment_id: id}) do
     with {:ok, _record} <- Authz.read_one(Record, deployment_id: id),
          {:ok, events} <- Ledger.read(id) do
@@ -228,6 +235,13 @@ defmodule SpruceGoose.Deployment.CLI do
     do: {:ok, {:deployment, :abandon, %{operation_id: id, reason: reason}}}
 
   def parse(["show", id]), do: {:ok, {:deployment, :show, %{deployment_id: id}}}
+
+  def parse(["active", project, environment]) when environment in ~w(preview staging production),
+    do:
+      {:ok,
+       {:deployment, :active,
+        %{project: project, environment: String.to_existing_atom(environment)}}}
+
   def parse(["events", id]), do: {:ok, {:deployment, :events, %{deployment_id: id}}}
 
   def parse(["list" | args]) do
@@ -249,6 +263,7 @@ defmodule SpruceGoose.Deployment.CLI do
       "reconcile OPERATION_ID",
       "abandon OPERATION_ID REASON",
       "show DEPLOYMENT_ID",
+      "active PROJECT preview|staging|production",
       "list [--project KEY]",
       "events DEPLOYMENT_ID"
     ]
@@ -320,8 +335,11 @@ defmodule SpruceGoose.Deployment.CLI do
       :environment,
       :requires_routing,
       :state,
+      :active,
+      :superseded_by,
       :health_status,
       :health_detail,
+      :health_source,
       :cancellation_reason,
       :rollback_target_id,
       :pinned,

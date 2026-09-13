@@ -16,7 +16,7 @@ defmodule SpruceGoose.Deployment.Executor do
 
   alias SpruceGoose.{Authz, Deployment}
   alias SpruceGoose.Actors.Actor
-  alias SpruceGoose.Deployment.Operation
+  alias SpruceGoose.Deployment.{Operation, Record}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"operation_id" => operation_id}} = job)
@@ -35,8 +35,10 @@ defmodule SpruceGoose.Deployment.Executor do
   def execute(operation_id, executor_id, adapter) do
     with {:ok, operation} <- Authz.read_one(Operation, operation_id: operation_id) do
       case operation.phase do
+        # A completed deploy whose deployment is still verifying is re-probed,
+        # so a failed probe retries without touching the host again.
         :completed ->
-          {:discard, "operation already completed"}
+          probe_or_discard(operation, adapter)
 
         :requested ->
           with(
@@ -77,6 +79,44 @@ defmodule SpruceGoose.Deployment.Executor do
     end
   end
 
+  # After a deploy lands the host is asked whether the service is healthy; an
+  # adapter without probe/1 leaves that judgement to an operator, on the record.
+  defp probe(%{action: :execute_deploy} = operation, adapter) do
+    with {:ok, %{deployment_id: deployment_id} = request} <-
+           Deployment.operation_request(operation),
+         {:ok, %{state: :verifying}} <- Authz.read_one(Record, deployment_id: deployment_id) do
+      if function_exported?(adapter, :probe, 1) do
+        case adapter.probe(request) do
+          {:ok, %{status: status} = health} when status in [:healthy, :unhealthy] ->
+            Deployment.observe_health(deployment_id, status, health[:detail], "adapter")
+
+          {:ok, other} ->
+            {:error, "adapter returned malformed health: #{inspect(other)}"}
+
+          {:error, reason} ->
+            {:error, "health probe failed: " <> message(reason)}
+        end
+      else
+        {:ok, :operator_verifies}
+      end
+    else
+      {:ok, _not_verifying} -> {:ok, :nothing_to_probe}
+      error -> error
+    end
+  end
+
+  defp probe(_operation, _adapter), do: {:ok, :nothing_to_probe}
+
+  defp probe_or_discard(operation, adapter) do
+    case probe(operation, adapter) do
+      {:ok, reason} when reason in [:nothing_to_probe, :operator_verifies] ->
+        {:discard, "operation already completed"}
+
+      other ->
+        other
+    end
+  end
+
   defp reconcile(operation, adapter) do
     with {:ok, request} <- Deployment.operation_request(operation),
          {:ok, %{status: status} = observation} <- observe(adapter, request),
@@ -111,11 +151,21 @@ defmodule SpruceGoose.Deployment.Executor do
   end
 
   defp complete(operation, outcome, attrs, source) do
-    Deployment.complete_operation(operation.operation_id, outcome, %{
-      evidence_digest: attrs[:evidence_digest],
-      detail: attrs[:detail],
-      source: source
-    })
+    with {:ok, completed} <-
+           Deployment.complete_operation(operation.operation_id, outcome, %{
+             evidence_digest: attrs[:evidence_digest],
+             detail: attrs[:detail],
+             source: source
+           }),
+         do: probe(completed, adapter_for(completed, source))
+  end
+
+  # The adapter that produced this completion is the one asked to probe.
+  defp adapter_for(_operation, _source) do
+    case adapter() do
+      {:ok, adapter} -> adapter
+      _ -> nil
+    end
   end
 
   defp normalize({:ok, _}), do: :ok

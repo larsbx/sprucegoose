@@ -22,6 +22,12 @@ defmodule SpruceGoose.DeploymentTest do
     def observe(_request), do: {:ok, %{status: :succeeded, detail: "running"}}
   end
 
+  defmodule ProbingAdapter do
+    def execute(_request), do: {:ok, %{detail: "applied"}}
+    def observe(_request), do: {:ok, %{status: :succeeded}}
+    def probe(_request), do: {:ok, Application.get_env(:spruce_goose, :test_host_health)}
+  end
+
   defmodule FailingAdapter do
     def execute(_request), do: {:error, "systemctl restart failed"}
     def observe(_request), do: {:ok, %{status: :failed, detail: "service inactive"}}
@@ -207,7 +213,8 @@ defmodule SpruceGoose.DeploymentTest do
              "DeploymentOperationCompleted",
              "DeploymentTransitioned",
              "DeploymentHealthObserved",
-             "DeploymentTransitioned"
+             "DeploymentTransitioned",
+             "DeploymentActivated"
            ]
 
     requested = Enum.find(events, &(&1.event_type == "DeploymentOperationRequested"))
@@ -742,6 +749,103 @@ defmodule SpruceGoose.DeploymentTest do
     {:ok, events} = Ledger.read(completed.deployment.deployment_id)
     assert %{payload: %{"from" => "ready", "to" => "verifying"}} = List.last(events)
     assert List.last(events).event_type == "DeploymentTransitionRefused"
+  end
+
+  # --- live-release pointer (G3) ----------------------------------------------------------------
+
+  test "one deployment is live per environment; ready moves the pointer and rollback moves it back",
+       %{system: system} do
+    project = project_with_custody("live", @archive)
+    approver = actor("live-approver", :human, [:approver])
+    executor = actor("live-executor", :agent, [:deployment_executor])
+
+    accept = fn n ->
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: n))
+      end)
+    end
+
+    {:ok, rel_a} = accept.(1)
+    {:ok, rel_b} = accept.(2)
+
+    assert {:ok, nil} = as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    a = ready_path(rel_a.release_id, :healthy, system)
+    assert a.active
+
+    assert {:ok, %{deployment_id: live}} =
+             as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    assert live == a.deployment_id
+
+    # B becomes ready: A is superseded on its own stream, B holds the pointer.
+    b = ready_path(rel_b.release_id, :healthy, system)
+    assert b.active
+    a = Ash.get!(Record, a.id, authorize?: false)
+    refute a.active
+    assert a.superseded_by == b.deployment_id
+    assert a.superseded_at
+    {:ok, a_events} = Ledger.read(a.deployment_id)
+
+    assert %{event_type: "DeploymentSuperseded", payload: %{"by" => by, "cause" => "ready"}} =
+             List.last(a_events)
+
+    assert by == b.deployment_id
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(a.deployment_id) end)
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+
+    # The database refuses a second active deployment in the environment outright.
+    assert {:error,
+            %Postgrex.Error{postgres: %{constraint: "deployments_one_active_per_environment"}}} =
+             Ecto.Adapters.SQL.query(
+               Repo,
+               "UPDATE deployments SET active = true, superseded_at = NULL, superseded_by = NULL WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(a.id)],
+               mode: :savepoint
+             )
+
+    # Rolling B back to A lands the pointer on A again, with the cause recorded.
+    {:ok, auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{
+          action: :execute_rollback,
+          target_deployment_id: a.deployment_id,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, op} = as(system, fn -> Deployment.request(auth.authorization_id) end)
+    {:ok, _} = as(executor, fn -> Deployment.start_operation(op.operation_id, executor.name) end)
+
+    {:ok, op} =
+      as(executor, fn -> Deployment.complete_operation(op.operation_id, :succeeded, %{}) end)
+
+    assert op.deployment.state == :rolled_back
+    refute op.deployment.active
+    assert op.deployment.superseded_by == a.deployment_id
+
+    a = Ash.get!(Record, a.id, authorize?: false)
+    assert a.active
+    assert is_nil(a.superseded_by)
+    {:ok, a_events} = Ledger.read(a.deployment_id)
+
+    assert %{
+             event_type: "DeploymentActivated",
+             payload: %{"cause" => "rollback", "supersedes" => supersedes}
+           } = List.last(a_events)
+
+    assert supersedes == b.deployment_id
+
+    assert {:ok, %{deployment_id: ^live}} =
+             as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(a.deployment_id) end)
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+
+    # Environments are independent pointers.
+    {:ok, preview} = as(system, fn -> Deployment.create(rel_a.release_id, :preview) end)
+    assert preview.project_id == project.id
+    assert {:ok, nil} = as(system, fn -> Deployment.active(project.key, :preview) end)
   end
 
   # --- executor ------------------------------------------------------------------------------

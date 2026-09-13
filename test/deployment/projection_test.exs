@@ -74,7 +74,7 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
     assert {:ok, projection} = Projection.reduce(events)
     assert projection.state == :ready
     assert projection.environment == :staging
-    assert projection.health == %{status: :healthy, detail: "probe ok"}
+    assert projection.health == %{status: :healthy, detail: "probe ok", source: nil}
     assert projection.event_count == 11
     assert projection.last_identity == List.last(events).identity.digest
 
@@ -217,6 +217,41 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
              ]
              |> chain()
              |> Projection.reduce()
+  end
+
+  test "the live pointer moves only through activation and supersession, and only when admitted" do
+    to_ready = [
+      {"DeploymentCreated", created()},
+      transition("building"),
+      transition("staged"),
+      {"DeploymentOperationRequested",
+       %{"operation_id" => "dpo-1", "action" => "execute_deploy"}},
+      transition("deploying"),
+      {"DeploymentOperationStarted", %{"operation_id" => "dpo-1"}},
+      {"DeploymentOperationCompleted", %{"operation_id" => "dpo-1", "outcome" => "succeeded"}},
+      transition("verifying"),
+      {"DeploymentHealthObserved", %{"status" => "healthy", "source" => "adapter"}},
+      transition("ready")
+    ]
+
+    assert {:ok, projection} = to_ready |> chain() |> Projection.reduce()
+    refute projection.active
+    assert projection.health.source == "adapter"
+
+    activated = {"DeploymentActivated", %{"cause" => "ready", "supersedes" => nil}}
+    superseded = {"DeploymentSuperseded", %{"by" => "dpl-2", "cause" => "ready"}}
+
+    assert {:ok, %{active: true, superseded_by: nil}} =
+             (to_ready ++ [activated]) |> chain() |> Projection.reduce()
+
+    assert {:ok, %{active: false, superseded_by: "dpl-2"}} =
+             (to_ready ++ [activated, superseded]) |> chain() |> Projection.reduce()
+
+    assert {:error, {:invalid_event, 2, :not_admitted}} =
+             [{"DeploymentCreated", created()}, activated] |> chain() |> Projection.reduce()
+
+    assert {:error, {:invalid_event, 11, :not_active}} =
+             (to_ready ++ [superseded]) |> chain() |> Projection.reduce()
   end
 
   test "building is transient: it admits only the step to staged" do
