@@ -2,8 +2,9 @@
 
 > **Remediated 2026-09-13.** F-01 was closed in the commit that added this
 > document; F-02, F-03, F-04, F-05, F-08, F-12 and F-14 were closed in the
-> commit that followed it. F-10 remains a policy question and is left open.
-> The info items (F-06, F-07, F-09, F-11, F-13) needed no action. The
+> commit that followed it. F-10 was decided (SOP hooks are mandatory on
+> every entry into `in_progress`) and closed in a third commit. The info
+> items (F-06, F-07, F-09, F-11, F-13) needed no action. The
 > findings are left as written: an audit that gets edited to match the fix
 > stops being evidence that the fix was needed. What each closure did, in one
 > line each:
@@ -18,6 +19,8 @@
 > - F-08: the CLI precheck is deleted; the Task resource is the only guard.
 > - F-12: `docs/lifecycles.md` is rendered from the modules and pinned by test.
 > - F-14: a generation is born `active` and `:retire` refuses a second time.
+> - F-10: `Task.validate_start/1` runs the SOP gate on every edge into
+>   `in_progress`, so resuming from `waiting` re-verifies the acknowledgment.
 
 **Verdict:** the two declared lifecycles (task, deployment) are sound as
 relations: closed, irreflexive, every state reachable from the initial state,

@@ -40,15 +40,15 @@ each table.
 <!-- /lifecycle -->
 
 `failed` is recoverable: it re-enters `queued`. `completed` and `cancelled`
-are absorbing. `waiting` may resume straight into `in_progress`; `blocked`
-must pass back through `ready`.
+are absorbing. `waiting` may resume straight into `in_progress`, through the
+same SOP gate as a fresh start; `blocked` must pass back through `ready`.
 
 Guards on top of the relation, all in `SpruceGoose.Workflows.Task`, each
 enforced by the Ash action and, where marked, by a PostgreSQL trigger as well:
 
 | Edge | Guard | Trigger |
 | --- | --- | --- |
-| `ready → in_progress` | Systemwide SOP acknowledgment current (`SopGate.verify/1`) | — |
+| `* → in_progress` | Systemwide SOP acknowledgment current (`SopGate.verify/1`), on start and on resumption from `waiting` alike | — |
 | `* → in_progress` | every predecessor `completed` | `workflow_tasks_start_predecessor_guard` |
 | `* → ready` | every `artifact_requirements` entry has a verified receipt | `workflow_tasks_artifact_receipt_guard` |
 | `* → completed` | every TODO completed; diagnosis tasks carry finding, regression and SOP references | `workflow_tasks_completion_todo_guard` |

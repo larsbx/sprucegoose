@@ -478,6 +478,37 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
   end
 
+  test "resuming from waiting re-runs the SOP gate: every entry into in_progress is gated" do
+    task = gated_task("resume-gate")
+
+    task =
+      Enum.reduce([:proposed, :queued, :ready, :in_progress], task, fn state, current ->
+        assert {:ok, current} = Ash.update(current, %{to_state: state}, action: :transition)
+        current
+      end)
+
+    assert {:ok, waiting} =
+             Ash.update(task, %{to_state: :waiting, reason: "awaiting review"},
+               action: :transition
+             )
+
+    Ecto.Adapters.SQL.query!(
+      SpruceGoose.Repo,
+      "UPDATE workflow_tasks SET sop_digest = repeat('0', 64) WHERE id = $1::text::uuid",
+      [waiting.id]
+    )
+
+    waiting = Ash.get!(Task, waiting.id)
+    assert {:error, error} = Ash.update(waiting, %{to_state: :in_progress}, action: :transition)
+    assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
+
+    assert {:error, error} = Ash.update(waiting, %{to_state: :in_progress}, action: :move)
+    assert Exception.message(error) =~ "Systemwide SOP acknowledgment is stale"
+
+    assert {:ok, %{state: :ready}} =
+             Ash.update(waiting, %{to_state: :ready}, action: :transition)
+  end
+
   test "artifact-dependent tasks fail closed at ready until a verified receipt is recorded" do
     workflow = workflow("artifact-receipt")
 

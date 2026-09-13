@@ -454,11 +454,13 @@ defmodule SpruceGoose.Workflows.Task do
     end
   end
 
+  # Every entry into `in_progress` is gated, whether the task starts from
+  # `ready` or resumes from `waiting`: an acknowledgment that went stale while
+  # the task was paused is as stale as one that went stale before it began.
   defp validate_start(changeset) do
-    if changeset.data.state == :ready and
-         Ash.Changeset.get_argument(changeset, :to_state) == :in_progress,
-       do: SpruceGoose.SopGate.verify(changeset.data),
-       else: :ok
+    if Ash.Changeset.get_argument(changeset, :to_state) == :in_progress,
+      do: SpruceGoose.SopGate.verify(changeset.data),
+      else: :ok
   end
 
   defp validate_artifact_readiness(changeset) do

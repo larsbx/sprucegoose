@@ -4,8 +4,9 @@ defmodule SpruceGoose.Workflows.Lifecycle do
 
   Every task is born in `inbox` and finishes in `completed` or `cancelled`,
   the only absorbing states. `failed` is not final: it re-enters `queued` for
-  another attempt. `waiting` may resume straight into `in_progress`; `blocked`
-  must pass back through `ready` so that readiness is re-established.
+  another attempt. `waiting` may resume straight into `in_progress`, through
+  the same SOP gate as a fresh start; `blocked` must pass back through `ready`
+  so that readiness is re-established.
 
   This module is only the relation. Preconditions that depend on data (the
   SOP gate, predecessor completion, artifact receipts, TODO completion, the
