@@ -69,4 +69,3 @@ defmodule SpruceGoose.Deployment.Artifact do
   defp unique_paths?(files), do: length(Enum.uniq_by(files, &elem(&1, 0))) == length(files)
   defp sha256(bytes), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
 end
-

@@ -55,4 +55,3 @@ defmodule SpruceGoose.Deployment.BuildManifestTest do
     assert {:ok, _} = apply(BuildManifest, :new, valid)
   end
 end
-

@@ -121,4 +121,3 @@ defmodule SpruceGoose.Deployment.BuildManifest do
 
   defp sha256(bytes), do: "sha256:" <> Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
 end
-
