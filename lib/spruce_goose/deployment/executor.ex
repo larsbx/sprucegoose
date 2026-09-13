@@ -128,7 +128,8 @@ defmodule SpruceGoose.Deployment.Executor do
 
   defp timeout, do: Application.get_env(:spruce_goose, :deployment_operation_timeout_ms, 600_000)
 
-  defp adapter do
+  @doc "The configured host adapter, or why there is none."
+  def adapter do
     case Application.get_env(:spruce_goose, :deployment_host_adapter) do
       module when is_atom(module) and not is_nil(module) ->
         if Code.ensure_loaded?(module) and function_exported?(module, :execute, 1) and

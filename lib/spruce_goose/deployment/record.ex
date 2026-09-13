@@ -28,6 +28,7 @@ defmodule SpruceGoose.Deployment.Record do
     policy action(:project) do
       authorize_if(HasRole.operator())
       authorize_if(HasRole.deployment_executor())
+      authorize_if(HasRole.approver())
     end
   end
 

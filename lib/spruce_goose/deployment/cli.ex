@@ -57,6 +57,21 @@ defmodule SpruceGoose.Deployment.CLI do
     end
   end
 
+  # Abandonment takes one fresh host observation first, so the decision is
+  # made against what the host says now rather than what a stale job saw.
+  def run(:abandon, %{operation_id: id, reason: reason}) do
+    with {:ok, operation} <- Authz.read_one(Operation, operation_id: id),
+         {:ok, adapter} <- Executor.adapter(),
+         {:ok, request} <- Deployment.operation_request(operation),
+         {:ok, %{status: _} = observation} <- adapter.observe(request),
+         {:ok, operation} <- Deployment.abandon_operation(id, reason, observation) do
+      {:ok, operation_json(operation)}
+    else
+      {:ok, other} -> {:error, "adapter returned malformed observation: #{inspect(other)}"}
+      error -> error
+    end
+  end
+
   def run(:show, %{deployment_id: id}) do
     with {:ok, record} <- Authz.read_one(Record, deployment_id: id),
          {:ok, operations} <-
@@ -208,6 +223,10 @@ defmodule SpruceGoose.Deployment.CLI do
   end
 
   def parse(["reconcile", id]), do: {:ok, {:deployment, :reconcile, %{operation_id: id}}}
+
+  def parse(["abandon", id, reason]),
+    do: {:ok, {:deployment, :abandon, %{operation_id: id, reason: reason}}}
+
   def parse(["show", id]), do: {:ok, {:deployment, :show, %{deployment_id: id}}}
   def parse(["events", id]), do: {:ok, {:deployment, :events, %{deployment_id: id}}}
 
@@ -228,6 +247,7 @@ defmodule SpruceGoose.Deployment.CLI do
       "authorize DEPLOYMENT_ID --action execute_deploy|execute_rollback|execute_reclaim --reference REF [--target DEPLOYMENT_ID] [--ttl SECONDS]",
       "request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]",
       "reconcile OPERATION_ID",
+      "abandon OPERATION_ID REASON",
       "show DEPLOYMENT_ID",
       "list [--project KEY]",
       "events DEPLOYMENT_ID"

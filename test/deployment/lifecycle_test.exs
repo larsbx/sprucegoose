@@ -32,6 +32,32 @@ defmodule SpruceGoose.Deployment.LifecycleTest do
     assert {:error, :unknown_state} = Lifecycle.parse(:sudo)
   end
 
+  test "one admission relation serves the facade and replay" do
+    assert Lifecycle.admits?(:verifying, :staging, :health)
+    refute Lifecycle.admits?(:ready, :staging, :health)
+    assert Lifecycle.admits?(:staged, :staging, :cancel)
+    refute Lifecycle.admits?(:deploying, :staging, :cancel)
+    assert Lifecycle.admits?(:staged, :staging, {:operation, :execute_deploy})
+    refute Lifecycle.admits?(:deploying, :staging, {:operation, :execute_deploy})
+
+    for state <- Lifecycle.rollback_sources() do
+      assert Lifecycle.admits?(state, :staging, :rollback)
+      assert Lifecycle.admits?(state, :staging, {:operation, :execute_rollback})
+    end
+
+    # A deployment is deploying exactly while its deploy operation is open.
+    refute :deploying in Lifecycle.rollback_sources()
+    refute Lifecycle.admits?(:deploying, :staging, :rollback)
+
+    assert Lifecycle.admits?(:cancelled, :preview, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:cancelled, :staging, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:staged, :preview, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:ready, :staging, {:operation, :sudo})
+
+    assert Lifecycle.transient?(:building)
+    refute Lifecycle.transient?(:staged)
+  end
+
   test "routing evidence is required exactly for production" do
     assert Lifecycle.requires_routing?(:production)
     refute Lifecycle.requires_routing?(:staging)

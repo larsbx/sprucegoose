@@ -59,6 +59,17 @@ queued → building → staged → deploying → verifying → ready
 finished. Rollback is a new operation on a finished deployment, not a
 continuation of it. Production deployments carry `requires_routing: true`.
 
+`building` is transient: `stage/1` enters and leaves it in one transaction,
+and replay refuses any history that rests there. Its declared escape edges
+are kept for the native ledger's vocabulary and are never driven here.
+
+One admission relation, `Lifecycle.admits?/3`, decides where each request is
+legal, and both the facade and replay consult it. Rollback may be requested
+from `ready`, `failed`, or `verifying`, never from `deploying`: a deployment
+is deploying exactly while its deploy operation is open, and **at most one
+operation may be open per deployment**. A request while one is open is
+refused as `:operation_in_flight`, by the facade and on replay alike.
+
 ### Certified stream
 
 Every mutation appends one event on `deployment:<deployment_id>` in the same
@@ -78,8 +89,11 @@ Events distinguish what was requested from what happened:
 | `DeploymentOperationStarted` | an executor committed to acting, *before* acting |
 | `DeploymentOperationCompleted` | outcome, with `source` = `executor` (adapter receipt) or `observation` (host inspection) |
 | `DeploymentOperationObserved` | what host inspection reported |
+| `DeploymentTransitionRefused` | a completion was recorded although the lifecycle could not move on it; names `from` and `to` |
 
-A deploy is not "executed" until its completion is recorded.
+A deploy is not "executed" until its completion is recorded. Completion is
+total: the host's outcome is never discarded because the lifecycle refused a
+step; the refusal is itself recorded and the state stays put.
 
 ## Authorization
 
@@ -124,7 +138,11 @@ actor named by `SPRUCE_GOOSE_DEPLOYMENT_EXECUTOR_ACTOR`, which must hold
 4. A retry finding `started` reconciles; finding `completed` discards.
 
 `deployment reconcile OPERATION_ID` re-queues an operation whose job was
-exhausted. Completion advances the lifecycle: deploy → `verifying` (then
+exhausted. `deployment abandon OPERATION_ID REASON` is the operator exit for
+an operation the executor cannot conclude: it takes one fresh
+`adapter.observe`, records it, and completes the operation as failed with
+source `operator`. It requires `approver` and is refused when the host reports
+success, because that is a reconcile, not an abandonment. Completion advances the lifecycle: deploy → `verifying` (then
 `observe-health`), rollback → `rolled_back`, failure → `failed`, reclaim →
 `reclaimed_at`.
 
@@ -152,6 +170,7 @@ sprucegoose deployment stage DEPLOYMENT_ID
 sprucegoose deployment authorize DEPLOYMENT_ID --action execute_deploy --reference REF --as lars
 sprucegoose deployment request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]
 sprucegoose deployment observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]
+sprucegoose deployment reconcile|abandon OPERATION_ID [REASON]
 sprucegoose deployment show|events DEPLOYMENT_ID
 sprucegoose deployment list [--project KEY]
 ```

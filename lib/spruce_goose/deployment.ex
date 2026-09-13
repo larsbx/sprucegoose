@@ -32,8 +32,6 @@ defmodule SpruceGoose.Deployment do
 
   alias SpruceGoose.Workflows.Project
 
-  @rollback_sources [:ready, :failed, :deploying, :verifying]
-
   # --- releases ---------------------------------------------------------------
 
   @doc "Accept a release into a project on the strength of its verified artifact custody."
@@ -106,7 +104,7 @@ defmodule SpruceGoose.Deployment do
   @doc "Record a verification outcome: healthy promotes to ready, unhealthy fails closed."
   def observe_health(deployment_id, status, detail) when status in [:healthy, :unhealthy] do
     mutate(deployment_id, fn record ->
-      with :ok <- require_state(record, [:verifying]),
+      with :ok <- require_admitted(record, :health),
            {:ok, head} <-
              Ledger.append(
                record.deployment_id,
@@ -147,6 +145,7 @@ defmodule SpruceGoose.Deployment do
       mutate(record.deployment_id, fn record ->
         with :ok <- require_unexpired(authorization),
              :ok <- require_unspent(authorization),
+             :ok <- require_no_open_operation(record),
              {:ok, evidence} <- preconditions(authorization, record, opts),
              {:ok, operation} <- spend(authorization, record),
              {:ok, head} <-
@@ -196,18 +195,47 @@ defmodule SpruceGoose.Deployment do
     end)
   end
 
-  @doc "Record the completion of an operation and advance the lifecycle accordingly."
+  @doc """
+  Record the completion of an operation and advance the lifecycle accordingly.
+
+  Completion is total: the host's outcome is recorded even when the lifecycle
+  cannot move on it, in which case a `DeploymentTransitionRefused` event names
+  the step that was refused and the state stays where it was.
+  """
   def complete_operation(operation_id, outcome, attrs \\ %{})
-      when outcome in [:succeeded, :failed] do
+      when outcome in [:succeeded, :failed],
+      do: record_completion(operation_id, outcome, attrs, :complete)
+
+  @doc """
+  The operator exit for an operation the executor could not conclude.
+
+  Records the fresh host observation, then completes the operation as failed
+  with source `operator`. Refused when the host reports success: that is a
+  reconcile, not an abandonment. Requires `approver`.
+  """
+  def abandon_operation(operation_id, reason, %{status: status} = observation)
+      when is_binary(reason) and reason != "" do
+    with :ok <- if(status == :succeeded, do: {:error, :host_reports_success}, else: :ok),
+         {:ok, _} <- observe_operation(operation_id, status, observation[:detail]) do
+      record_completion(operation_id, :failed, %{detail: reason, source: "operator"}, :abandon)
+    end
+  end
+
+  def abandon_operation(_, _, _), do: {:error, :invalid_abandonment}
+
+  defp record_completion(operation_id, outcome, attrs, action) do
     with_operation(operation_id, fn operation, record ->
-      input = %{
-        outcome: outcome,
-        evidence_digest: attrs[:evidence_digest],
-        detail: attrs[:detail]
-      }
+      input =
+        case action do
+          :abandon ->
+            %{detail: attrs[:detail]}
+
+          :complete ->
+            %{outcome: outcome, evidence_digest: attrs[:evidence_digest], detail: attrs[:detail]}
+        end
 
       with {:ok, operation, _} <-
-             Authz.update_with_notifications(operation, input, action: :complete),
+             Authz.update_with_notifications(operation, input, action: action),
            {:ok, head} <-
              Ledger.append(
                record.deployment_id,
@@ -350,8 +378,25 @@ defmodule SpruceGoose.Deployment do
          do: {:ok, record}
   end
 
-  defp require_state(%{state: state}, allowed) do
-    if state in allowed, do: :ok, else: {:error, {:invalid_state_for_action, state}}
+  defp require_admitted(%{state: state, environment: environment}, event) do
+    if Lifecycle.admits?(state, environment, event),
+      do: :ok,
+      else: {:error, {:invalid_state_for_action, state}}
+  end
+
+  # One open operation per deployment. Without this, a second request could
+  # move the lifecycle out from under an operation still running on the host.
+  defp require_no_open_operation(record) do
+    open =
+      Operation
+      |> Ash.Query.filter_input(deployment_id: record.id, phase: [in: [:requested, :started]])
+      |> Authz.count()
+
+    case open do
+      {:ok, 0} -> :ok
+      {:ok, _} -> {:error, :operation_in_flight}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp require_environment(%{environment: environment}, environment, _reason), do: :ok
@@ -392,12 +437,12 @@ defmodule SpruceGoose.Deployment do
   end
 
   defp preconditions(%{action: :execute_deploy}, record, opts) do
-    with :ok <- require_state(record, [:staged]),
+    with :ok <- require_admitted(record, {:operation, :execute_deploy}),
          do: routing_evidence(record, Keyword.get(opts, :routing))
   end
 
   defp preconditions(%{action: :execute_rollback} = authorization, record, _opts) do
-    with :ok <- require_state(record, @rollback_sources),
+    with :ok <- require_admitted(record, {:operation, :execute_rollback}),
          {:ok, target} <- rollback_target(record, authorization.target_deployment_id) do
       {:ok,
        %{
@@ -493,17 +538,40 @@ defmodule SpruceGoose.Deployment do
 
   defp after_request(%{action: :execute_reclaim}, record, _evidence), do: {:ok, record}
 
-  defp after_completion(%{action: :execute_deploy, outcome: :succeeded}, record),
-    do: transition(record, :verifying)
-
-  defp after_completion(%{action: :execute_rollback, outcome: :succeeded}, record),
-    do: transition(record, :rolled_back)
-
   defp after_completion(%{action: :execute_reclaim, outcome: :succeeded}, record),
     do: project_row(record, %{reclaimed_at: DateTime.utc_now()})
 
   defp after_completion(%{action: :execute_reclaim}, record), do: {:ok, record}
-  defp after_completion(%{outcome: :failed}, record), do: transition(record, :failed)
+
+  defp after_completion(operation, record),
+    do: transition_or_refuse(record, lifecycle_after(operation), operation.operation_id)
+
+  defp lifecycle_after(%{outcome: :failed}), do: :failed
+  defp lifecycle_after(%{action: :execute_deploy}), do: :verifying
+  defp lifecycle_after(%{action: :execute_rollback}), do: :rolled_back
+
+  # Evidence of what the host did must never depend on the lifecycle's
+  # willingness to move; a refused step is itself recorded.
+  defp transition_or_refuse(record, to, operation_id) do
+    case Lifecycle.transition(record.state, to) do
+      {:ok, ^to} ->
+        transition(record, to)
+
+      {:error, :invalid_transition} ->
+        with {:ok, head} <-
+               Ledger.append(
+                 record.deployment_id,
+                 "DeploymentTransitionRefused",
+                 %{
+                   "operation_id" => operation_id,
+                   "from" => Atom.to_string(record.state),
+                   "to" => Atom.to_string(to)
+                 },
+                 record.last_event
+               ),
+             do: project_row(record, %{last_event: head})
+    end
+  end
 
   defp release_map(record) do
     with {:ok, release} <- Authz.read_one(Release, id: record.release_id),

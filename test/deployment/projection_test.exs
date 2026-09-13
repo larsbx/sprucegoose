@@ -116,20 +116,20 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
     requested =
       {"DeploymentOperationRequested", %{"operation_id" => "dpo-1", "action" => "execute_deploy"}}
 
-    assert {:error, {:invalid_event, 3, :operation_out_of_order}} =
-             [
-               {"DeploymentCreated", created()},
-               requested,
-               {"DeploymentOperationCompleted",
-                %{"operation_id" => "dpo-1", "outcome" => "succeeded"}}
-             ]
+    staged = [{"DeploymentCreated", created()}, transition("building"), transition("staged")]
+
+    assert {:error, {:invalid_event, 5, :operation_out_of_order}} =
+             (staged ++
+                [
+                  requested,
+                  {"DeploymentOperationCompleted",
+                   %{"operation_id" => "dpo-1", "outcome" => "succeeded"}}
+                ])
              |> chain()
              |> Projection.reduce()
 
-    assert {:error, {:invalid_event, 3, :duplicate_operation}} =
-             [{"DeploymentCreated", created()}, requested, requested]
-             |> chain()
-             |> Projection.reduce()
+    assert {:error, {:invalid_event, 5, :duplicate_operation}} =
+             (staged ++ [requested, requested]) |> chain() |> Projection.reduce()
 
     assert {:error, {:invalid_event, 2, :duplicate_creation}} =
              [{"DeploymentCreated", created()}, {"DeploymentCreated", created()}]
@@ -146,6 +146,124 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
              ]
              |> chain()
              |> Projection.reduce()
+  end
+
+  test "replay admits each request only in the states the facade admits it" do
+    created = {"DeploymentCreated", created()}
+
+    requested =
+      {"DeploymentOperationRequested", %{"operation_id" => "dpo-1", "action" => "execute_deploy"}}
+
+    # Health only while verifying; cancellation only where the contract allows; rollback only from its sources.
+    assert {:error, {:invalid_event, 2, :not_admitted}} =
+             [created, {"DeploymentHealthObserved", %{"status" => "healthy"}}]
+             |> chain()
+             |> Projection.reduce()
+
+    assert {:error, {:invalid_event, 6, :not_admitted}} =
+             [
+               created,
+               transition("building"),
+               transition("staged"),
+               requested,
+               transition("deploying"),
+               {"DeploymentCancellationRequested", %{"reason" => "late"}}
+             ]
+             |> chain()
+             |> Projection.reduce()
+
+    assert {:error, {:invalid_event, 2, :not_admitted}} =
+             [created, {"DeploymentRollbackRequested", %{"target_deployment_id" => "dpl-0"}}]
+             |> chain()
+             |> Projection.reduce()
+
+    # A deploy may only be requested from staged, and never while another operation is open.
+    assert {:error, {:invalid_event, 2, :not_admitted}} =
+             [created, requested] |> chain() |> Projection.reduce()
+
+    # A second operation while one is open: only a reclaim can be admitted by
+    # state while another reclaim is open, so that is where the guard bites.
+    reclaim_1 =
+      {"DeploymentOperationRequested",
+       %{"operation_id" => "dpo-2", "action" => "execute_reclaim"}}
+
+    reclaim_2 =
+      {"DeploymentOperationRequested",
+       %{"operation_id" => "dpo-3", "action" => "execute_reclaim"}}
+
+    assert {:error, {:invalid_event, 4, :operation_in_flight}} =
+             [
+               {"DeploymentCreated", created(%{"environment" => "preview"})},
+               transition("cancelled"),
+               reclaim_1,
+               reclaim_2
+             ]
+             |> chain()
+             |> Projection.reduce()
+
+    # Reclaim only for a terminal preview.
+    reclaim =
+      {"DeploymentOperationRequested",
+       %{"operation_id" => "dpo-3", "action" => "execute_reclaim"}}
+
+    assert {:error, {:invalid_event, 3, :not_admitted}} =
+             [created, transition("cancelled"), reclaim] |> chain() |> Projection.reduce()
+
+    assert {:ok, _} =
+             [
+               {"DeploymentCreated", created(%{"environment" => "preview"})},
+               transition("cancelled"),
+               reclaim
+             ]
+             |> chain()
+             |> Projection.reduce()
+  end
+
+  test "building is transient: it admits only the step to staged" do
+    created = {"DeploymentCreated", created()}
+
+    assert {:error, {:invalid_event, 3, :transient_state_escaped}} =
+             [created, transition("building"), transition("cancelled")]
+             |> chain()
+             |> Projection.reduce()
+
+    assert {:error, {:invalid_event, 3, :transient_state_escaped}} =
+             [
+               created,
+               transition("building"),
+               {"DeploymentHealthObserved", %{"status" => "healthy"}}
+             ]
+             |> chain()
+             |> Projection.reduce()
+
+    assert {:ok, %{state: :staged}} =
+             [created, transition("building"), transition("staged")]
+             |> chain()
+             |> Projection.reduce()
+  end
+
+  test "a refused transition is recorded without moving the state, and only when it was genuinely refused" do
+    created = {"DeploymentCreated", created()}
+
+    refused =
+      {"DeploymentTransitionRefused",
+       %{"operation_id" => "dpo-1", "from" => "queued", "to" => "ready"}}
+
+    assert {:ok, %{state: :queued}} = [created, refused] |> chain() |> Projection.reduce()
+
+    legal =
+      {"DeploymentTransitionRefused",
+       %{"operation_id" => "dpo-1", "from" => "queued", "to" => "building"}}
+
+    assert {:error, {:invalid_event, 2, :unfounded_refusal}} =
+             [created, legal] |> chain() |> Projection.reduce()
+
+    elsewhere =
+      {"DeploymentTransitionRefused",
+       %{"operation_id" => "dpo-1", "from" => "ready", "to" => "verifying"}}
+
+    assert {:error, {:invalid_event, 2, :unfounded_refusal}} =
+             [created, elsewhere] |> chain() |> Projection.reduce()
   end
 
   test "creation requires a valid typed release identity and a known environment" do

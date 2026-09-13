@@ -39,6 +39,7 @@ defmodule SpruceGoose.Deployment.Projection do
 
   defp apply_event(%CertifiedEvent{} = event, position, projection) do
     with :ok <- check_link(event, projection),
+         :ok <- check_transient(event, projection),
          {:ok, next} <- step(event.event_type, event.payload, projection) do
       {:ok, %{next | last_identity: event.identity.digest, event_count: position}}
     else
@@ -55,6 +56,28 @@ defmodule SpruceGoose.Deployment.Projection do
   end
 
   defp check_link(_, _), do: {:error, :unlinked_event}
+
+  # A transient state admits exactly one successor and nothing else in between.
+  defp check_transient(_event, nil), do: :ok
+
+  defp check_transient(%{event_type: type, payload: payload}, %{state: state}) do
+    if Lifecycle.transient?(state) and
+         not (type == "DeploymentTransitioned" and payload["state"] == "staged"),
+       do: {:error, :transient_state_escaped},
+       else: :ok
+  end
+
+  defp admitted(projection, event) do
+    if Lifecycle.admits?(projection.state, projection.environment, event),
+      do: :ok,
+      else: {:error, :not_admitted}
+  end
+
+  defp no_open_operation(projection) do
+    if Enum.all?(projection.operations, fn {_id, op} -> op.phase == :completed end),
+      do: :ok,
+      else: {:error, :operation_in_flight}
+  end
 
   defp step("DeploymentCreated", payload, nil) do
     with {:ok, release} <- ReleaseIdentity.new(Map.get(payload, "release", %{})),
@@ -93,13 +116,31 @@ defmodule SpruceGoose.Deployment.Projection do
 
   defp step("DeploymentHealthObserved", %{"status" => status} = payload, projection)
        when status in @health do
-    {:ok,
-     %{projection | health: %{status: String.to_existing_atom(status), detail: payload["detail"]}}}
+    with :ok <- admitted(projection, :health) do
+      {:ok,
+       %{
+         projection
+         | health: %{status: String.to_existing_atom(status), detail: payload["detail"]}
+       }}
+    end
   end
 
   defp step("DeploymentCancellationRequested", %{"reason" => reason}, projection)
        when is_binary(reason) and reason != "" and byte_size(reason) <= @max_reason do
-    {:ok, %{projection | cancellation_reason: reason}}
+    with :ok <- admitted(projection, :cancel),
+         do: {:ok, %{projection | cancellation_reason: reason}}
+  end
+
+  # Host evidence recorded although the lifecycle could not move on it.
+  defp step("DeploymentTransitionRefused", %{"from" => from, "to" => to}, projection) do
+    with {:ok, from} <- Lifecycle.parse(from),
+         {:ok, to} <- Lifecycle.parse(to),
+         true <- from == projection.state,
+         {:error, :invalid_transition} <- Lifecycle.transition(from, to) do
+      {:ok, projection}
+    else
+      _ -> {:error, :unfounded_refusal}
+    end
   end
 
   defp step(
@@ -108,11 +149,13 @@ defmodule SpruceGoose.Deployment.Projection do
          projection
        )
        when is_binary(target) and target != "" do
-    {:ok,
-     %{
-       projection
-       | rollback_target: %{deployment_id: target, release_id: payload["target_release_id"]}
-     }}
+    with :ok <- admitted(projection, :rollback) do
+      {:ok,
+       %{
+         projection
+         | rollback_target: %{deployment_id: target, release_id: payload["target_release_id"]}
+       }}
+    end
   end
 
   defp step(
@@ -122,7 +165,9 @@ defmodule SpruceGoose.Deployment.Projection do
        )
        when is_binary(id) and id != "" do
     with {:ok, action} <- operation_action(action),
-         false <- Map.has_key?(projection.operations, id) do
+         false <- Map.has_key?(projection.operations, id),
+         :ok <- admitted(projection, {:operation, action}),
+         :ok <- no_open_operation(projection) do
       operation = %{
         action: action,
         phase: :requested,

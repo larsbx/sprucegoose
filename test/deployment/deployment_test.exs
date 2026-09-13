@@ -580,6 +580,170 @@ defmodule SpruceGoose.DeploymentTest do
              as(system, fn -> Deployment.request(wrong_env.authorization_id, policy: policy) end)
   end
 
+  # --- one open operation per deployment (G1) -------------------------------------------------
+
+  test "an open operation blocks every further request, so a rollback cannot supersede a running deploy",
+       %{system: system} do
+    project = project_with_custody("inflight", @archive)
+
+    {:ok, rel_a} =
+      as(system, fn -> Deployment.accept_release(project.key, release_attrs(@archive)) end)
+
+    {:ok, rel_b} =
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: 8))
+      end)
+
+    approver = actor("inflight-approver", :human, [:approver])
+    executor = actor("inflight-executor", :agent, [:deployment_executor])
+
+    good = ready_path(rel_a.release_id, :healthy, system)
+    {:ok, b} = as(system, fn -> Deployment.create(rel_b.release_id, :staging) end)
+    {:ok, b} = as(system, fn -> Deployment.stage(b.deployment_id) end)
+
+    {:ok, auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{action: :execute_deploy, approval_reference: "r"})
+      end)
+
+    {:ok, op} = as(system, fn -> Deployment.request(auth.authorization_id) end)
+    {:ok, op} = as(executor, fn -> Deployment.start_operation(op.operation_id, executor.name) end)
+    assert op.deployment.state == :deploying
+
+    # The probe that found the defect: a rollback request while the deploy operation is started.
+    {:ok, rb_auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{
+          action: :execute_rollback,
+          target_deployment_id: good.deployment_id,
+          approval_reference: "r"
+        })
+      end)
+
+    assert {:error, :operation_in_flight} =
+             as(system, fn -> Deployment.request(rb_auth.authorization_id) end)
+
+    assert Repo.aggregate(Operation, :count) == 2
+    assert Ash.get!(Record, op.deployment_id, authorize?: false).state == :deploying
+
+    # The deploy completes normally; the same authorization is still unspent and now admitted from verifying.
+    {:ok, op} =
+      as(executor, fn -> Deployment.complete_operation(op.operation_id, :succeeded, %{}) end)
+
+    assert op.deployment.state == :verifying
+    assert {:ok, rb_op} = as(system, fn -> Deployment.request(rb_auth.authorization_id) end)
+    assert rb_op.deployment.state == :rolling_back
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+  end
+
+  test "an approver can abandon a started operation only against a host observation that is not success",
+       %{system: system} do
+    operation = requested_deploy("abandon", system)
+    executor = configure_executor("abandon", HangingAdapter)
+    approver = actor("abandon-human", :human, [:approver])
+    operator = actor("abandon-operator", :agent, [:operator])
+
+    {:ok, operation} =
+      as(executor, fn -> Deployment.start_operation(operation.operation_id, executor.name) end)
+
+    assert {:error, :host_reports_success} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "gave up", %{
+                 status: :succeeded
+               })
+             end)
+
+    assert {:error, _} =
+             as(operator, fn ->
+               Deployment.abandon_operation(operation.operation_id, "gave up", %{status: :unknown})
+             end)
+
+    assert {:error, :invalid_abandonment} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "", %{status: :unknown})
+             end)
+
+    assert {:ok, abandoned} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "host unreachable for 2h", %{
+                 status: :unknown,
+                 detail: "no record"
+               })
+             end)
+
+    assert abandoned.phase == :completed
+    assert abandoned.outcome == :failed
+    assert abandoned.observation_count == 1
+    assert abandoned.deployment.state == :failed
+
+    {:ok, projection} = Deployment.projection(abandoned.deployment.deployment_id)
+    assert projection.operations[operation.operation_id].source == "operator"
+    assert projection.operations[operation.operation_id].observations == ["unknown"]
+
+    # The CLI verb observes through the configured adapter before abandoning.
+    release = Ash.get!(Release, abandoned.deployment.release_id, authorize?: false)
+    project = Ash.get!(Project, release.project_id, authorize?: false)
+
+    {:ok, second_release} =
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: 11))
+      end)
+
+    {:ok, second} = as(system, fn -> Deployment.create(second_release.release_id, :staging) end)
+    {:ok, second} = as(system, fn -> Deployment.stage(second.deployment_id) end)
+
+    {:ok, second_auth} =
+      as(approver, fn ->
+        Deployment.authorize(second.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, second_op} = as(system, fn -> Deployment.request(second_auth.authorization_id) end)
+
+    {:ok, _} =
+      as(executor, fn -> Deployment.start_operation(second_op.operation_id, executor.name) end)
+
+    Application.put_env(:spruce_goose, :test_host_observation, %{
+      status: :in_progress,
+      detail: "still restarting"
+    })
+
+    assert {:ok, %{phase: :completed, outcome: :failed}} =
+             SpruceGoose.CLI.Executor.run(
+               {:deployment, :abandon,
+                %{operation_id: second_op.operation_id, reason: "operator decision"}},
+               approver.name
+             )
+  end
+
+  test "completion is total: a refused lifecycle step is recorded instead of discarding the receipt",
+       %{system: system} do
+    operation = requested_deploy("total", system)
+    executor = actor("total-executor", :agent, [:deployment_executor])
+
+    {:ok, operation} =
+      as(executor, fn -> Deployment.start_operation(operation.operation_id, executor.name) end)
+
+    # Simulate lifecycle drift the domain itself no longer produces.
+    Repo.query!("UPDATE deployments SET state = 'ready' WHERE id = $1::uuid", [
+      Ecto.UUID.dump!(operation.deployment_id)
+    ])
+
+    assert {:ok, completed} =
+             as(executor, fn ->
+               Deployment.complete_operation(operation.operation_id, :succeeded, %{})
+             end)
+
+    assert completed.phase == :completed
+    assert completed.deployment.state == :ready
+
+    {:ok, events} = Ledger.read(completed.deployment.deployment_id)
+    assert %{payload: %{"from" => "ready", "to" => "verifying"}} = List.last(events)
+    assert List.last(events).event_type == "DeploymentTransitionRefused"
+  end
+
   # --- executor ------------------------------------------------------------------------------
 
   test "the executor records started before acting and completes from the adapter receipt", %{
