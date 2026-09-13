@@ -160,13 +160,16 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
              |> chain()
              |> Projection.reduce()
 
-    assert {:error, {:invalid_event, 6, :not_admitted}} =
+    assert {:error, {:invalid_event, 8, :not_admitted}} =
              [
                created,
                transition("building"),
                transition("staged"),
                requested,
                transition("deploying"),
+               {"DeploymentOperationStarted", %{"operation_id" => "dpo-1"}},
+               {"DeploymentOperationCompleted",
+                %{"operation_id" => "dpo-1", "outcome" => "succeeded"}},
                {"DeploymentCancellationRequested", %{"reason" => "late"}}
              ]
              |> chain()
@@ -252,6 +255,40 @@ defmodule SpruceGoose.Deployment.ProjectionTest do
 
     assert {:error, {:invalid_event, 11, :not_active}} =
              (to_ready ++ [superseded]) |> chain() |> Projection.reduce()
+  end
+
+  test "a withdrawal completes a requested operation and admits cancellation from deploying" do
+    deploying = [
+      {"DeploymentCreated", created()},
+      transition("building"),
+      transition("staged"),
+      {"DeploymentOperationRequested",
+       %{"operation_id" => "dpo-1", "action" => "execute_deploy"}},
+      transition("deploying")
+    ]
+
+    withdrawn =
+      {"DeploymentOperationCompleted",
+       %{"operation_id" => "dpo-1", "outcome" => "failed", "source" => "withdrawn"}}
+
+    cancel = {"DeploymentCancellationRequested", %{"reason" => "wrong release"}}
+
+    assert {:ok, %{state: :cancelled}} =
+             (deploying ++ [withdrawn, cancel, transition("cancelled")])
+             |> chain()
+             |> Projection.reduce()
+
+    # Cancellation is not admitted while the operation is still open.
+    assert {:error, {:invalid_event, 6, :operation_in_flight}} =
+             (deploying ++ [cancel]) |> chain() |> Projection.reduce()
+
+    # Only a withdrawal may complete from requested; an executor completion needs started.
+    executor =
+      {"DeploymentOperationCompleted",
+       %{"operation_id" => "dpo-1", "outcome" => "succeeded", "source" => "executor"}}
+
+    assert {:error, {:invalid_event, 6, :operation_out_of_order}} =
+             (deploying ++ [executor]) |> chain() |> Projection.reduce()
   end
 
   test "building is transient: it admits only the step to staged" do

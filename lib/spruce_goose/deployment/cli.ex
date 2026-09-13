@@ -100,6 +100,11 @@ defmodule SpruceGoose.Deployment.CLI do
          do: {:ok, %{deployments: Enum.map(records, &record_json/1)}}
   end
 
+  def run(:revoke, %{authorization_id: id, reason: reason}) do
+    with {:ok, revocation} <- Deployment.revoke_authorization(id, reason),
+         do: {:ok, Map.take(revocation, [:authorization_id, :revoked_by, :reason, :inserted_at])}
+  end
+
   def run(:active, %{project: project, environment: environment}) do
     with {:ok, record} <- Deployment.active(project, environment),
          do:
@@ -231,6 +236,9 @@ defmodule SpruceGoose.Deployment.CLI do
 
   def parse(["reconcile", id]), do: {:ok, {:deployment, :reconcile, %{operation_id: id}}}
 
+  def parse(["revoke", id, reason]),
+    do: {:ok, {:deployment, :revoke, %{authorization_id: id, reason: reason}}}
+
   def parse(["abandon", id, reason]),
     do: {:ok, {:deployment, :abandon, %{operation_id: id, reason: reason}}}
 
@@ -260,6 +268,7 @@ defmodule SpruceGoose.Deployment.CLI do
       "observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]",
       "authorize DEPLOYMENT_ID --action execute_deploy|execute_rollback|execute_reclaim --reference REF [--target DEPLOYMENT_ID] [--ttl SECONDS]",
       "request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]",
+      "revoke AUTHORIZATION_ID REASON",
       "reconcile OPERATION_ID",
       "abandon OPERATION_ID REASON",
       "show DEPLOYMENT_ID",

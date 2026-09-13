@@ -52,8 +52,14 @@ States and transitions are carried over unchanged from the native plane:
 
 ```
 queued → building → staged → deploying → verifying → ready
-                  ↘ cancelled          ↘ failed ↘ rolling_back → rolled_back
+                  ↘ cancelled ↙        ↘ failed ↘ rolling_back → rolled_back
 ```
+
+`deploying → cancelled` exists only to **withdraw** a deploy operation the
+executor has not started: `cancel/2` closes the `requested` operation as
+failed with source `withdrawn` and moves the deployment to `cancelled`. Once
+the operation is `started` cancellation is refused as `:operation_in_flight`;
+the way out is reconcile or abandon.
 
 `ready`, `failed`, `rolled_back`, `cancelled` are terminal: the rollout has
 finished. Rollback is a new operation on a finished deployment, not a
@@ -131,6 +137,11 @@ project, bound to one deployment and one action (a rollback names its
 target), carrying an approval reference, expiring within an hour. The row is
 immutable.
 
+`deployment revoke AUTHORIZATION_ID REASON` withdraws an issued, unspent
+authorization: an append-only `Revocation` row keyed by the authorization,
+which `request/2` refuses as `:authorization_revoked`. A spent authorization
+cannot be revoked after the fact.
+
 `Deployment.request/2` spends it. In one transaction it re-validates every
 precondition against live state, inserts the `Operation` (unique on
 `authorization_id`: the single-use invariant is a database fact), appends the
@@ -198,11 +209,28 @@ sprucegoose deployment stage DEPLOYMENT_ID
 sprucegoose deployment authorize DEPLOYMENT_ID --action execute_deploy --reference REF --as lars
 sprucegoose deployment request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]
 sprucegoose deployment observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]
+sprucegoose deployment revoke AUTHORIZATION_ID REASON
 sprucegoose deployment reconcile|abandon OPERATION_ID [REASON]
 sprucegoose deployment show|events DEPLOYMENT_ID
 sprucegoose deployment active PROJECT preview|staging|production
 sprucegoose deployment list [--project KEY]
 ```
+
+## Operational notes
+
+- The `deployments` Oban queue has concurrency 1, so operations across every
+  deployment on the node serialise. That matches one host and one activation
+  script; it also queues an unrelated preview reclaim behind a production
+  deploy. Raise it only with per-environment locking in mind (activation
+  already takes the environment lock before the deployment lock).
+- `terminal_at` is stamped on first entry into a terminal state and never
+  moved. A preview that goes `failed → rolling_back → rolled_back` ages from
+  its first failure, and retention reads that stamp.
+- The scripted adapter runs the activation script under `timeout(1)` with the
+  executor's `:deployment_operation_timeout_ms` budget, so a late activation
+  cannot outlive the decision to reconcile; exit 124 is reported as such.
+- Release identity is global: the same forge, repository, commit, pipeline,
+  and artifacts accepted into two projects is a refused duplicate.
 
 ## Migration from the native plane
 

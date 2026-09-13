@@ -27,6 +27,7 @@ defmodule SpruceGoose.Deployment do
     Release,
     ReleaseIdentity,
     Retention,
+    Revocation,
     Routing
   }
 
@@ -83,10 +84,17 @@ defmodule SpruceGoose.Deployment do
     end)
   end
 
-  @doc "Cancel a deployment that has not rolled out. Requires a reason."
+  @doc """
+  Cancel a deployment that has not rolled out. Requires a reason.
+
+  From `deploying` this is a withdrawal: allowed only while the deploy
+  operation is still `requested`, which the executor closes without ever
+  reaching the host. A started operation must be reconciled or abandoned.
+  """
   def cancel(deployment_id, reason) when is_binary(reason) and reason != "" do
     mutate(deployment_id, fn record ->
       with {:ok, :cancelled} <- Lifecycle.transition(record.state, :cancelled),
+           {:ok, record} <- withdraw_open_operation(record, reason),
            {:ok, head} <-
              Ledger.append(
                record.deployment_id,
@@ -158,6 +166,7 @@ defmodule SpruceGoose.Deployment do
       mutate(record.deployment_id, fn record ->
         with :ok <- require_unexpired(authorization),
              :ok <- require_unspent(authorization),
+             :ok <- require_unrevoked(authorization),
              :ok <- require_no_open_operation(record),
              {:ok, evidence} <- preconditions(authorization, record, opts),
              {:ok, operation} <- spend(authorization, record),
@@ -512,6 +521,64 @@ defmodule SpruceGoose.Deployment do
 
   defp require_unexpired(authorization) do
     if Authorization.unexpired?(authorization), do: :ok, else: {:error, :authorization_expired}
+  end
+
+  defp withdraw_open_operation(%{state: :deploying} = record, reason) do
+    with {:ok, [operation]} <-
+           Operation
+           |> Ash.Query.filter_input(
+             deployment_id: record.id,
+             phase: [in: [:requested, :started]]
+           )
+           |> Authz.read(),
+         :ok <- if(operation.phase == :requested, do: :ok, else: {:error, :operation_in_flight}),
+         {:ok, _, _} <-
+           Authz.update_with_notifications(operation, %{detail: reason}, action: :withdraw),
+         {:ok, head} <-
+           Ledger.append(
+             record.deployment_id,
+             "DeploymentOperationCompleted",
+             %{
+               "operation_id" => operation.operation_id,
+               "outcome" => "failed",
+               "evidence_digest" => nil,
+               "detail" => reason,
+               "source" => "withdrawn"
+             },
+             record.last_event
+           ) do
+      project_row(record, %{last_event: head})
+    else
+      {:ok, []} -> {:error, :no_operation_to_withdraw}
+      error -> error
+    end
+  end
+
+  defp withdraw_open_operation(record, _reason), do: {:ok, record}
+
+  @doc "Revoke an issued authorization before it is spent. Requires `approver`."
+  def revoke_authorization(authorization_id, reason) when is_binary(reason) and reason != "" do
+    with {:ok, authorization} <- Authz.read_one(Authorization, authorization_id: authorization_id),
+         :ok <- require_unspent(authorization) do
+      Authz.create(
+        Revocation,
+        %{
+          authorization_record_id: authorization.id,
+          authorization_id: authorization.authorization_id,
+          reason: reason
+        },
+        action: :revoke
+      )
+    end
+  end
+
+  def revoke_authorization(_, _), do: {:error, :invalid_revocation_reason}
+
+  defp require_unrevoked(authorization) do
+    case Authz.read_one(Revocation, authorization_id: authorization.authorization_id) do
+      {:ok, %Revocation{}} -> {:error, :authorization_revoked}
+      _ -> :ok
+    end
   end
 
   # Reported before preconditions so a spent authorization is named as such

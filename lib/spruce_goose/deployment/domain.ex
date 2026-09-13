@@ -18,5 +18,6 @@ defmodule SpruceGoose.Deployment.Domain do
     resource(SpruceGoose.Deployment.Record)
     resource(SpruceGoose.Deployment.Authorization)
     resource(SpruceGoose.Deployment.Operation)
+    resource(SpruceGoose.Deployment.Revocation)
   end
 end

@@ -199,6 +199,32 @@ defmodule SpruceGoose.Deployment.HostAdapter.ScriptedTest do
     assert {:error, "scripted adapter is not configured"} = Scripted.probe(request())
   end
 
+  test "execute bounds the host script with the executor's budget", %{config: config} do
+    previous = Application.get_env(:spruce_goose, :deployment_scripted_adapter)
+    previous_timeout = Application.get_env(:spruce_goose, :deployment_operation_timeout_ms)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:spruce_goose, :deployment_scripted_adapter, previous),
+        else: Application.delete_env(:spruce_goose, :deployment_scripted_adapter)
+
+      if previous_timeout,
+        do:
+          Application.put_env(:spruce_goose, :deployment_operation_timeout_ms, previous_timeout),
+        else: Application.delete_env(:spruce_goose, :deployment_operation_timeout_ms)
+    end)
+
+    Application.put_env(:spruce_goose, :deployment_scripted_adapter, config)
+    Application.put_env(:spruce_goose, :deployment_operation_timeout_ms, 1_000)
+    File.write!(config.script, "#!/usr/bin/env bash\necho starting\nsleep 30\n")
+    File.chmod!(config.script, 0o700)
+
+    {elapsed, result} = :timer.tc(fn -> Scripted.execute(request()) end)
+    assert {:error, reason} = result
+    assert reason =~ "exceeded 1s"
+    assert elapsed < 15_000_000
+  end
+
   test "execute runs the configured script with the closed argument vector and returns its output as evidence",
        %{config: config} do
     previous = Application.get_env(:spruce_goose, :deployment_scripted_adapter)

@@ -98,6 +98,7 @@ defmodule SpruceGoose.Deployment.Projection do
          cancellation_reason: nil,
          rollback_target: nil,
          operations: %{},
+         last_operation_id: nil,
          last_identity: nil,
          event_count: 0
        }}
@@ -146,8 +147,22 @@ defmodule SpruceGoose.Deployment.Projection do
   defp step("DeploymentCancellationRequested", %{"reason" => reason}, projection)
        when is_binary(reason) and reason != "" and byte_size(reason) <= @max_reason do
     with :ok <- admitted(projection, :cancel),
+         :ok <- no_open_operation(projection),
+         :ok <- withdrawal_precedes_cancel(projection),
          do: {:ok, %{projection | cancellation_reason: reason}}
   end
+
+  # From deploying, cancellation is only ever the tail of a withdrawal: the
+  # facade writes the withdrawn completion and the cancellation together, so a
+  # cancellation after an executor completion is a history it cannot produce.
+  defp withdrawal_precedes_cancel(%{state: :deploying} = projection) do
+    case projection.operations[projection.last_operation_id] do
+      %{source: "withdrawn"} -> :ok
+      _ -> {:error, :not_admitted}
+    end
+  end
+
+  defp withdrawal_precedes_cancel(_projection), do: :ok
 
   # Host evidence recorded although the lifecycle could not move on it.
   defp step("DeploymentTransitionRefused", %{"from" => from, "to" => to}, projection) do
@@ -196,7 +211,7 @@ defmodule SpruceGoose.Deployment.Projection do
         observations: []
       }
 
-      {:ok, put_in(projection, [:operations, id], operation)}
+      {:ok, %{put_in(projection, [:operations, id], operation) | last_operation_id: id}}
     else
       true -> {:error, :duplicate_operation}
       error -> error
@@ -212,7 +227,11 @@ defmodule SpruceGoose.Deployment.Projection do
          projection
        )
        when outcome in ["succeeded", "failed"] do
-    phase(projection, id, [:started], fn operation ->
+    # A withdrawal closes an operation the executor never started; anything
+    # else completes only what was started.
+    from = if payload["source"] == "withdrawn", do: [:requested], else: [:started]
+
+    phase(projection, id, from, fn operation ->
       %{
         operation
         | phase: :completed,

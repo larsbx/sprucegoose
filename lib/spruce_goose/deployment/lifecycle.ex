@@ -12,7 +12,7 @@ defmodule SpruceGoose.Deployment.Lifecycle do
     queued: [:building, :cancelled],
     building: [:staged, :failed, :cancelled],
     staged: [:deploying, :cancelled],
-    deploying: [:verifying, :failed, :rolling_back],
+    deploying: [:verifying, :failed, :rolling_back, :cancelled],
     verifying: [:ready, :failed, :rolling_back],
     ready: [:rolling_back],
     failed: [:rolling_back],
@@ -58,6 +58,8 @@ defmodule SpruceGoose.Deployment.Lifecycle do
   def parse(state) when state in @states, do: {:ok, state}
   def parse(_), do: {:error, :unknown_state}
 
+  # `deploying → cancelled` exists only to withdraw a deploy operation that the
+  # executor has not started; the facade and replay both require that.
   def rollback_sources, do: @rollback_sources
   def transient?(state), do: state in @transient_states
 

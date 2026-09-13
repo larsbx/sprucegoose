@@ -19,6 +19,7 @@ defmodule SpruceGoose.Deployment.LifecycleTest do
   test "only declared transitions are accepted" do
     assert {:ok, :building} = Lifecycle.transition(:queued, :building)
     assert {:ok, :rolling_back} = Lifecycle.transition(:ready, :rolling_back)
+    assert {:ok, :cancelled} = Lifecycle.transition(:deploying, :cancelled)
     assert {:error, :invalid_transition} = Lifecycle.transition(:queued, :ready)
     assert {:error, :invalid_transition} = Lifecycle.transition(:ready, :deploying)
     assert {:error, :invalid_transition} = Lifecycle.transition(:cancelled, :queued)
@@ -36,7 +37,9 @@ defmodule SpruceGoose.Deployment.LifecycleTest do
     assert Lifecycle.admits?(:verifying, :staging, :health)
     refute Lifecycle.admits?(:ready, :staging, :health)
     assert Lifecycle.admits?(:staged, :staging, :cancel)
-    refute Lifecycle.admits?(:deploying, :staging, :cancel)
+    # Withdrawal: admitted by the contract, and further guarded by the open operation's phase.
+    assert Lifecycle.admits?(:deploying, :staging, :cancel)
+    refute Lifecycle.admits?(:verifying, :staging, :cancel)
     assert Lifecycle.admits?(:staged, :staging, {:operation, :execute_deploy})
     refute Lifecycle.admits?(:deploying, :staging, {:operation, :execute_deploy})
 

@@ -41,8 +41,17 @@ defmodule SpruceGoose.Deployment.HostAdapter.Scripted do
   def execute(request) do
     with {:ok, config} <- config(),
          {:ok, argv} <- command(request, config) do
-      case System.cmd(config.script, argv, stderr_to_stdout: true, env: []) do
+      # The executor's budget bounds the host too: past it the script is
+      # terminated, then killed, so a late activation cannot outlive the
+      # decision to reconcile. Exit 124 is timeout(1)'s own signal.
+      seconds =
+        div(Application.get_env(:spruce_goose, :deployment_operation_timeout_ms, 600_000), 1_000)
+
+      bounded = ["--kill-after=10", Integer.to_string(max(seconds, 1)), config.script | argv]
+
+      case System.cmd("timeout", bounded, stderr_to_stdout: true, env: []) do
         {output, 0} -> {:ok, %{evidence_digest: evidence(output), detail: truncate(output)}}
+        {output, 124} -> {:error, "host script exceeded #{seconds}s: #{truncate(output)}"}
         {output, status} -> {:error, "exit #{status}: #{truncate(output)}"}
       end
     end

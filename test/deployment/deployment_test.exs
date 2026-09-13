@@ -751,6 +751,116 @@ defmodule SpruceGoose.DeploymentTest do
     assert List.last(events).event_type == "DeploymentTransitionRefused"
   end
 
+  # --- withdrawal and revocation (G6, G8) ---------------------------------------------------
+
+  test "a requested, unstarted deploy can be withdrawn by cancelling; a started one cannot",
+       %{system: system} do
+    operation = requested_deploy("withdraw", system)
+    executor = configure_executor("withdraw", SucceedingAdapter)
+    deployment_id = Ash.get!(Record, operation.deployment_id, authorize?: false).deployment_id
+
+    assert {:ok, record} = as(system, fn -> Deployment.cancel(deployment_id, "wrong release") end)
+    assert record.state == :cancelled
+    withdrawn = Ash.get!(Operation, operation.id, authorize?: false)
+    assert withdrawn.phase == :completed
+    assert withdrawn.outcome == :failed
+    assert is_nil(withdrawn.started_at)
+    assert withdrawn.detail == "wrong release"
+
+    {:ok, projection} = Deployment.projection(deployment_id)
+    assert projection.operations[operation.operation_id].source == "withdrawn"
+    assert projection.state == :cancelled
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(deployment_id) end)
+
+    # The queued job finds a completed operation and does nothing.
+    assert {:discard, "operation already completed"} =
+             Executor.perform(%Oban.Job{args: %{"operation_id" => operation.operation_id}})
+
+    started = requested_deploy("withdraw-started", system)
+
+    {:ok, started} =
+      as(executor, fn -> Deployment.start_operation(started.operation_id, executor.name) end)
+
+    assert {:error, :operation_in_flight} =
+             as(system, fn -> Deployment.cancel(started.deployment.deployment_id, "too late") end)
+
+    assert Ash.get!(Record, started.deployment_id, authorize?: false).state == :deploying
+  end
+
+  test "an approver can revoke an unspent authorization, and a revoked one spends nothing",
+       %{system: system} do
+    {record, _release, _project} = staged("revoke", @archive, system)
+    approver = actor("revoke-approver", :human, [:approver])
+    operator = actor("revoke-operator", :agent, [:operator])
+
+    {:ok, authorization} =
+      as(approver, fn ->
+        Deployment.authorize(record.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    assert {:error, _} =
+             as(operator, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "oops")
+             end)
+
+    assert {:error, :invalid_revocation_reason} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "")
+             end)
+
+    assert {:ok, revocation} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(
+                 authorization.authorization_id,
+                 "approved the wrong build"
+               )
+             end)
+
+    assert revocation.revoked_by == approver.name
+
+    assert {:error, :authorization_revoked} =
+             as(system, fn -> Deployment.request(authorization.authorization_id) end)
+
+    assert Repo.aggregate(Operation, :count) == 0
+
+    assert {:error, duplicate} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "again")
+             end)
+
+    assert Exception.message(duplicate) =~ "already"
+
+    assert {:error,
+            %Postgrex.Error{
+              postgres: %{message: "deployment_authorization_revocations is immutable"}
+            }} =
+             Ecto.Adapters.SQL.query(
+               Repo,
+               "DELETE FROM deployment_authorization_revocations WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(revocation.id)],
+               mode: :savepoint
+             )
+
+    # A spent authorization cannot be revoked after the fact.
+    {:ok, spent} =
+      as(approver, fn ->
+        Deployment.authorize(record.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, _} = as(system, fn -> Deployment.request(spent.authorization_id) end)
+
+    assert {:error, :authorization_already_spent} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(spent.authorization_id, "late")
+             end)
+  end
+
   # --- live-release pointer (G3) ----------------------------------------------------------------
 
   test "one deployment is live per environment; ready moves the pointer and rollback moves it back",
@@ -1045,11 +1155,19 @@ defmodule SpruceGoose.DeploymentTest do
     }
   end
 
+  # Release identity is global, so each fixture project needs its own pipeline
+  # number or two suffixes would accept the same release into two projects.
   defp staged(suffix, archive_hex, system, environment \\ :staging) do
     project = project_with_custody(suffix, archive_hex)
+    pipeline = :erlang.phash2(suffix, 1_000_000) + 1
 
     {:ok, release} =
-      as(system, fn -> Deployment.accept_release(project.key, release_attrs(archive_hex)) end)
+      as(system, fn ->
+        Deployment.accept_release(
+          project.key,
+          release_attrs(archive_hex, pipeline_number: pipeline)
+        )
+      end)
 
     {:ok, record} = as(system, fn -> Deployment.create(release.release_id, environment) end)
     {:ok, record} = as(system, fn -> Deployment.stage(record.deployment_id) end)
