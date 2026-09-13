@@ -384,6 +384,27 @@ defmodule SpruceGoose.DeploymentTest do
     assert requested.payload["evidence"]["routing"] == "routing_ready"
   end
 
+  test "unrouted deployments refuse caller-supplied routing evidence", %{system: system} do
+    {record, _release, _project} = staged("unrouted", @archive, system, :staging)
+    refute record.requires_routing
+    approver = actor("unrouted-approver", :human, [:approver])
+
+    {:ok, authorization} =
+      as(approver, fn ->
+        Deployment.authorize(record.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "unrouted"
+        })
+      end)
+
+    assert {:error, :routing_not_declared} =
+             as(system, fn ->
+               Deployment.request(authorization.authorization_id, routing: routing())
+             end)
+
+    assert Repo.aggregate(Operation, :count) == 0
+  end
+
   test "cancellation needs a reason, stops before rollout, and is terminal", %{system: system} do
     {record, _release, _project} = staged("cancel", @archive, system)
 
