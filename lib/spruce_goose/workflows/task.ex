@@ -9,6 +9,13 @@ defmodule SpruceGoose.Workflows.Task do
   postgres do
     table("workflow_tasks")
     repo(SpruceGoose.Repo)
+
+    check_constraints do
+      check_constraint(:state, "workflow_tasks_valid_state",
+        check: SpruceGoose.Workflows.Lifecycle.sql_membership("state"),
+        message: "is not a task lifecycle state"
+      )
+    end
   end
 
   policies do

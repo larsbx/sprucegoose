@@ -155,6 +155,23 @@ defmodule SpruceGoose.LifecycleTest do
     end
   end
 
+  describe "docs/lifecycles.md" do
+    @doc_path Path.expand("../docs/lifecycles.md", __DIR__)
+
+    for machine <- @machines do
+      @machine machine
+      test "carries the rendered #{inspect(machine)} table" do
+        marker = "<!-- lifecycle:#{inspect(@machine)} -->"
+        doc = File.read!(@doc_path)
+        assert [_, rest] = String.split(doc, marker, parts: 2), "#{marker} missing"
+        assert [block, _] = String.split(rest, "<!-- /lifecycle -->", parts: 2)
+
+        assert String.trim(block) == String.trim(SpruceGoose.Lifecycle.to_markdown(@machine)),
+               "docs/lifecycles.md is stale for #{inspect(@machine)}; regenerate it"
+      end
+    end
+  end
+
   describe "declaration verification" do
     test "refuses a successor outside the state set" do
       assert_raise ArgumentError, ~r/undeclared state.*:gone/, fn ->

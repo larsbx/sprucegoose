@@ -3,6 +3,7 @@ defmodule SpruceGoose.Kernel.TaskProjector do
 
   alias SpruceGoose.Actors.Scope
   alias SpruceGoose.Kernel.{Canonical, ContentID}
+  alias SpruceGoose.Workflows.Lifecycle
   alias SpruceGoose.{Authz, Repo}
 
   @projection_id "sprucegoose-authoritative-tasks-v1"
@@ -97,12 +98,12 @@ defmodule SpruceGoose.Kernel.TaskProjector do
 
       [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, _prior}
       when command in @task_commands and is_map(result) ->
-        case normalize(result) do
-          %{"id" => id} = task when is_binary(id) and id != "" ->
-            {:cont, {:ok, put_in(acc, ["tasks", id], task), next}}
-
-          _invalid_task ->
-            {:halt, {:error, :unsupported_certified_event}}
+        with %{"id" => id} = task when is_binary(id) and id != "" <- normalize(result),
+             :ok <- legal_edge(acc["tasks"][id], task) do
+          {:cont, {:ok, put_in(acc, ["tasks", id], task), next}}
+        else
+          {:error, reason} -> {:halt, {:error, reason}}
+          _invalid_task -> {:halt, {:error, :unsupported_certified_event}}
         end
 
       [_next, "MutationAccepted", %{"command" => command}], _acc
@@ -121,6 +122,24 @@ defmodule SpruceGoose.Kernel.TaskProjector do
         {:halt, {:error, :unsupported_certified_event}}
     end)
   end
+
+  # A replayed row may keep its state or take one legal edge: the projector
+  # enforces δ ∪ id, the same relation the Task resource enforces live, so
+  # certified history cannot carry a transition the resource would refuse.
+  defp legal_edge(nil, _task), do: :ok
+  defp legal_edge(%{"state" => same}, %{"state" => same}), do: :ok
+
+  defp legal_edge(%{"state" => from}, %{"state" => to}) do
+    with {:ok, from} <- Lifecycle.parse(from),
+         {:ok, to} <- Lifecycle.parse(to),
+         {:ok, _} <- Lifecycle.transition(from, to) do
+      :ok
+    else
+      _ -> {:error, :illegal_certified_transition}
+    end
+  end
+
+  defp legal_edge(_prior, _task), do: {:error, :illegal_certified_transition}
 
   defp normalize(row) do
     row =

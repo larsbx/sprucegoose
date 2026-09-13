@@ -1,5 +1,24 @@
 # State machine audit — 2026-09-13
 
+> **Remediated 2026-09-13.** F-01 was closed in the commit that added this
+> document; F-02, F-03, F-04, F-05, F-08, F-12 and F-14 were closed in the
+> commit that followed it. F-10 remains a policy question and is left open.
+> The info items (F-06, F-07, F-09, F-11, F-13) needed no action. The
+> findings are left as written: an audit that gets edited to match the fix
+> stops being evidence that the fix was needed. What each closure did, in one
+> line each:
+>
+> - F-02: `TaskProjector.replay/3` enforces the task relation plus the
+>   identity on every replayed task row; a forged edge refuses the rebuild.
+> - F-03: `Deployment.Record` writes `state` only through a new
+>   lifecycle-checked `:transition` action; `:project` no longer accepts it.
+> - F-04: `workflow_tasks.state` carries a `CHECK` constraint generated from
+>   the lifecycle module (`deployments.state` already had `deployment_shape`).
+> - F-05: the permit's `state` and six dead outcome attributes are dropped.
+> - F-08: the CLI precheck is deleted; the Task resource is the only guard.
+> - F-12: `docs/lifecycles.md` is rendered from the modules and pinned by test.
+> - F-14: a generation is born `active` and `:retire` refuses a second time.
+
 **Verdict:** the two declared lifecycles (task, deployment) are sound as
 relations: closed, irreflexive, every state reachable from the initial state,
 every state able to reach a terminal state, and every sink terminal. Both are

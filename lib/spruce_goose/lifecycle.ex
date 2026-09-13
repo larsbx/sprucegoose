@@ -41,6 +41,7 @@ defmodule SpruceGoose.Lifecycle do
   @callback allowed_from(state()) :: [state()]
   @callback parse(term()) :: {:ok, state()} | {:error, :unknown_state}
   @callback reachable(state()) :: [state()]
+  @callback sql_membership(String.t()) :: String.t()
 
   defmacro __using__(opts) do
     quote bind_quoted: [opts: opts] do
@@ -106,6 +107,10 @@ defmodule SpruceGoose.Lifecycle do
       @doc "Every state reachable from `from` (inclusive), by default from the initial state."
       @impl true
       def reachable(from \\ @initial), do: SpruceGoose.Lifecycle.closure(@transitions, from)
+
+      @doc "A SQL predicate holding when `column` is one of the declared states."
+      @impl true
+      def sql_membership(column), do: SpruceGoose.Lifecycle.sql_membership(column, @states)
     end
   end
 
@@ -143,6 +148,36 @@ defmodule SpruceGoose.Lifecycle do
         do: fail.("sink state #{inspect(state)} is not terminal")
 
     :ok
+  end
+
+  @doc "Render Σ as a SQL `IN` predicate over `column`, for check constraints."
+  @spec sql_membership(String.t(), [state()]) :: String.t()
+  def sql_membership(column, states),
+    do: "#{column} IN (#{Enum.map_join(states, ",", &"'#{&1}'")})"
+
+  @doc "Render a lifecycle as the Markdown table `docs/lifecycles.md` carries."
+  @spec to_markdown(module()) :: String.t()
+  def to_markdown(machine) do
+    rows =
+      Enum.map_join(machine.states(), "\n", fn state ->
+        successors =
+          case machine.successors(state) do
+            [] -> "—"
+            next -> Enum.map_join(next, ", ", &"`#{&1}`")
+          end
+
+        "| `#{state}` | #{successors} |"
+      end)
+
+    terminal = Enum.map_join(machine.terminal_states(), ", ", &"`#{&1}`")
+
+    """
+    `#{inspect(machine)}`, version #{machine.version()}. Initial state `#{machine.initial()}`; terminal states #{terminal}.
+
+    | from | to |
+    | --- | --- |
+    #{rows}
+    """
   end
 
   @doc "Reflexive-transitive closure of the relation from one state, in first-visit order."

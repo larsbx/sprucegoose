@@ -16,6 +16,8 @@ defmodule SpruceGoose.Deployment.Record do
   alias SpruceGoose.Checks.{HasRole, Readable}
   alias SpruceGoose.Deployment.{Lifecycle, Release}
 
+  # `deployment_shape`, in the deployment domain migration, already pins
+  # `state` to the lifecycle's state set at the database.
   postgres do
     table("deployments")
     repo(SpruceGoose.Repo)
@@ -25,7 +27,7 @@ defmodule SpruceGoose.Deployment.Record do
     policy action_type(:read), do: authorize_if(Readable)
     policy action(:create), do: authorize_if(HasRole.operator())
 
-    policy action(:project) do
+    policy action([:project, :transition]) do
       authorize_if(HasRole.operator())
       authorize_if(HasRole.deployment_executor())
     end
@@ -95,12 +97,12 @@ defmodule SpruceGoose.Deployment.Record do
     end
 
     # The projection update. Only the ledger writer calls this, inside the
-    # transaction that appended the licensing event.
+    # transaction that appended the licensing event. It cannot move a
+    # deployment: `state` is written only by `:transition`.
     update :project do
       require_atomic?(false)
 
       accept([
-        :state,
         :health_status,
         :health_detail,
         :cancellation_reason,
@@ -109,6 +111,37 @@ defmodule SpruceGoose.Deployment.Record do
         :reclaimed_at,
         :last_event
       ])
+    end
+
+    # The only writer of `state`. Every edge is checked against the lifecycle
+    # here, so a caller holding the operator role cannot skip the relation
+    # with a direct update the way an unrestricted `:project` once allowed.
+    update :transition do
+      require_atomic?(false)
+      accept([:last_event, :terminal_at])
+
+      argument(:to_state, :atom, allow_nil?: false, constraints: [one_of: Lifecycle.states()])
+
+      validate(fn changeset, _context ->
+        from = changeset.data.state
+        to = Ash.Changeset.get_argument(changeset, :to_state)
+
+        case Lifecycle.transition(from, to) do
+          {:ok, _} ->
+            :ok
+
+          {:error, :invalid_transition} ->
+            {:error, field: :state, message: "cannot transition from #{from} to #{to}"}
+        end
+      end)
+
+      change(fn changeset, _context ->
+        Ash.Changeset.change_attribute(
+          changeset,
+          :state,
+          Ash.Changeset.get_argument(changeset, :to_state)
+        )
+      end)
     end
   end
 

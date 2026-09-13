@@ -86,7 +86,7 @@ defmodule SpruceGoose.ReauditRegressionTest do
     on_exit(fn -> File.rm(path) end)
     assert {:ok, %{parity: true}} = Executor.run({:import_ledger, path})
 
-    assert {:error, "task must be ready"} =
+    assert {:error, "cannot transition from queued to in_progress"} =
              Executor.run({:transition_task, @a, :in_progress, nil})
 
     assert {:ok, %{state: :ready}} = Executor.run({:transition_task, @a, :ready, nil})

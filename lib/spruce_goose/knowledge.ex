@@ -80,8 +80,7 @@ defmodule SpruceGoose.Knowledge do
         %{
           source: fixture.source,
           source_revision: fixture.source_revision,
-          source_digest: fixture.source_digest,
-          state: :active
+          source_digest: fixture.source_digest
         },
         return_notifications?: true
       )

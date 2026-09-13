@@ -723,6 +723,34 @@ defmodule SpruceGoose.DeploymentTest do
              )
   end
 
+  test "the record's state is written only through the lifecycle-checked transition action",
+       %{system: system} do
+    project = project_with_custody("record-state", @archive)
+
+    {:ok, release} =
+      as(system, fn -> Deployment.accept_release(project.key, release_attrs(@archive)) end)
+
+    {:ok, record} = as(system, fn -> Deployment.create(release.release_id, :staging) end)
+
+    assert {:error, %Ash.Error.Invalid{}} =
+             Ash.update(record, %{state: :ready}, action: :project, authorize?: false)
+
+    assert {:error, illegal} =
+             Ash.update(record, %{to_state: :ready}, action: :transition, authorize?: false)
+
+    assert Exception.message(illegal) =~ "cannot transition from queued to ready"
+    assert Ash.get!(Record, record.id, authorize?: false).state == :queued
+
+    assert {:ok, %{state: :building}} =
+             Ash.update(record, %{to_state: :building}, action: :transition, authorize?: false)
+
+    assert {:error, %Postgrex.Error{postgres: %{constraint: "deployment_shape"}}} =
+             SpruceGoose.Repo.query(
+               "UPDATE deployments SET state = 'sudo' WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(record.id)]
+             )
+  end
+
   # --- fixtures ----------------------------------------------------------------------------
 
   defp as(actor, fun), do: Authz.with_actor(actor, fun)

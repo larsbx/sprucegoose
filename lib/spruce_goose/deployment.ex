@@ -325,6 +325,9 @@ defmodule SpruceGoose.Deployment do
     end
   end
 
+  # The relation is checked before the ledger append so an illegal edge leaves
+  # no event behind; the `:transition` action checks it again as the row's
+  # own guard.
   defp transition(record, to) do
     with {:ok, ^to} <- Lifecycle.transition(record.state, to),
          {:ok, head} <-
@@ -337,11 +340,10 @@ defmodule SpruceGoose.Deployment do
       terminal_at =
         if Lifecycle.terminal?(to) and is_nil(record.terminal_at), do: DateTime.utc_now()
 
-      project_row(record, %{
-        state: to,
-        last_event: head,
-        terminal_at: terminal_at || record.terminal_at
-      })
+      attrs = %{to_state: to, last_event: head, terminal_at: terminal_at || record.terminal_at}
+
+      with {:ok, record, _} <- Authz.update_with_notifications(record, attrs, action: :transition),
+           do: {:ok, record}
     end
   end
 

@@ -67,11 +67,8 @@ ordinary upgrade rather than a blocked one.
   Each execution can append at most one immutable, content-addressed outcome
   receipt and one `DerivationOutcomeCertified` ledger event with the same
   roots. The receipt and event commit together, retries refuse, and PostgreSQL
-  rejects permit or receipt updates and deletes. The resource does still
-  *declare* `state`, `executor_id`, `evidence_digest`, `artifact_digest`,
-  `failure_reason`, `claimed_at`, and `completed_at`: with no update action
-  these are dead fields rather than live state, but they remain on the public
-  read surface until they are removed.
+  rejects permit or receipt updates and deletes. The permit resource declares
+  no `state` and no outcome fields; its outcome is the receipt.
 - A handler that aborts its transaction — a PostgreSQL exception rather than an
   Elixir one — still records a typed failed outcome. The handler call runs in a
   savepoint, so the receipt is writable whatever the handler did. A failure to

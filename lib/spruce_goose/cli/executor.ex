@@ -615,7 +615,6 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch({:transition_task, id, target, reason}) do
     with :ok <- require_valid_id(id),
          {:ok, task} <- read_one(Task, task_id: id),
-         :ok <- require_transition_preconditions(task, target),
          {:ok, task} <- transition(task, target, reason) do
       {:ok, task_json(task)}
     end
@@ -1546,31 +1545,24 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
-  defp require_transition_preconditions(%{state: :ready} = task, :in_progress) do
-    with :ok <- SopGate.verify(task),
-         {:ok, task} <- Ash.load(task, predecessor_edges: [:predecessor]) do
-      if Enum.all?(task.predecessor_edges, &(&1.predecessor.state == :completed)) do
-        :ok
-      else
-        {:error, "task has incomplete predecessors"}
-      end
-    end
-  end
-
-  defp require_transition_preconditions(_task, :in_progress),
-    do: {:error, "task must be ready"}
-
-  defp require_transition_preconditions(_task, _target), do: :ok
-
   defp sop_acknowledgment_allowed(%{state: state}) when state in [:completed, :cancelled],
     do: {:error, "cannot acknowledge SOP on terminal task"}
 
   defp sop_acknowledgment_allowed(_task), do: :ok
 
+  # The Task resource owns every transition guard (relation, SOP gate,
+  # predecessors, receipts, TODOs, reasons); the CLI only phrases its refusal.
   defp transition(task, target, reason) do
     task
     |> Ash.Changeset.for_update(:transition, %{to_state: target, reason: reason})
     |> Authz.update_changeset()
+    |> case do
+      {:error, %Ash.Error.Invalid{errors: errors}} ->
+        {:error, Enum.map_join(errors, "; ", &(Map.get(&1, :message) || Exception.message(&1)))}
+
+      result ->
+        result
+    end
   end
 
   defp create_todo(task, todo_id, body) do
@@ -1777,14 +1769,7 @@ defmodule SpruceGoose.CLI.Executor do
       ref: permit.ref,
       pipeline_digest: permit.pipeline_digest,
       input_artifact_digest: permit.input_artifact_digest,
-      action: permit.action,
-      state: permit.state,
-      executor_id: permit.executor_id,
-      evidence_digest: permit.evidence_digest,
-      artifact_digest: permit.artifact_digest,
-      failure_reason: permit.failure_reason,
-      claimed_at: permit.claimed_at,
-      completed_at: permit.completed_at
+      action: permit.action
     }
   end
 

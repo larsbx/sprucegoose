@@ -14,8 +14,10 @@ defmodule SpruceGoose.Knowledge.Generation do
     attribute(:source_revision, :string, allow_nil?: false, public?: true)
     attribute(:source_digest, :string, allow_nil?: false, public?: true)
 
+    # Born active, retired once. The caller does not choose the initial state.
     attribute(:state, :atom,
       allow_nil?: false,
+      default: :active,
       constraints: [one_of: [:active, :retired]],
       public?: true
     )
@@ -28,11 +30,12 @@ defmodule SpruceGoose.Knowledge.Generation do
 
     create :create do
       primary?(true)
-      accept([:source, :source_revision, :source_digest, :state])
+      accept([:source, :source_revision, :source_digest])
     end
 
     update :retire do
       accept([])
+      validate(attribute_equals(:state, :active), message: "generation is already retired")
       change(set_attribute(:state, :retired))
     end
   end

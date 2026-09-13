@@ -50,7 +50,6 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:ok, permit} =
              as_actor(operator, fn -> Authz.create(Permit, attrs, action: :admit) end)
 
-    assert permit.state == :admitted
     assert permit.action == :test
     assert permit.permit_id == Permit.deterministic_id(attrs)
 
@@ -118,7 +117,7 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:error, %Postgrex.Error{postgres: %{message: "derivation permits are immutable"}}} =
              Ecto.Adapters.SQL.query(
                SpruceGoose.Repo,
-               "UPDATE derivation_permits SET state = 'claimed' WHERE id = $1::uuid",
+               "UPDATE derivation_permits SET ref = 'refs/heads/forged' WHERE id = $1::uuid",
                [Ecto.UUID.dump!(permit.id)],
                mode: :savepoint
              )
@@ -145,7 +144,6 @@ defmodule SpruceGoose.DerivationsTest do
 
     assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
     receipt = receipt!(permit.permit_id)
     assert receipt.outcome == :succeeded
     assert receipt.executor_id == executor.name
@@ -211,8 +209,6 @@ defmodule SpruceGoose.DerivationsTest do
              &(&1 == {:discard, "derivation already has a terminal receipt"})
            ) == 7
 
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
-
     assert %{rows: [[1]]} =
              SpruceGoose.Repo.query!(
                "SELECT count(*) FROM derivation_outcome_receipts WHERE permit_id = $1",
@@ -245,7 +241,6 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:discard, "no handler configured for test"} =
              Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
     failed = receipt!(permit.permit_id)
     assert failed.outcome == :failed
     assert failed.failure_reason == "no handler configured for test"
@@ -264,8 +259,6 @@ defmodule SpruceGoose.DerivationsTest do
 
     assert {:discard, "derivation executor actor is not configured"} =
              Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
-
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
   end
 
   test "a handler exception becomes a typed failed outcome" do
@@ -290,7 +283,6 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:discard, "bounded handler failed"} =
              Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
     failed = receipt!(permit.permit_id)
     assert failed.outcome == :failed
     assert failed.failure_reason == "bounded handler failed"
@@ -323,7 +315,6 @@ defmodule SpruceGoose.DerivationsTest do
     failed = receipt!(permit.permit_id)
     assert failed.outcome == :failed
     assert failed.failure_reason =~ "table_that_does_not_exist"
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
   end
 
   test "a derivation without a terminal receipt can be rescheduled through the CLI" do
@@ -396,7 +387,6 @@ defmodule SpruceGoose.DerivationsTest do
     assert {:ok, ^first} = SpruceGoose.Derivations.VerifyArtifact.run(permit)
     assert :ok = Executor.perform(%Oban.Job{args: %{"permit_id" => permit.permit_id}})
 
-    assert Ash.get!(Permit, permit.id, authorize?: false).state == :admitted
     completed = receipt!(permit.permit_id)
     assert completed.outcome == :succeeded
     assert completed.artifact_digest == input.digest
@@ -440,7 +430,6 @@ defmodule SpruceGoose.DerivationsTest do
     attrs = task |> permit_attrs() |> Map.put(:task_id, task.task_id)
 
     assert {:ok, admitted} = CLIExecutor.run({:admit_derivation, attrs}, operator.name)
-    assert admitted.state == :admitted
     assert admitted.action == :test
     assert admitted.task_id == task.task_id
 

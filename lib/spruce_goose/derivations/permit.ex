@@ -15,7 +15,6 @@ defmodule SpruceGoose.Derivations.Permit do
   alias SpruceGoose.Workflows.Task
 
   @actions [:test, :build_release, :verify_artifact]
-  @states [:admitted, :claimed, :succeeded, :failed]
   @hex40 ~r/\A[0-9a-f]{40}\z/
   @hex64 ~r/\A[0-9a-f]{64}\z/
   @repository ~r/\A[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\z/
@@ -66,19 +65,9 @@ defmodule SpruceGoose.Derivations.Permit do
       constraints: [one_of: @actions]
     )
 
-    attribute(:state, :atom,
-      allow_nil?: false,
-      public?: true,
-      default: :admitted,
-      constraints: [one_of: @states]
-    )
-
-    attribute(:executor_id, :string, public?: true)
-    attribute(:evidence_digest, :string, public?: true)
-    attribute(:artifact_digest, :string, public?: true)
-    attribute(:failure_reason, :string, public?: true)
-    attribute(:claimed_at, :utc_datetime_usec, public?: true)
-    attribute(:completed_at, :utc_datetime_usec, public?: true)
+    # A permit has no state of its own: it is admitted once, PostgreSQL refuses
+    # every update, and its outcome is the at-most-one OutcomeReceipt bound to
+    # its permit_id.
     timestamps()
   end
 

@@ -151,6 +151,23 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
              Executor.run(:rebuild_task_projection)
   end
 
+  test "replay refuses a certified transition the task lifecycle forbids" do
+    task = task_fixture()
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+    assert {:ok, _} = certify_task_result(task, "completed", "test:forged-completion")
+
+    assert {:error, :illegal_certified_transition} = Executor.run(:rebuild_task_projection)
+  end
+
+  test "replay accepts a certified transition the task lifecycle allows" do
+    task = task_fixture()
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+    assert {:ok, _} = certify_task_result(task, "proposed", "test:legal-proposal")
+
+    assert {:ok, %{tasks: tasks}} = Executor.run(:rebuild_task_projection)
+    assert tasks >= 1
+  end
+
   @tag :separate_sessions
   test "acceptance racing a supported mutation keeps one contiguous boundary" do
     parent = self()
@@ -214,6 +231,29 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
       definition_of_done: "Baseline proof passes.",
       runner: :openclaw
     })
+  end
+
+  # Append a `transition_task` result for `task` claiming `state`, bypassing the
+  # Task resource entirely, the way a forged or corrupted event would.
+  defp certify_task_result(task, state, idempotency_key) do
+    %{rows: [[row]]} =
+      Repo.query!("SELECT to_jsonb(t) FROM workflow_tasks t WHERE id = $1::uuid", [
+        Ecto.UUID.dump!(task.id)
+      ])
+
+    {:ok, event} =
+      CertifiedEvent.new(%{
+        stream: "authority:sprucegoose",
+        event_type: "MutationAccepted",
+        idempotency_key: idempotency_key,
+        payload: %{"command" => "transition_task", "result" => Map.put(row, "state", state)},
+        roots: shadow_roots()
+      })
+
+    case EventLedger.append(EventLedger.new(), event) do
+      {:ok, %ContentID{}, _ledger} -> {:ok, event}
+      other -> other
+    end
   end
 
   defp shadow_roots do

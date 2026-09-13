@@ -48,12 +48,9 @@ claimed.
 
 ### Lifecycle
 
-States and transitions are carried over unchanged from the native plane:
-
-```
-queued → building → staged → deploying → verifying → ready
-                  ↘ cancelled          ↘ failed ↘ rolling_back → rolled_back
-```
+States and transitions are carried over unchanged from the native plane. The
+exact relation is `SpruceGoose.Deployment.Lifecycle`, rendered and pinned in
+[`lifecycles.md`](lifecycles.md); this document does not repeat it.
 
 `ready`, `failed`, `rolled_back`, `cancelled` are terminal: the rollout has
 finished. Rollback is a new operation on a finished deployment, not a

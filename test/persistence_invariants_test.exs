@@ -32,6 +32,15 @@ defmodule SpruceGoose.PersistenceInvariantsTest do
     assert Exception.message(error) =~ "stale"
   end
 
+  test "database refuses a task state outside the lifecycle's state set" do
+    {_workflow, task} = hierarchy("valid-state")
+
+    assert {:error, %Postgrex.Error{postgres: %{constraint: "workflow_tasks_valid_state"}}} =
+             Repo.query("UPDATE workflow_tasks SET state = 'sudo' WHERE id = $1::text::uuid", [
+               task.id
+             ])
+  end
+
   test "workflow definition replacement rejects stale records" do
     {workflow, _task} = hierarchy()
     stale = workflow
