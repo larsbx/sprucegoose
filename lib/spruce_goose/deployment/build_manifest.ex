@@ -107,8 +107,10 @@ defmodule SpruceGoose.Deployment.BuildManifest do
   defp valid_digest?(_), do: false
 
   defp valid_path?(path) when is_binary(path) do
-    present?(path) and Path.type(path) == :relative and
-      Path.split(path) |> Enum.all?(&(&1 not in [".", ".."]))
+    parts = Path.split(path)
+
+    present?(path) and Path.type(path) == :relative and path == Path.join(parts) and
+      Enum.all?(parts, &(&1 not in [".", ".."]))
   end
 
   defp valid_path?(_), do: false

@@ -39,6 +39,8 @@ defmodule SpruceGoose.Deployment.BuildManifestTest do
           [@commit, @digest, ["mix release"], %{MIX_ENV: "prod"}, [{"mix.exs", @digest}]],
           [@commit, @digest, ["mix release"], %{}, []],
           [@commit, @digest, ["mix release"], %{}, [{"../secret", @digest}]],
+          [@commit, @digest, ["mix release"], %{}, [{"assets//app.js", @digest}]],
+          [@commit, @digest, ["mix release"], %{}, [{"assets/", @digest}]],
           [
             @commit,
             @digest,
