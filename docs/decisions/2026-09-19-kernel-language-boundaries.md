@@ -94,6 +94,10 @@ Each implementation slice remains separately reviewable.
 
 ## Canonicalization boundary
 
-This proposal is staged on the GitHub mirror only. It acquires repository
-authority only after reconciliation onto the canonical repository head and
-passing the canonical CI/review gates.
+This proposal may be merged on the GitHub mirror into a non-`main` branch for
+review, integration, or handoff. Such a merge is explicitly non-canonical and
+does not transfer repository or production authority.
+
+Mirror-side merge into GitHub `main` is not the adoption path. Repository
+authority is acquired only after reconciliation onto the canonical repository
+head and passage of the canonical CI/review gates.
