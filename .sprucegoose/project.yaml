@@ -156,6 +156,20 @@ roadmaps:
               definition_of_done: Every own repository classified as unpublished has a Forgejo repository created under the publication authority, a forgejo remote configured, and all branches and tags pushed, with local and remote object identity compared per repository and recorded; third-party upstream clones retain their upstream remotes and are not migrated; GitHub remains configured as a private mirror rather than being removed; no credential material is published; repositories whose worktrees are dirty or owned by another active task are recorded as waiting with exact paths instead of being force-cleaned.
               depends_on: [forgejo-publication-inventory]
               input: {}
+            - id: github-forgejo-publication-rollout
+              kind: openclaw
+              title: Roll out GitHub-to-Forgejo publication
+              definition_of_done: >
+                Eligible estate repositories publish trusted GitHub main commits to their
+                Forgejo github-sync branches through the canonical repository-neutral
+                workflow; GitHub organization variables and scoped secrets exist without
+                credential disclosure; tag:ci can reach the Forgejo host only as allowed
+                by Tailnet policy; protected Forgejo main branches remain unchanged; each
+                enabled repository completes one successful publication with source and
+                destination commit identity recorded; excluded repositories and failures
+                are listed explicitly.
+              depends_on: [forgejo-publication-migration]
+              input: {}
             - id: deontic-overlay-norm-root-candidate
               kind: openclaw
               title: Publish the neutral deontic overlay as a norm-root candidate
