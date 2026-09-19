@@ -14,7 +14,9 @@ Hand-edits here are drift and `make estate-check` fails on them.
 The estate's task authority and governed-release control plane.
 
 **Language / toolchain:** Elixir 1.19, escript plus an OTP release
-**CI:** GitHub Actions: `ci.yml` (fast checks, then tests under scram-sha-256 and trust), `delivery.yml`, `dependency-audit.yml`; Woodpecker via `.woodpecker.yml`
+**CI:** GitHub Actions: `ci.yml` (fast checks, then tests under scram-sha-256 and
+  trust), `delivery.yml`, `dependency-audit.yml`; Woodpecker via
+  `.woodpecker.yml`
 
 This document says *how* to steward a PR here. It does not widen what you are
 allowed to do. The standing prohibitions in your harness still hold — never
