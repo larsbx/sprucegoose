@@ -668,16 +668,25 @@ Likewise, the current EventLedger, Ash resources, projector, and bounded effect
 executor remain Elixir/Ash responsibilities unless a separately reviewed
 authority-boundary decision says otherwise.
 
-## 18. Repository authority
+## 18. Repository authority and mirror merge policy
 
 This document is a stewardship proposal on the GitHub mirror. It SHALL NOT be
-treated as canonical merely because it exists in a GitHub branch or pull
-request.
+treated as canonical merely because it exists in a GitHub branch, pull request,
+or merged non-main branch.
+
+GitHub-side merges are permitted when the pull request targets a branch other
+than `main`. Such a merge records reviewed mirror/integration state only; it
+does not constitute canonical adoption, move production authority, or replace
+Forgejo as the merge authority for the canonical head.
+
+A GitHub pull request SHALL NOT merge directly into `main` when the change is
+intended only for mirror review, staging, or handoff. Prefer a scoped
+`staging/*`, `spec/*`, or equivalent non-main integration branch.
 
 The canonical repository and merge/CI authority rules documented for
-SpruceGoose remain unchanged. Any adopted version must be reconciled onto the
-canonical head and pass the canonical verification gates before it can govern
-implementation.
+SpruceGoose remain unchanged. Any version intended to govern canonical
+implementation must still be reconciled onto the canonical head and pass the
+canonical verification gates.
 
 ## 19. Summary rule
 
