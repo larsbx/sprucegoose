@@ -143,3 +143,17 @@ roadmaps:
               definition_of_done: Superseded writers are disabled after rollback-safe cutover evidence is retained.
               depends_on: [canary-cutover]
               input: {}
+            - id: github-forgejo-publication-rollout
+              kind: openclaw
+              title: Roll out GitHub-to-Forgejo publication
+              definition_of_done: >
+                Eligible estate repositories publish trusted GitHub main commits to their
+                Forgejo github-sync branches through the canonical repository-neutral
+                workflow; GitHub organization variables and scoped secrets exist without
+                credential disclosure; tag:ci can reach the Forgejo host only as allowed
+                by Tailnet policy; protected Forgejo main branches remain unchanged; each
+                enabled repository completes one successful publication with source and
+                destination commit identity recorded; excluded repositories and failures
+                are listed explicitly.
+              depends_on: [forgejo-publication-migration]
+              input: {}
