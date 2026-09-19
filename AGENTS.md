@@ -67,6 +67,11 @@ more than one that passes vacuously.
 - Never pin a GitHub Action by floating tag.
 - Never widen `.hex-audit-allowlist` without saying in the PR what was
   audited.
+- Never start a new load-bearing kernel -- pure, total, and where being wrong
+  is a violation rather than an inconvenience -- without checking the Gleam
+  policy in `agent-icm` (`context/30-stack/10-gleam-kernels.md`). It says when
+  the language boundary is worth it, when it is not, and that the toolchain
+  must be proved by a spike before the first kernel lands.
 
 ## Scope discipline
 
