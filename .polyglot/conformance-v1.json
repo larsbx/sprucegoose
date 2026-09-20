@@ -1,0 +1,56 @@
+{
+  "schema": "polyglot-conformance-vectors/v1",
+  "boundary": "deployment-record",
+  "accepted": [
+    {
+      "name": "minimal-canonical-envelope",
+      "value": {
+        "schema": "polyglot-boundary-envelope/v1",
+        "boundary": "deployment-record",
+        "producer_role": "canonical",
+        "artifact_id": "fixture-0001",
+        "payload_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "critical": {}
+      }
+    }
+  ],
+  "rejected": [
+    {
+      "name": "unknown-critical-field",
+      "reason": "critical fields are closed and unknown entries fail closed",
+      "value": {
+        "schema": "polyglot-boundary-envelope/v1",
+        "boundary": "deployment-record",
+        "producer_role": "oracle",
+        "artifact_id": "fixture-bad-critical",
+        "payload_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "critical": {
+          "unrecognized": true
+        }
+      }
+    },
+    {
+      "name": "unlabelled-producer",
+      "reason": "the producer role is mandatory",
+      "value": {
+        "schema": "polyglot-boundary-envelope/v1",
+        "boundary": "deployment-record",
+        "artifact_id": "fixture-bad-role",
+        "payload_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "critical": {}
+      }
+    },
+    {
+      "name": "wrong-boundary",
+      "reason": "cross-boundary reinterpretation is forbidden",
+      "value": {
+        "schema": "polyglot-boundary-envelope/v1",
+        "boundary": "different-boundary",
+        "producer_role": "adapter",
+        "artifact_id": "fixture-bad-boundary",
+        "payload_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "critical": {}
+      }
+    }
+  ]
+}
