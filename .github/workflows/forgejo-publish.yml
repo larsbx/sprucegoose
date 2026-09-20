@@ -1,0 +1,110 @@
+# Derived from templates/github/forgejo-publish.yml in larsbx/agent-icm @ sha256:33f7ad434da3a01c
+# Edit the canonical template or estate.toml, then re-render: make estate
+# Hand-edits here are drift and `make estate-check` fails on them.
+
+name: Publish to Forgejo
+
+# The estate's canonical forge is Forgejo, reachable only on the tailnet, and
+# CI for this repository is Woodpecker there. This workflow is not a second
+# pipeline and runs no gates -- it publishes commits that land on GitHub into
+# Forgejo, so automation that pushes here still reaches the forge that matters.
+#
+# It pushes to a sync branch rather than main: Forgejo's branch protection on
+# main stays as it is, and the change arrives as a Forgejo pull request.
+# Protection is not something CI should be able to route around.
+#
+# Nothing here names a repository. Every value that varies comes from a GitHub
+# variable, and the repository name comes from the event, so this file is
+# byte-identical in every repository that opts in. Only credentials are
+# secrets; an endpoint, an owner and a branch name are configuration, and
+# putting them in secrets would hide them from the people who need to read
+# them.
+#
+#   vars:    FORGEJO_URL, FORGEJO_OWNER, FORGEJO_USERNAME,
+#            FORGEJO_REPOSITORY (default: this repository's name),
+#            FORGEJO_TARGET_BRANCH (default: github-sync),
+#            TAILSCALE_TAGS (default: tag:ci)
+#   secrets: FORGEJO_TOKEN, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+#
+# Set the common ones as organization variables; a repository then needs only
+# the opt-in and any genuine override.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A single publisher at a time. Two rapid pushes racing on one sync branch
+# would otherwise land in an order nobody chose; the second waits rather than
+# cancelling, because cancelling would drop a commit from the forge.
+concurrency:
+  group: forgejo-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history: the receiving side needs the commits, not a shallow tip.
+          fetch-depth: 0
+          # The GITHUB_TOKEN has no business outliving the checkout, and this
+          # job pushes somewhere else entirely.
+          persist-credentials: false
+
+      # The forge is tailnet-only, so a GitHub-hosted runner has to join the
+      # tailnet before it can resolve or reach it. The OAuth client should be
+      # scoped to minting this tag and nothing else.
+      - name: Join the tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: ${{ vars.TAILSCALE_TAGS || 'tag:ci' }}
+
+      - name: Publish commit to Forgejo
+        shell: bash
+        # Scoped to this step: the token has no business being visible to the
+        # checkout or to the Tailscale action.
+        env:
+          FORGEJO_URL: ${{ vars.FORGEJO_URL }}
+          FORGEJO_OWNER: ${{ vars.FORGEJO_OWNER }}
+          FORGEJO_REPOSITORY: ${{ vars.FORGEJO_REPOSITORY || github.event.repository.name }}
+          FORGEJO_USERNAME: ${{ vars.FORGEJO_USERNAME }}
+          FORGEJO_TARGET_BRANCH: ${{ vars.FORGEJO_TARGET_BRANCH || 'github-sync' }}
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Each of these fails with the name of the thing to go and set, rather
+          # than with an authentication error that reads like a bad credential.
+          # Repository secrets are not exposed to fork pull requests, which is
+          # the intended behaviour; on a trusted branch an empty one means it
+          # was never set.
+          : "${FORGEJO_URL:?set the FORGEJO_URL repository or organization variable}"
+          : "${FORGEJO_OWNER:?set the FORGEJO_OWNER variable}"
+          : "${FORGEJO_REPOSITORY:?set the FORGEJO_REPOSITORY variable}"
+          : "${FORGEJO_USERNAME:?set the FORGEJO_USERNAME variable}"
+          : "${FORGEJO_TOKEN:?set the FORGEJO_TOKEN secret}"
+
+          remote="${FORGEJO_URL%/}/${FORGEJO_OWNER}/${FORGEJO_REPOSITORY}.git"
+          git remote add forgejo "$remote"
+
+          # The remote is named without credentials and the token is handed to
+          # this one command through a helper that reads the environment, so it
+          # is written into neither .git/config nor a process argument list.
+          # Single quotes keep the outer shell from expanding the names: the
+          # helper's own shell does that, inside the subprocess.
+          #
+          # printf, not echo: git runs the helper under /bin/sh, which on a
+          # runner is dash, and dash's echo expands backslash escapes. A token
+          # containing a literal \n would be split across two lines, so git
+          # would read a truncated password and then try to parse the remainder
+          # as another key. printf "%s\n" emits each argument verbatim.
+          git -c 'credential.helper=!f() { printf "%s\n" "username=${FORGEJO_USERNAME}" "password=${FORGEJO_TOKEN}"; }; f' \
+              push forgejo "HEAD:refs/heads/${FORGEJO_TARGET_BRANCH}"
+
+          echo "published $(git rev-parse --short HEAD) to ${FORGEJO_TARGET_BRANCH}"
