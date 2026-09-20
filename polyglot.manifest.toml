@@ -1,0 +1,25 @@
+version = 1
+repository = "larsbx/sprucegoose"
+branch = "polyglot/migration-v1"
+boundary_id = "deployment-record"
+fail_closed = true
+authority_change = false
+ci_wiring = false
+
+[authority]
+primary_languages = ["Elixir/Ash"]
+supporting_languages = ["Haskell", "Rust", "TypeScript", "SQL"]
+canonical_status = "existing-authority-preserved"
+
+[roles]
+proof = "machine-checked claims only"
+kernel = "canonical executable validation only when designated"
+reference = "pure executable semantics and vector generation"
+oracle = "non-authoritative research and differential checking"
+adapter = "generated or mechanically constrained translation"
+
+[compatibility]
+unknown_critical_fields = "reject"
+schema_mismatch = "reject"
+authority_mismatch = "reject"
+normalization_mismatch = "reject"
