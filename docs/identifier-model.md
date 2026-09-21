@@ -111,7 +111,7 @@ is not eligible for derived IDs at all.
   per PC-01, so no new Class I rows can arrive.
 
 Historical imports keep their existing v4 IDs as grandfathered rows and are
-never re-derived. A real upstream sync (GitLab, Notion) requires reopening this
+never re-derived. A real upstream sync (Forgejo, Notion) requires reopening this
 as a governed decision at that time.
 
 ## origin_seq
