@@ -182,3 +182,22 @@ roadmaps:
               definition_of_done: Credential material held in the local secrets repository is transferred into Vaultwarden through the bw CLI with per-item verification that each stored secret reads back byte-identical, the secrets repository is never pushed to Forgejo or any mirror, retention or destruction of the local copy is an explicit recorded decision rather than an implied side effect, and rollback remains possible until readback verification passes for every item.
               depends_on: [forgejo-publication-inventory]
               input: {}
+            - id: mama-production-recovery-copy
+              kind: openclaw
+              title: Build verified Papa recovery copies of Mama production services
+              definition_of_done: >-
+                Every production-critical service running on Mama is identified from live
+                units, containers, listeners, declared authority, and backing stores; its
+                configuration, exact release or image identity, application-consistent data,
+                and separately protected credential dependencies are copied or reproducibly
+                staged on Papa without exposing secrets or changing Mama's authority; each
+                service is restored into an isolated non-authoritative target and passes a
+                service-specific health and data-integrity check; omissions, capacity limits,
+                rollback requirements, and external dependencies are explicit; repository and
+                operational evidence is published through its configured authority; and a
+                final wipe-readiness report refuses approval unless every critical service has
+                a fresh verified restore, retained source backup, and documented reactivation
+                procedure. This task does not authorize wiping Mama or activating Papa as the
+                production authority.
+              depends_on: []
+              input: {}
