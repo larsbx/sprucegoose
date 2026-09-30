@@ -63,6 +63,16 @@ defmodule SpruceGoose.CLI.Command do
     {"column",
      ["add BOARD KEY POSITION STATE NAME", "list BOARD", "rename COLUMN NAME", "remove COLUMN"]},
     {"filter", ["add BOARD NAME JSON", "list BOARD", "apply FILTER", "remove FILTER"]},
+    {"intake",
+     [
+       "add --type task|diagnosis|roadmap|workflow|project --priority N --title TEXT --dod TEXT [--body TEXT]",
+       "list [--state pending|classified|resolved|dropped|all] [--type TYPE]",
+       "show CAPTURE_ID",
+       "classify CAPTURE_ID [--project KEY] [--roadmap KEY] [--workflow ID]",
+       "bind CAPTURE_ID TASK_ID",
+       "done CAPTURE_ID",
+       "drop CAPTURE_ID REASON"
+     ]},
     {"inbox",
      [
        "add TEXT",
@@ -314,6 +324,59 @@ defmodule SpruceGoose.CLI.Command do
       {:ok, {:list_inbox, Keyword.get(opts, :state)}}
     end
   end
+
+  def parse(["intake", "add" | args]) do
+    case OptionParser.parse(args,
+           strict: [
+             type: :string,
+             priority: :integer,
+             title: :string,
+             dod: :string,
+             body: :string
+           ]
+         ) do
+      {opts, [], []} -> intake_submission(opts)
+      _ -> {:error, "invalid intake arguments"}
+    end
+  end
+
+  def parse(["intake", "list" | args]) do
+    case OptionParser.parse(args, strict: [state: :string, type: :string]) do
+      {opts, [], []} ->
+        {:ok, {:list_intake, Keyword.get(opts, :state), Keyword.get(opts, :type)}}
+
+      _ ->
+        {:error, "invalid intake list arguments"}
+    end
+  end
+
+  def parse(["intake", "show", capture_id]), do: {:ok, {:show_intake, capture_id}}
+
+  def parse(["intake", "classify", capture_id | args]) do
+    case OptionParser.parse(args,
+           strict: [project: :string, roadmap: :string, workflow: :string]
+         ) do
+      {opts, [], []} when opts != [] ->
+        {:ok,
+         {:classify_intake, capture_id,
+          %{
+            project: Keyword.get(opts, :project),
+            roadmap: Keyword.get(opts, :roadmap),
+            workflow: Keyword.get(opts, :workflow)
+          }}}
+
+      _ ->
+        {:error, "intake classification requires project, roadmap, or workflow"}
+    end
+  end
+
+  def parse(["intake", "bind", capture_id, task_id]),
+    do: {:ok, {:bind_intake, capture_id, task_id}}
+
+  def parse(["intake", "done", capture_id]), do: {:ok, {:resolve_inbox, capture_id, nil}}
+
+  def parse(["intake", "drop", capture_id | reason]) when reason != [],
+    do: {:ok, {:drop_inbox, capture_id, Enum.join(reason, " ")}}
 
   def parse(["inbox", "add" | body]) when body != [],
     do: {:ok, {:add_inbox, Enum.join(body, " ")}}
@@ -665,6 +728,33 @@ defmodule SpruceGoose.CLI.Command do
 
       _ ->
         {:error, "invalid dependency arguments"}
+    end
+  end
+
+  @intake_types ~w(task diagnosis roadmap workflow project)
+
+  defp intake_submission(opts) do
+    with {:ok, type} <- required(opts, :type),
+         true <- type in @intake_types,
+         {:ok, priority} <- required_priority(opts),
+         {:ok, title} <- required(opts, :title),
+         {:ok, definition_of_done} <- required(opts, :dod) do
+      {:ok,
+       {:submit_intake,
+        %{
+          request_type: String.to_existing_atom(type),
+          priority: priority,
+          title: title,
+          definition_of_done: definition_of_done,
+          body: Keyword.get(opts, :body, title)
+        }}}
+    else
+      false -> {:error, "--type must be task, diagnosis, roadmap, workflow, or project"}
+      {:error, :type} -> {:error, "--type is required"}
+      {:error, :priority} -> {:error, "--priority is required"}
+      {:error, :priority_range} -> {:error, "--priority must be between 0 and 5"}
+      {:error, :title} -> {:error, "--title is required"}
+      {:error, :dod} -> {:error, "--dod is required"}
     end
   end
 

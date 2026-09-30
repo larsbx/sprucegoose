@@ -731,6 +731,57 @@ defmodule SpruceGoose.CLI.Executor do
     end
   end
 
+  defp dispatch({:submit_intake, input}) do
+    attrs = Map.put(input, :capture_id, generate_record_id("inbox"))
+
+    with {:ok, item} <- Authz.create(InboxItem, attrs, action: :submit) do
+      {:ok, inbox_json(item)}
+    end
+  end
+
+  defp dispatch({:show_intake, capture_id}) do
+    with {:ok, item} <- read_one(InboxItem, capture_id: capture_id) do
+      {:ok, inbox_json(item)}
+    end
+  end
+
+  defp dispatch({:list_intake, state, request_type}) do
+    with {:ok, filter} <- intake_scope(state, request_type),
+         {:ok, items} <- Authz.read(Ash.Query.filter_input(InboxItem, filter)) do
+      {:ok, %{items: items |> Enum.sort_by(& &1.capture_id) |> Enum.map(&inbox_json/1)}}
+    end
+  end
+
+  defp dispatch({:classify_intake, capture_id, classification}) do
+    attrs = %{
+      proposed_project: classification.project,
+      proposed_roadmap: classification.roadmap,
+      proposed_workflow: classification.workflow
+    }
+
+    with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
+         {:ok, item} <-
+           item
+           |> Ash.Changeset.for_update(:classify, attrs)
+           |> Authz.update_changeset() do
+      {:ok, inbox_json(item)}
+    end
+  end
+
+  defp dispatch({:bind_intake, capture_id, task_id}) do
+    with :ok <- require_valid_id(task_id),
+         {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
+         :ok <- require_open_capture(item),
+         {:ok, task} <- read_one(Task, task_id: task_id),
+         {:ok, item} <-
+           resolve_capture(item, :resolved, %{
+             promoted_task_id: task.task_id,
+             resolution_reason: "bound to governed task"
+           }) do
+      {:ok, inbox_json(item)}
+    end
+  end
+
   defp dispatch({:list_inbox, state}) do
     with {:ok, filter} <- inbox_scope(state),
          {:ok, items} <- Authz.read(Ash.Query.filter_input(InboxItem, filter)) do
@@ -1200,7 +1251,8 @@ defmodule SpruceGoose.CLI.Executor do
     }
   end
 
-  @inbox_states ~w(pending resolved dropped)
+  @inbox_states ~w(pending classified resolved dropped)
+  @intake_types ~w(task diagnosis roadmap workflow project)
 
   defp inbox_scope(nil), do: {:ok, [state: :pending]}
   defp inbox_scope("all"), do: {:ok, []}
@@ -1209,9 +1261,24 @@ defmodule SpruceGoose.CLI.Executor do
     do: {:ok, [state: String.to_existing_atom(state)]}
 
   defp inbox_scope(_state),
-    do: {:error, "state must be one of pending, resolved, dropped, all"}
+    do: {:error, "state must be one of pending, classified, resolved, dropped, all"}
 
-  defp require_open_capture(%{state: :pending}), do: :ok
+  defp intake_scope(state, request_type) do
+    with {:ok, state_filter} <- inbox_scope(state),
+         {:ok, type_filter} <- intake_type_filter(request_type) do
+      {:ok, Keyword.merge(state_filter, type_filter)}
+    end
+  end
+
+  defp intake_type_filter(nil), do: {:ok, []}
+
+  defp intake_type_filter(type) when type in @intake_types,
+    do: {:ok, [request_type: String.to_existing_atom(type)]}
+
+  defp intake_type_filter(_type),
+    do: {:error, "type must be one of task, diagnosis, roadmap, workflow, project"}
+
+  defp require_open_capture(%{state: state}) when state in [:pending, :classified], do: :ok
 
   defp require_open_capture(%{state: state}),
     do: {:error, "capture is already #{state}"}
@@ -1688,6 +1755,14 @@ defmodule SpruceGoose.CLI.Executor do
     do: %{
       id: item.capture_id,
       body: item.body,
+      type: item.request_type,
+      priority: item.priority,
+      title: item.title,
+      definition_of_done: item.definition_of_done,
+      project: item.proposed_project,
+      roadmap: item.proposed_roadmap,
+      workflow: item.proposed_workflow,
+      classified_at: item.classified_at,
       state: item.state,
       resolution_reason: item.resolution_reason,
       promoted_task_id: item.promoted_task_id,

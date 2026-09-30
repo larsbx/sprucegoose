@@ -8,7 +8,7 @@ defmodule SpruceGoose.CLITest do
 
   test "returns scoped help for every command family and rejects unknown families" do
     families =
-      ~w(id project blueprint roadmap workflow task dep todo board column filter inbox ledger runtime outbox derivation)
+      ~w(id project blueprint roadmap workflow task dep todo board column filter intake inbox ledger runtime outbox derivation)
 
     for family <- families, help_arg <- ["help", "--help"] do
       assert {:ok, help} = CLI.run([family, help_arg])
@@ -458,6 +458,88 @@ defmodule SpruceGoose.CLITest do
 
     assert {:ok, {:list_inbox, nil}} = Command.parse(["inbox", "list"])
     assert {:error, :usage} = Command.parse(["inbox", "add"])
+  end
+
+  test "parses structured intake before governed membership exists" do
+    assert {:ok,
+            {:submit_intake,
+             %{
+               request_type: :roadmap,
+               priority: 1,
+               title: "Make intake usable",
+               definition_of_done: "A request can be classified without existing membership",
+               body: "Capture first"
+             }}} =
+             Command.parse([
+               "intake",
+               "add",
+               "--type",
+               "roadmap",
+               "--priority",
+               "1",
+               "--title",
+               "Make intake usable",
+               "--dod",
+               "A request can be classified without existing membership",
+               "--body",
+               "Capture first"
+             ])
+
+    assert {:ok, {:show_intake, "inbox-abc"}} =
+             Command.parse(["intake", "show", "inbox-abc"])
+
+    assert {:ok,
+            {:classify_intake, "inbox-abc",
+             %{project: "openclaw-system", roadmap: "new-roadmap", workflow: nil}}} =
+             Command.parse([
+               "intake",
+               "classify",
+               "inbox-abc",
+               "--project",
+               "openclaw-system",
+               "--roadmap",
+               "new-roadmap"
+             ])
+
+    assert {:ok, {:bind_intake, "inbox-abc", "tsk-20260727T044500Z-1234abcd"}} =
+             Command.parse([
+               "intake",
+               "bind",
+               "inbox-abc",
+               "tsk-20260727T044500Z-1234abcd"
+             ])
+  end
+
+  test "structured intake refuses incomplete or invalid requests" do
+    assert {:error, message} =
+             Command.parse([
+               "intake",
+               "add",
+               "--type",
+               "task",
+               "--priority",
+               "1",
+               "--title",
+               "Missing DoD"
+             ])
+
+    assert message =~ "--dod"
+
+    assert {:error, message} =
+             Command.parse([
+               "intake",
+               "add",
+               "--type",
+               "unknown",
+               "--priority",
+               "1",
+               "--title",
+               "Bad type",
+               "--dod",
+               "Rejected"
+             ])
+
+    assert message =~ "type"
   end
 
   test "parses inbox triage commands" do

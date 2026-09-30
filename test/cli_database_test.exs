@@ -1026,6 +1026,63 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert Enum.sort(Enum.map(items, & &1.id)) == Enum.sort([first.id, second.id])
   end
 
+  test "structured intake can be captured and classified before membership exists" do
+    input = %{
+      request_type: :roadmap,
+      priority: 1,
+      title: "Create a new roadmap",
+      definition_of_done: "The roadmap proposal is reviewed",
+      body: "No project hierarchy is required to record this request"
+    }
+
+    assert {:ok, captured} = Executor.run({:submit_intake, input})
+    assert captured.state == :pending
+    assert captured.type == :roadmap
+    assert captured.project == nil
+
+    assert {:ok, classified} =
+             Executor.run(
+               {:classify_intake, captured.id,
+                %{project: "future-project", roadmap: "future-roadmap", workflow: nil}}
+             )
+
+    assert classified.state == :classified
+    assert classified.project == "future-project"
+    assert classified.roadmap == "future-roadmap"
+    assert classified.workflow == nil
+
+    assert {:ok, shown} = Executor.run({:show_intake, captured.id})
+    assert shown == classified
+
+    assert {:ok, %{items: [listed]}} =
+             Executor.run({:list_intake, "classified", "roadmap"})
+
+    assert listed.id == captured.id
+  end
+
+  test "binding intake resolves it only to an existing governed task" do
+    assert {:ok, captured} =
+             Executor.run(
+               {:submit_intake,
+                %{
+                  request_type: :task,
+                  priority: 2,
+                  title: "Bound request",
+                  definition_of_done: "A governed task exists",
+                  body: "Wait for repository review"
+                }}
+             )
+
+    assert {:error, "not found"} =
+             Executor.run({:bind_intake, captured.id, "tsk-20260727T044500Z-1234abcd"})
+
+    list_fixture()
+    task = admit("Governed target", 2)
+    assert {:ok, resolved} = Executor.run({:bind_intake, captured.id, task.id})
+    assert resolved.state == :resolved
+    assert resolved.promoted_task_id == task.id
+  end
+
   test "inbox triage resolves, drops, scopes listing, and fails closed on terminal captures" do
     {:ok, keep} = Executor.run({:add_inbox, "Capture to resolve"})
     {:ok, junk} = Executor.run({:add_inbox, "Capture to drop"})
@@ -1051,7 +1108,7 @@ defmodule SpruceGoose.CLIDatabaseTest do
     assert {:ok, %{items: [only_dropped]}} = Executor.run({:list_inbox, "dropped"})
     assert only_dropped.id == junk.id
 
-    assert {:error, "state must be one of pending, resolved, dropped, all"} =
+    assert {:error, "state must be one of pending, classified, resolved, dropped, all"} =
              Executor.run({:list_inbox, "bogus"})
 
     assert {:error, _} = Executor.run({:resolve_inbox, keep.id, nil})
