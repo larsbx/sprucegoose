@@ -18,6 +18,11 @@ Verified 2026-08-22 under task `tsk-20260822T230747Z-f2749517`.
   transitions, actors, grants, receipts, permits, and evidence links.
 - Repository-bound BlueprintRevisions and TaskDefinitions are the reviewed
   admission surface. Mutable operator task creation is retired.
+- Structured intake accepts task, diagnosis, roadmap, workflow, and project
+  requests before typed membership exists. Intake records are
+  non-executable. Classification stores proposed membership without creating
+  constitutive rows, and binding closes an intake record only after a governed
+  TaskInstance exists.
 - Direct Project, Roadmap, and Workflow creation, rename, and removal commands
   are absent from the supported CLI and refuse through legacy entry points.
   Exact verified `blueprint apply` operations may create a repository-defined

@@ -111,11 +111,14 @@ write failure leaves both hierarchy and revision receipt unchanged.
 Instantiation re-verifies the referenced commit/path bytes and copies the
 typed runner, input, title, Definition of Done, dependencies, and artifact
 requirements from that exact revision; it does not trust a mutable workflow
-row. `task add` and `inbox promote` are retired operator paths. Use `inbox add`
-for a non-authoritative work request, then commit a TaskDefinition and use
-`task instantiate`. Pre-cutover tasks retain null source bindings as the
-explicit grandfathered epoch rather than receiving fabricated repository
-provenance.
+row. `task add` and `inbox promote` are retired operator paths. Use `intake add`
+to record a typed request before its project, roadmap, or workflow exists.
+Intake stores the request type, priority, title, Definition of Done, and
+description without granting execution authority. An operator can classify the
+request with proposed membership, commit and apply the resulting repository
+definition, instantiate the governed task, and bind the intake record to that
+task. Pre-cutover tasks retain null source bindings as the explicit
+grandfathered epoch rather than receiving fabricated repository provenance.
 The production verifier reads a repository-read-only token from the owner-only
 path configured by `SPRUCE_GOOSE_FORGEJO_READ_TOKEN_FILE`; it does not use the
 ICM publication credential.
@@ -180,6 +183,18 @@ roadmaps:
 ./sprucegoose todo done tsk-... todo-...
 ./sprucegoose inbox add "Unclassified operator note"
 ./sprucegoose inbox list
+
+# Structured intake is the normal front door for new work. The proposed
+# membership does not need to exist when the request is captured or classified.
+./sprucegoose intake add --type roadmap --priority 1 \
+  --title "Create the delivery roadmap" \
+  --dod "The reviewed repository blueprint defines the roadmap" \
+  --body "Capture this request before project hierarchy exists" --as openclaw
+./sprucegoose intake classify inbox-... \
+  --project my-project --roadmap delivery --as openclaw
+./sprucegoose intake show inbox-... --as openclaw
+# After blueprint review and task instantiation:
+./sprucegoose intake bind inbox-... tsk-... --as openclaw
 
 # Governed revision: propose, review, then sign off on the exact bytes.
 ./sprucegoose revise propose --file /abs/path/rev.toml --as openclaw
