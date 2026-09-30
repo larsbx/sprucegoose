@@ -170,6 +170,22 @@ roadmaps:
                 are listed explicitly.
               depends_on: [forgejo-publication-migration]
               input: {}
+            - id: forgejo-automatic-delivery
+              kind: openclaw
+              title: Automate Forgejo review, merge, and deployment
+              definition_of_done: >
+                A host-isolated reviewer independently evaluates every eligible Forgejo
+                pull request and binds its verdict to the exact repository, base, head,
+                target, and deterministic CI identity; only successful required checks and
+                an approving review from an identity other than the author permit automatic
+                merge; the exact merged commit deploys through a repository-owned,
+                rollback-capable release adapter with durable evidence; stale heads, failed
+                checks, self-review, unsupported repositories, missing deployment contracts,
+                and failed health checks fail closed; positive review-to-deploy and refusal
+                trials pass without giving untrusted CI credentials, merge authority, model
+                access, production secrets, or deployment authority.
+              depends_on: []
+              input: {}
             - id: deontic-overlay-norm-root-candidate
               kind: openclaw
               title: Publish the neutral deontic overlay as a norm-root candidate
