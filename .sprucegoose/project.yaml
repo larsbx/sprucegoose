@@ -4,6 +4,20 @@ project:
   key: openclaw-system
   name: OpenClaw System
 roadmaps:
+  - key: sovereign-delivery-stack
+    name: Sovereign Delivery Stack Migration
+    workflows:
+      - id: sovereign-delivery-v03
+        name: Sovereign Delivery Spec v0.3
+        definition:
+          schema_version: 1
+          tasks:
+            - id: woodpecker-version-upgrade
+              kind: openclaw
+              title: Upgrade the governed Woodpecker deployment
+              definition_of_done: The requested Woodpecker release runs on Mama from digest-pinned server and runner images; deployment contracts, live health, OAuth routing, runner connectivity, and a bounded pipeline smoke test pass; the previous image digests remain available for rollback; no secret is replaced or exposed; and the deployment repository is committed, published through its configured authority, and verified at the exact remote commit.
+              depends_on: []
+              input: {}
   - key: sprucegoose-control-plane-convergence
     name: SpruceGoose Control Plane Convergence
     workflows:
