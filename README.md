@@ -75,6 +75,9 @@ that remediation against the delivered source and records the reproducibility,
 security, and correctness findings that block re-verification; its work is
 ordered by the
 [`2026-09-08 remediation plan`](docs/audit-remediation-plan-2026-09-08.md).
+The [PR #18 inbox agent-hook audit](docs/audits/2026-10-02-inbox-agent-hooks-pr18.md)
+records candidate-only findings, archived reproductions, and the canonical
+verification still required.
 
 Git is the reviewed specification surface; Ash/PostgreSQL remains the sole
 live authority. An approver can register an immutable blueprint source identity
