@@ -20,6 +20,9 @@ defmodule SpruceGoose.PR18LeaseRaceAuditTest do
     {head, 0} = System.cmd("git", ["rev-parse", "HEAD"])
     assert String.trim(head) == "f9d136bfa2679a4fb57363afd5dfa2a5b6353f1a"
 
+    assert Repo.config()[:pool] == DBConnection.ConnectionPool,
+           "set SPRUCE_GOOSE_TEST_DOGFOOD=true for separate PostgreSQL sessions"
+
     SpruceGoose.SandboxMode.set(:auto)
 
     keys = [
@@ -82,7 +85,9 @@ defmodule SpruceGoose.PR18LeaseRaceAuditTest do
         Authz.with_actor(c.proposer, fn ->
           Authz.create_with_notifications(
             TriageResult,
-            %{run_id: c.run.id, claim_id: c.token, proposal: proposal()}, action: :submit)
+            %{run_id: c.run.id, claim_id: c.token, proposal: proposal()},
+            action: :submit
+          )
         end)
       end)
 
@@ -157,7 +162,9 @@ defmodule SpruceGoose.PR18LeaseRaceAuditTest do
           name: "audit-lease-" <> Ecto.UUID.generate(),
           kind: :agent,
           created_by: "isolated-audit"
-        }, authorize?: false)
+        },
+        authorize?: false
+      )
 
     Ash.create!(Grant, %{actor_id: a.id, role: role, scope: "*", granted_by: "isolated-audit"},
       authorize?: false

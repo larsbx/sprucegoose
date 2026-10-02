@@ -232,10 +232,17 @@ export SPRUCE_GOOSE_TEST_DATABASE=sprucegoose_pr18_audit_reproduction
 # Supply host/port/user/password only for the new disposable PostgreSQL instance.
 mix ecto.create
 mix ash.migrate
-mix test "$audit_fixture_root/pr18_audit_regressions_test.exs"
-mix test "$audit_fixture_root/pr18_lease_race_test.exs" \
+SPRUCE_GOOSE_TEST_DOGFOOD=false \
+  mix test "$audit_fixture_root/pr18_audit_regressions_test.exs"
+SPRUCE_GOOSE_TEST_DOGFOOD=true \
+  mix test "$audit_fixture_root/pr18_lease_race_test.exs" \
   --only separate_sessions --seed 0 --max-cases 1
 ```
+
+The lease invocation uses `DBConnection.ConnectionPool` so the holder and
+submission tasks see committed setup rows through separate PostgreSQL sessions.
+Its fixture rejects the sandbox pool before creating rows. The first invocation
+uses the default sandbox pool and rolls its fixture rows back.
 
 For the published fixture copies, the opt-in/source/database setup assertions
 were added and formatting applied. Those exact copies were rerun against the
@@ -244,6 +251,20 @@ cases reproduced, with no unexpected failures. The publication worktree also
 passed `scripts/check-local` (25 Python tests) and `git diff --check`. These
 diagnostic commands are separate from the acceptance gate. They do not weaken `scripts/audit-dependencies`, establish
 canonical CI, or authorize a build/deployment.
+
+After review identified the missing pool setting in the command, the corrected
+fixture copies reproduced all five cases again in a fresh disposable database.
+The lease fixture also refused both cases at setup when the separate-session
+setting was omitted, before creating fixture rows.
+
+Mirror publication CI at `ed47808b7d484ddcaf61d18dae47c334c478971e`
+([run 37012710881](https://github.com/larsbx/sprucegoose/actions/runs/37012710881))
+passed `Fast checks` and the boot-free regressions. Both authentication matrix
+jobs stopped at `dependency-audit=FAIL`: the same 21 unaccepted advisories
+(two Ash, four Mint, fifteen AshAuthentication). The publication changes no
+dependency manifest, lockfile, allowlist, or audit policy. The application
+format/compile/migrate/test gates did not run; this failure is not evidence
+that the documentation or archived fixtures failed those gates.
 
 ## Canonical acceptance still required
 
