@@ -218,6 +218,8 @@ defmodule SpruceGoose.Actors.Scope do
   def of(%Ash.Changeset{data: data}), do: of(data)
   def of(%Project{key: key}), do: {:ok, {:project, key}}
   def of(%InboxItem{}), do: {:ok, :global}
+  def of(%SpruceGoose.AgentHooks.Run{}), do: {:ok, :global}
+  def of(%SpruceGoose.AgentHooks.TriageResult{}), do: {:ok, :global}
   def of(%Revision{project_key: nil}), do: {:ok, :global}
   def of(%Revision{project_key: key}), do: {:ok, {:project, key}}
 
@@ -232,6 +234,9 @@ defmodule SpruceGoose.Actors.Scope do
 
   defp create_scope(%Ash.Changeset{resource: Project}), do: {:ok, :global}
   defp create_scope(%Ash.Changeset{resource: InboxItem}), do: {:ok, :global}
+
+  defp create_scope(%Ash.Changeset{resource: SpruceGoose.AgentHooks.TriageResult}),
+    do: {:ok, :global}
 
   defp create_scope(%Ash.Changeset{resource: Revision} = changeset) do
     case Ash.Changeset.get_attribute(changeset, :project_key) do

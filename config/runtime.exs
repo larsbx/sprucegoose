@@ -64,6 +64,44 @@ config :spruce_goose,
        _ -> nil
      end)
 
+triage_enabled? = System.get_env("SPRUCE_GOOSE_INBOX_TRIAGE_ENABLED", "false") in ["1", "true"]
+config :spruce_goose, :inbox_triage_enabled, triage_enabled?
+
+if triage_enabled? do
+  if not outbox_enabled? or not oban_enabled?,
+    do: raise("SPRUCE_GOOSE_INBOX_TRIAGE_ENABLED requires the outbox dispatcher and Oban")
+
+  actor_id = System.get_env("SPRUCE_GOOSE_INBOX_TRIAGE_ACTOR_ID")
+
+  if not match?({:ok, ^actor_id}, Ecto.UUID.cast(actor_id)),
+    do: raise("SPRUCE_GOOSE_INBOX_TRIAGE_ACTOR_ID must be an explicit canonical UUID")
+
+  handler =
+    case System.get_env("SPRUCE_GOOSE_INBOX_TRIAGE_HANDLER") do
+      name when is_binary(name) and name != "" ->
+        name |> String.trim_leading("Elixir.") |> String.split(".") |> Module.concat()
+
+      _ ->
+        nil
+    end
+
+  case SpruceGoose.AgentHooks.Config.validate_handler(handler) do
+    :ok -> :ok
+    {:error, reason} -> raise reason
+  end
+
+  timeout =
+    case Integer.parse(System.get_env("SPRUCE_GOOSE_INBOX_TRIAGE_TIMEOUT_MS", "30000")) do
+      {value, ""} when value in 1..300_000 -> value
+      _ -> raise "SPRUCE_GOOSE_INBOX_TRIAGE_TIMEOUT_MS must be between 1 and 300000"
+    end
+
+  config :spruce_goose,
+    inbox_triage_actor_id: actor_id,
+    inbox_triage_handler: handler,
+    inbox_triage_timeout_ms: timeout
+end
+
 if not oban_enabled? do
   config :spruce_goose, Oban, queues: false, plugins: false
 end

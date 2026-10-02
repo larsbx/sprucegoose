@@ -30,7 +30,17 @@ defmodule SpruceGoose.Outbox.Dispatcher do
 
   @impl Oban.Worker
   def perform(_job) do
-    dispatch_batch(configured_handler())
+    primary = configured_handler()
+
+    dispatch_batch(fn event ->
+      with :ok <- SpruceGoose.AgentHooks.OutboxHook.deliver(event) do
+        case primary do
+          handler when is_function(handler, 1) -> handler.(event)
+          handler -> handler.deliver(event)
+        end
+      end
+    end)
+
     :ok
   end
 

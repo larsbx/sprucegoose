@@ -5,6 +5,7 @@ defmodule SpruceGoose.CLI.Executor do
   import Ash.Expr
 
   alias SpruceGoose.Actors.{Refusal, Registry, Resolver}
+  alias SpruceGoose.AgentHooks.Review, as: TriageReview
   alias SpruceGoose.CLI.Command
   alias SpruceGoose.Blueprints.{Applier, SourceVerifier}
   alias SpruceGoose.Outbox.Operator, as: OutboxOperator
@@ -739,6 +740,9 @@ defmodule SpruceGoose.CLI.Executor do
       {:ok, %{items: items |> Enum.sort_by(& &1.capture_id) |> Enum.map(&inbox_json/1)}}
     end
   end
+
+  defp dispatch(:list_triage), do: TriageReview.list()
+  defp dispatch({:show_triage, run_id}), do: TriageReview.show(run_id)
 
   defp dispatch({:resolve_inbox, capture_id, reason}) do
     with {:ok, item} <- read_one(InboxItem, capture_id: capture_id),
