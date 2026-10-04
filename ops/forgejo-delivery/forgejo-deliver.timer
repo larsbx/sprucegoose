@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll approved Forgejo pull requests for delivery
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+

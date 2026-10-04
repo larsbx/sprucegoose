@@ -10,7 +10,7 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
     pipeline = File.read!(@pipeline)
     assert pipeline =~ "scripts/ci-governed-release"
     assert pipeline =~ "image: bash"
-    assert pipeline =~ "event: push"
+    assert pipeline =~ "event: [push, pull_request]"
     assert pipeline =~ "lfs: false"
     assert pipeline =~ "docker.io/woodpeckerci/plugin-git:2.9.2"
     assert executable?(@script)
@@ -34,6 +34,10 @@ defmodule SpruceGoose.ReleaseCIPipelineTest do
   test "CI refuses dependencies with known security advisories" do
     text = File.read!(@script)
     assert before?(text, "mix hex.audit", "mix compile --warnings-as-errors")
+  end
+
+  test "CI runs the automatic delivery refusal suite" do
+    assert File.read!(@script) =~ "python3 test/forgejo_delivery_controller_test.py"
   end
 
   test "CI creates, migrates, and removes an isolated pipeline test database" do

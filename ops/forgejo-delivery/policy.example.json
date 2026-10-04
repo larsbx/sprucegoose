@@ -1,0 +1,16 @@
+{
+  "api": "https://forgejo.example/api/v1",
+  "repositories": {
+    "owner/repository": {
+      "base": "main",
+      "required_checks": ["ci/pipeline"],
+      "reviewer": "review-bot",
+      "merger": "merge-bot",
+      "checkout": "/srv/repository",
+      "adapter": "ops/deploy-exact-commit",
+      "adapter_sha256": "replace-with-lowercase-sha256"
+    }
+  },
+  "reviewer_command": ["/usr/bin/python3", "/home/admin-papa/governance/sprucegoose/ops/forgejo-delivery/reviewer.py"],
+  "evidence_dir": "/var/lib/forgejo-delivery/receipts"
+}

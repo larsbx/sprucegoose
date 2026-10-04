@@ -41,6 +41,7 @@ mix deps.get
 scripts/audit-dependencies
 mix format --check-formatted
 mix compile --warnings-as-errors
+python3 test/forgejo_delivery_controller_test.py
 
 ci_db_suffix=${CI_PIPELINE_NUMBER:-local}
 [[ $ci_db_suffix =~ ^([0-9]+|local)$ ]] || fail "invalid CI pipeline number for test database"
