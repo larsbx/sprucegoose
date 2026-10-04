@@ -231,3 +231,30 @@ roadmaps:
                 production authority.
               depends_on: []
               input: {}
+  - key: host-maintenance-and-volume-lifecycle
+    name: host-maintenance-and-volume-lifecycle
+    workflows:
+      - id: host-maintenance-governance
+        name: host-maintenance-governance
+        definition:
+          schema_version: 1
+          tasks:
+            - id: legacy-import
+              kind: openclaw
+              title: Legacy imported host-maintenance work
+              definition_of_done: The imported task reaches its recorded completion condition.
+              depends_on: []
+              input: {}
+            - id: hermes-telegram-setup-ui
+              kind: openclaw
+              title: Build HTTPS Hermes Telegram setup UI on papa
+              definition_of_done: >-
+                An authenticated HTTPS page on Papa collects the Hermes API endpoint,
+                bot display name, Telegram bot token, allowed Telegram user IDs, and
+                required provider and model settings; validates and tests inputs; stores
+                secrets only in the private Hermes development volume with owner-only
+                permissions; starts the isolated gateway through the existing service
+                boundary; and passes contract plus end-to-end checks without affecting
+                Mama production.
+              depends_on: []
+              input: {}
