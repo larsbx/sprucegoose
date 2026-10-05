@@ -231,3 +231,20 @@ roadmaps:
                 production authority.
               depends_on: []
               input: {}
+            - id: reconcile-github-forgejo-divergence
+              kind: openclaw
+              title: Reconcile GitHub-only SpruceGoose work into Forgejo authority
+              definition_of_done: >-
+                A reconciliation branch based on Forgejo main selectively ports the
+                still-relevant GitHub-only deployment domain, lifecycle contracts,
+                adapters, CI, tests, and documentation in reviewable commits; conflicts
+                preserve Forgejo intake, admin UI, blueprint, dependency, and publication
+                work; superseded GitHub material is explicitly excluded with reasons;
+                focused and full checks, migration drift, dependency audit, secret scan,
+                and current-state documentation pass; a protected Forgejo pull request
+                records exact source commits and no history is force-pushed or rewritten.
+              depends_on: []
+              input:
+                github_main: c211ff67f244d92351a7bdf270987bbb619a6b0d
+                forgejo_main: 8abc929925ab88ddde087ef653faa3a15e8cc4a0
+                merge_base: facc14a49cf09fa49210ed8008d1a557c719e660
