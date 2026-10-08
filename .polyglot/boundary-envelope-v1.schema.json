@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:larsbx:sprucegoose:polyglot-boundary-envelope:v1",
+  "title": "sprucegoose polyglot boundary envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "boundary",
+    "producer_role",
+    "artifact_id",
+    "payload_digest"
+  ],
+  "properties": {
+    "schema": {
+      "const": "polyglot-boundary-envelope/v1"
+    },
+    "boundary": {
+      "const": "deployment-record"
+    },
+    "producer_role": {
+      "enum": [
+        "canonical",
+        "reference",
+        "oracle",
+        "adapter"
+      ]
+    },
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "critical": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    }
+  }
+}
