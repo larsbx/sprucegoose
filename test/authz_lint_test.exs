@@ -13,7 +13,11 @@ defmodule SpruceGoose.AuthzLintTest do
   use ExUnit.Case, async: true
 
   @gated Path.wildcard("lib/spruce_goose/**/*.ex")
-  @ash_gated ["lib/spruce_goose/cli/executor.ex", "lib/spruce_goose/revise.ex"]
+  @ash_gated [
+    "lib/spruce_goose/cli/executor.ex",
+    "lib/spruce_goose/revise.ex",
+    "lib/spruce_goose/agent_hooks/review.ex"
+  ]
 
   @raw_access ~r/\b(?:Repo\.(?:query!?|transaction|insert!?|update!?|delete!?|all|one)|Ecto\.Adapters\.SQL\.query!)\s*\(/
 

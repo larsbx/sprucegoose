@@ -63,6 +63,11 @@ Definition of Done — goes through `revise`: a TOML sparse patch proposed once
 and applied only after an explicit sign-off bound to the digest of the reviewed
 bytes. See [`docs/revisions.md`](docs/revisions.md).
 
+The opt-in [inbox agent-hook pilot](docs/inbox-agent-hooks.md) schedules bounded
+triage computations from committed captures and stores immutable recommendations
+for operator review. `triage list` and `triage show RUN_ID` inspect the results;
+they do not resolve captures or admit executable tasks.
+
 ## Legible repository blueprints and views
 
 The normative, operative, evidentiary, and projection boundaries are defined

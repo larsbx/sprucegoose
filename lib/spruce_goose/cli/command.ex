@@ -70,6 +70,7 @@ defmodule SpruceGoose.CLI.Command do
        "done CAPTURE_ID",
        "drop CAPTURE_ID REASON"
      ]},
+    {"triage", ["list", "show RUN_ID"]},
     {"revise",
      [
        "propose --file ABSOLUTE_PATH",
@@ -318,6 +319,9 @@ defmodule SpruceGoose.CLI.Command do
 
   def parse(["inbox", "add" | body]) when body != [],
     do: {:ok, {:add_inbox, Enum.join(body, " ")}}
+
+  def parse(["triage", "list"]), do: {:ok, :list_triage}
+  def parse(["triage", "show", run_id]), do: {:ok, {:show_triage, run_id}}
 
   def parse(["inbox", "done", capture_id]), do: {:ok, {:resolve_inbox, capture_id, nil}}
 
