@@ -14,6 +14,7 @@ defmodule SpruceGoose.Actors.Scope do
   require Ash.Query
 
   alias SpruceGoose.Actors.{Actor, Grant}
+  alias SpruceGoose.Deployment.{Authorization, Operation, Record, Release}
   alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
   alias SpruceGoose.Repo
   alias SpruceGoose.Runtime.ShadowSnapshot
@@ -126,6 +127,31 @@ defmodule SpruceGoose.Actors.Scope do
     JOIN roadmaps r ON r.id = w.roadmap_id
     JOIN projects p ON p.id = r.project_id
     WHERE s.id = $1
+    """,
+    Release => """
+    SELECT p.key FROM deployment_releases rl
+    JOIN projects p ON p.id = rl.project_id
+    WHERE rl.id = $1
+    """,
+    Record => """
+    SELECT p.key FROM deployments d
+    JOIN deployment_releases rl ON rl.id = d.release_id
+    JOIN projects p ON p.id = rl.project_id
+    WHERE d.id = $1
+    """,
+    Authorization => """
+    SELECT p.key FROM deployment_authorizations a
+    JOIN deployments d ON d.id = a.deployment_id
+    JOIN deployment_releases rl ON rl.id = d.release_id
+    JOIN projects p ON p.id = rl.project_id
+    WHERE a.id = $1
+    """,
+    Operation => """
+    SELECT p.key FROM deployment_operations o
+    JOIN deployments d ON d.id = o.deployment_id
+    JOIN deployment_releases rl ON rl.id = d.release_id
+    JOIN projects p ON p.id = rl.project_id
+    WHERE o.id = $1
     """
   }
 
@@ -143,7 +169,11 @@ defmodule SpruceGoose.Actors.Scope do
     BlueprintRevision => {:project_id, Project},
     Permit => {:task_id, Task},
     OutcomeReceipt => {:task_id, Task},
-    ShadowSnapshot => {:task_id, Task}
+    ShadowSnapshot => {:task_id, Task},
+    Release => {:project_id, Project},
+    Record => {:release_id, Release},
+    Authorization => {:deployment_id, Record},
+    Operation => {:deployment_id, Record}
   }
 
   # The relationship path from each resource to the owning project key, used to
@@ -163,7 +193,11 @@ defmodule SpruceGoose.Actors.Scope do
     BlueprintRevision => [:project, :key],
     Permit => [:task, :workflow, :roadmap, :project, :key],
     OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key],
-    ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key]
+    ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key],
+    Release => [:project, :key],
+    Record => [:release, :project, :key],
+    Authorization => [:deployment, :release, :project, :key],
+    Operation => [:deployment, :release, :project, :key]
   }
 
   @doc """

@@ -29,3 +29,11 @@ The default is a validation-only dry run. A real activation additionally require
 * **UNEXECUTED:** dependency/setup prevented execution; it is neither PASS nor implementation FAIL.
 
 Production integration, destination inventory capture, application/Repo/runtime boot, DB migration, service activation, transfer, and authority mutation remain **UNEXECUTED** for this implementation task. Dry-run validation and disposable local staging tests do not authorize production activation. Any workspace write not explicitly intended—including `erl_crash.dump`—invalidates read-only evidence; before/after inventories must reject it.
+
+## Dependency and test configuration gates
+
+The release lane uses `scripts/audit-dependencies`; see the
+[dependency acceptance contract](dependency-audit.md) for the supported Hex
+version, Python requirement, refusal cases and isolated regressions.
+Empty test-database overrides use the documented defaults; invalid nonempty
+ports refuse. Supply only credentials for a disposable test database.

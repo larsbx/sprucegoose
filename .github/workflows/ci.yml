@@ -1,0 +1,81 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Fast checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: scripts/check-local
+
+  test:
+    name: Tests (${{ matrix.auth }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        auth: [scram-sha-256, trust]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-disposable-password
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: ${{ matrix.auth }}
+          POSTGRES_INITDB_ARGS: --auth-host=${{ matrix.auth }}
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      CI_PIPELINE_NUMBER: ${{ github.run_id }}
+      SPRUCE_GOOSE_TEST_DATABASE_USERNAME: postgres
+      SPRUCE_GOOSE_TEST_DATABASE_PASSWORD: ci-only-disposable-password
+      SPRUCE_GOOSE_TEST_DATABASE_HOSTNAME: 127.0.0.1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Configuration and pipeline regressions without application startup
+        run: |
+          elixir test/test_database_config_test.exs
+          elixir test/release_ci_pipeline_test.exs
+      - name: Audit, format, compile, migrate, suite and separate sessions
+        env:
+          SPRUCE_GOOSE_TEST_DATABASE_PORT: ${{ job.services.postgres.ports[5432] }}
+        shell: bash
+        run: |
+          if [[ '${{ matrix.auth }}' == trust ]]; then
+            unset SPRUCE_GOOSE_TEST_DATABASE_PASSWORD
+          fi
+          set -o pipefail
+          scripts/ci-governed-release --check 2>&1 | tee "$RUNNER_TEMP/ci.log"
+      - name: Preserve check evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-${{ matrix.auth }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-evidence/
+            !ci-evidence/*.dump
+            ${{ runner.temp }}/ci.log
+          retention-days: 14
+          if-no-files-found: warn

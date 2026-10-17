@@ -1,0 +1,59 @@
+schema_version: 1
+project:
+  key: ops
+  name: Operations
+roadmaps:
+  - key: admin
+    name: Administration
+    workflows:
+      - id: admin-routine
+        name: Administrative routine
+        definition:
+          schema_version: 1
+          tasks:
+            - id: adhoc
+              kind: openclaw
+              title: Ad-hoc administrative task
+              definition_of_done: The originating request is linked as evidence before start, and the outcome is linked as evidence before completion.
+              depends_on: []
+              input: {}
+  - key: maintenance
+    name: Maintenance
+    workflows:
+      - id: maintenance-routine
+        name: Maintenance routine
+        definition:
+          schema_version: 1
+          tasks:
+            - id: adhoc
+              kind: openclaw
+              title: Ad-hoc maintenance task
+              definition_of_done: The originating request is linked as evidence before start, and the outcome is linked as evidence before completion.
+              depends_on: []
+              input: {}
+            - id: dependency-audit
+              kind: openclaw
+              title: Run the dependency acceptance gate
+              definition_of_done: scripts/audit-dependencies runs from a clean checkout on the pinned toolchain per docs/dependency-audit.md; the exact report is linked as evidence; every advisory is either remediated or raised as its own task.
+              depends_on: []
+              input: {}
+  - key: support
+    name: Support
+    workflows:
+      - id: support-routine
+        name: Support routine
+        definition:
+          schema_version: 1
+          tasks:
+            - id: adhoc
+              kind: openclaw
+              title: Ad-hoc support task
+              definition_of_done: The originating request is linked as evidence before start, and the outcome is linked as evidence before completion.
+              depends_on: []
+              input: {}
+            - id: inbox-triage
+              kind: openclaw
+              title: Triage the pending inbox
+              definition_of_done: Every pending inbox item is dropped with a reason (inbox drop), resolved (inbox done), or first turned into an instantiated task that carries the capture via task link TASK_ID inbox CAPTURE_ID and then resolved; inbox list --state pending is empty.
+              depends_on: []
+              input: {}

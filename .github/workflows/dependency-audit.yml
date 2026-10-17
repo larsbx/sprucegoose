@@ -1,0 +1,29 @@
+name: Dependency audit
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Resolve dependencies and audit current advisories and expiry
+        shell: bash
+        run: |
+          set -o pipefail
+          mix deps.get
+          scripts/audit-dependencies 2>&1 | tee "$RUNNER_TEMP/audit.log"
+          git diff --exit-code -- mix.lock
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/audit.log
+          retention-days: 14

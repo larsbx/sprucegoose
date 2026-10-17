@@ -5,36 +5,6 @@ defmodule SpruceGoose.DependencyGraphTest do
   alias SpruceGoose.Workflows.Graph
   alias SpruceGoose.Workflows.{Definition, Dependency, Project, Roadmap, Task, Workflow}
 
-  test "the PostgreSQL property graph exposes task dependency edges" do
-    %{workflow: workflow, first: first, second: second} = graph_fixture("native-graph")
-
-    assert {:ok, _edge} =
-             Ash.create(Dependency, %{
-               predecessor_id: first.id,
-               successor_id: second.id,
-               source: "native"
-             })
-
-    assert %{rows: [[from_id, to_id]]} =
-             Repo.query!(
-               """
-               SELECT predecessor_task_id, successor_task_id
-               FROM GRAPH_TABLE (
-                 sprucegoose_task_dependency_graph
-                 MATCH (predecessor IS task)-[dependency IS dependency]->(successor IS task)
-                 WHERE predecessor.workflow_id = $1 AND successor.workflow_id = $1
-                 COLUMNS (
-                   predecessor.task_id AS predecessor_task_id,
-                   successor.task_id AS successor_task_id
-                 )
-               )
-               """,
-               [Ecto.UUID.dump!(workflow.id)]
-             )
-
-    assert {from_id, to_id} == {first.task_id, second.task_id}
-  end
-
   test "blockers and impact traverse the workflow DAG with deterministic distances" do
     %{first: first, second: second, third: third} = graph_fixture("query-graph")
 
@@ -293,12 +263,12 @@ defmodule SpruceGoose.DependencyGraphTest do
              Executor.run({:task_blockers, third.task_id})
   end
 
-  test "all graph commands return errors when the property graph is unavailable" do
-    fixture = graph_fixture("missing-graph")
-    Repo.query!("DROP PROPERTY GRAPH sprucegoose_task_dependency_graph")
+  test "all graph commands return errors when the dependency table is unreadable" do
+    fixture = graph_fixture("missing-edges")
+    Repo.query!("ALTER TABLE task_dependencies RENAME TO task_dependencies_hidden")
 
     on_exit(fn ->
-      Repo.query!(property_graph_ddl())
+      Repo.query!("ALTER TABLE task_dependencies_hidden RENAME TO task_dependencies")
     end)
 
     assert {:error, blocker_error} = Graph.blockers(fixture.third)
@@ -306,7 +276,7 @@ defmodule SpruceGoose.DependencyGraphTest do
     assert {:error, path_error} = Graph.critical_path(fixture.workflow)
 
     for error <- [blocker_error, impact_error, path_error] do
-      assert error =~ "sprucegoose_task_dependency_graph"
+      assert error =~ "task_dependencies"
     end
   end
 
@@ -339,22 +309,6 @@ defmodule SpruceGoose.DependencyGraphTest do
     end
 
     assert {:error, "dependency graph contains a cycle"} = Graph.critical_path(fixture.workflow)
-  end
-
-  defp property_graph_ddl do
-    """
-    CREATE PROPERTY GRAPH sprucegoose_task_dependency_graph
-      VERTEX TABLES (
-        workflow_tasks KEY (id) LABEL task
-          PROPERTIES (id, task_id, title, state, workflow_id)
-      )
-      EDGE TABLES (
-        task_dependencies KEY (id)
-          SOURCE KEY (predecessor_id) REFERENCES workflow_tasks (id)
-          DESTINATION KEY (successor_id) REFERENCES workflow_tasks (id)
-          LABEL dependency PROPERTIES (workflow_id, source)
-      )
-    """
   end
 
   defp graph_project_key(workflow) do

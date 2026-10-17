@@ -50,8 +50,13 @@ defmodule SpruceGoose.CLI.SocketPlugTest do
         timeout: 30
       )
 
+    # The 504 is the assertion: the runner sleeps forever, so any response at
+    # all proves the deadline fired. The wall-clock bound only has to separate
+    # "bounded" from "indefinite" — it was 250ms against a 30ms timeout, which
+    # measured scheduler contention rather than the deadline and failed at
+    # 301ms under full-suite load while passing in isolation.
     assert conn.status == 504
-    assert System.monotonic_time(:millisecond) - started_at < 250
+    assert System.monotonic_time(:millisecond) - started_at < 5_000
     assert Jason.decode!(conn.resp_body) == %{"error" => "request timed out", "ok" => false}
   end
 

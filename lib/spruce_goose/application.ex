@@ -4,6 +4,8 @@ defmodule SpruceGoose.Application do
 
   @impl true
   def start(_type, _args) do
+    verify_sop_adoption!()
+
     children =
       [
         {AshAuthentication.Oauth2Server.Supervisor, [otp_app: :spruce_goose]},
@@ -29,6 +31,24 @@ defmodule SpruceGoose.Application do
     end
 
     :ok
+  end
+
+  # The `norm` constitutional root is the digest of the Systemwide SOP. The SOP
+  # itself is deployment-owned, so nothing previously checked that the bytes a
+  # running service gates on are the bytes this release adopted — a divergence
+  # would have been invisible until someone diffed two machines by hand.
+  #
+  # Refuses at boot rather than warning: a service admitting work under an
+  # unreviewed SOP is the failure this gate exists to prevent, and it is far
+  # cheaper to catch on start than in an audit. Skipped where no SOP is
+  # configured for the environment.
+  defp verify_sop_adoption! do
+    if Application.get_env(:spruce_goose, :verify_sop_adoption, true) do
+      case SpruceGoose.SopGate.verify_adoption() do
+        :ok -> :ok
+        {:error, message} -> raise message
+      end
+    end
   end
 
   defp cli_service_children do

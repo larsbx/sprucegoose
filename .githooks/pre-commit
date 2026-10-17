@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Inspect the index, including when the working tree is only partly staged.
+git diff --cached --check

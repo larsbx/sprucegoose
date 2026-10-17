@@ -1,0 +1,14 @@
+# Advisories accepted for a bounded window, so that `mix hex.audit` blocks on
+# *new* ones instead of being red continuously and therefore ignored.
+#
+# Format, whitespace-separated, one per line:
+#   ADVISORY_ID  EXPIRES(YYYY-MM-DD)  OWNER  RATIONALE...
+#
+# An entry past its expiry fails the build exactly like an unlisted advisory.
+# That is the point: an accepted risk with no review date is an ignored one.
+# Re-review means confirming the assessment still holds and moving the date,
+# not extending it by reflex.
+#
+# Anything not listed here fails immediately. Prefer upgrading.
+
+EEF-CVE-2026-32686 2026-10-08 lars decimal 3.1.1 unbounded exponent DoS. No fixed release exists (3.1.1 is current) and decimal is transitive via ash/ecto/postgrex. SpruceGoose declares no decimal attributes and parses no caller-supplied decimals on any surface, so there is no path from an untrusted input to Decimal parsing. Re-check when decimal publishes a fix.

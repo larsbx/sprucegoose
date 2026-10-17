@@ -2,6 +2,7 @@ defmodule SpruceGoose.ShadowEventAppendTest do
   use SpruceGoose.DataCase, async: false
 
   alias SpruceGoose.CLI.Executor
+  alias SpruceGoose.SopGate
   alias SpruceGoose.Kernel.Postgres.EventLedger
   alias SpruceGoose.ReleaseProvenance
   alias SpruceGoose.Repo
@@ -87,8 +88,14 @@ defmodule SpruceGoose.ShadowEventAppendTest do
     assert roots["policy"] == digest("docs/authority-planes.md")
     assert roots["evidence_policy"] == digest("docs/abstract-kernel-remediation-plan.md")
 
-    assert roots["norm"] ==
-             digest("/home/admin-papa/.openclaw/vaults/openclaw-system/10-sop/Systemwide SOP.md")
+    # The SOP's bytes live in the openclaw-system vault, so this used to digest
+    # an absolute path under one operator's home directory — which meant the
+    # test that validates the constitutional root set could only run on that one
+    # host, and aborted before the `schema` assertion below on every other.
+    # `priv/constitution/adopted.json` carries the reviewed digest instead;
+    # `SopGate.verify_adoption/0` checks the deployed bytes against it at boot.
+    assert {:ok, adopted} = SopGate.adopted_digest()
+    assert roots["norm"] == adopted
 
     migrations =
       "priv/repo/migrations/*.exs"

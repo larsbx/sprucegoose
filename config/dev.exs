@@ -24,3 +24,8 @@ config :spruce_goose,
   oauth2_resource_url: System.get_env("OAUTH2_RESOURCE_URL", "http://127.0.0.1:4000"),
   oauth2_signing_secret:
     System.get_env("OAUTH2_SIGNING_SECRET", "dev-only-placeholder-not-a-secret-oauth2-signing")
+
+# Dev has no governed Systemwide SOP, so the boot-time adoption check has
+# nothing real to compare against. Production and any deployment that serves
+# requests keeps it on; see SpruceGoose.SopGate.verify_adoption/0.
+config :spruce_goose, :verify_sop_adoption, false
