@@ -43,10 +43,70 @@ empty uses the repository file. The result prints the exact lockfile and
 allowlist SHA-256 values, audit date, Hex version, raw audit output and status,
 and accepted/blocking IDs. Capture stdout/stderr as the gate log.
 
-The current Decimal acceptance is unchanged: owner `lars`, expiry 2026-10-08.
-This fix does not reassess its reachability or assert that no patched release
-is now available. Review it separately before expiry. Do not extend its date
-automatically.
+### Decimal correction (2026-10-19)
+
+The lockfile selects Decimal **3.1.2**, the smallest patched release after
+3.1.1. All nine
+locked consumers (Ash, Ecto, Ecto SQL, Jason, JSV, OpenApiSpex, Postgrex, Xema
+and Zoi) admit it through their `~> 3.0` alternatives; Decimal remains
+transitive, with no direct dependency or override added.
+
+The expired `EEF-CVE-2026-32686` acceptance is removed, not renewed. The
+[current EEF record](https://cna.erlef.org/cves/CVE-2026-32686.html) identifies
+versions below 3.0.0 as affected, so its claim that 3.1.1 had no fix was stale.
+A separate advisory,
+[CVE-2026-97853](https://cna.erlef.org/cves/CVE-2026-97853.html), affects
+`Decimal.round/3` before 3.1.2. Upgrading addresses that allocation issue as
+well as removing the obsolete acceptance that stopped CI before tests.
+
+The [upstream changelog](https://hex.pm/packages/decimal/3.1.2/changelog)
+reports unchanged rounding results and flags for previously successful calls.
+Extreme `places` arguments now complete with bounded coefficient padding;
+zero-coefficient integer/float conversions avoid exponent-sized work. These
+are the intended compatibility changes. Version 3.2.0 includes additional
+behavior changes and is unnecessary for this correction.
+
+The lock entry is regenerated with Mix, selecting 3.1.2 temporarily during
+resolution and restoring the original manifest afterward. Its inner checksum
+is also verified against the Hex package payload, and its outer checksum
+against the Hex release API. The unchanged full CI
+gate must still verify dependency resolution, the complete current advisory
+report, formatting, warnings-as-errors compilation, migrations, the full
+suite and separate-session tests under both SCRAM and trust authentication.
+Removing this entry introduces no new acceptance; other findings still fail
+closed. See the correction PR's CI evidence for the exact tested commit.
+
+### Additional blockers exposed by the complete audit
+
+The Decimal-only candidate resolves, but the full Hex 2.5.1 audit still refuses
+three advisories in the previously locked Ash and Bandit releases. Restoring
+the CI baseline therefore also requires these smallest fixed versions:
+
+| Dependency | Previous | Selected | Reason |
+| --- | --- | --- | --- |
+| Ash | 3.34.4 | 3.34.6 | [CVE-2026-101028](https://cna.erlef.org/cves/CVE-2026-101028.html): related-resource policies in aggregate filters/sorts |
+| Bandit | 1.12.5 | 1.13.0 | [CVE-2026-105659](https://cna.erlef.org/cves/CVE-2026-105659.html) and [CVE-2026-105660](https://cna.erlef.org/cves/CVE-2026-105660.html): HTTP/2 blocked-send deadlines and HTTP/1 target authority validation |
+| Thousand Island | 1.5.0 | 1.6.0 | Required by Bandit 1.13.0 |
+
+The existing `~> 3.0` Ash and `~> 1.12` Bandit requirements admit these releases.
+Targeted `mix deps.unlock` plus `mix deps.get`, with temporary exact selection
+constraints, keeps the other lock entries unchanged, including Decimal 3.1.2.
+The committed `mix.exs`, application code, configuration and audit policy are
+unchanged; the allowlist has no active exceptions.
+
+Compatibility review: Ash now applies related-resource read policies to
+count/exists/aggregate filter and sort references, so previously unauthorized
+inferences may return different results. Its intervening patch also corrects
+notification shapes, temporal input validation and embedded-resource equality.
+Bandit 1.13.0 intentionally tightens HTTP request validation, bounds stalled
+HTTP/2 sends, reports CONNECT ports as integers, silently closes idle
+connections and corrects HTTP/WebSocket framing. It adds opt-in chunked-response
+compression, which this application does not enable. Thousand Island supplies
+accept-time peer information required by Bandit. These transport and policy
+corrections are broader than the Decimal patch and require the complete CI
+matrix, including the existing Unix-socket service tests; passing dependency
+resolution alone does not establish application compatibility.
+
 
 The gate validates Hex's report, not the freshness of its registry cache.
 Runner/network and registry freshness evidence remain part of release review.
