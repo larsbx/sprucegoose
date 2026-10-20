@@ -4,6 +4,7 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Kernel.{CertifiedEvent, ContentID}
   alias SpruceGoose.Kernel.Postgres.EventLedger
+  alias SpruceGoose.Kernel.ShadowEvents
   alias SpruceGoose.Repo
 
   setup do
@@ -18,23 +19,28 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
     task = task_fixture()
     assert {:ok, _} = Executor.run({:link_task, task.task_id, "evidence", "before-baseline"})
 
+    # The mutation landed on its project's stream; the legacy stream holds only
+    # the acceptance, at its first position.
+    assert {:ok, [%{event_type: "MutationAccepted"}]} =
+             EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
+
     assert {:ok, baseline} = Executor.run(:accept_grandfathered_baseline)
-    assert baseline.legacy_final_stream_position == 1
-    assert baseline.acceptance_stream_position == 2
+    assert baseline.legacy_final_stream_position == 0
+    assert baseline.acceptance_stream_position == 1
     assert byte_size(baseline.snapshot_digest) == 64
 
     assert {:ok, shown} = Executor.run(:show_grandfathered_baseline)
     assert shown == baseline
 
     assert {:ok, events} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
-    assert Enum.map(events, & &1.event_type) == ["MutationAccepted", "GrandfatheredStateAccepted"]
+    assert Enum.map(events, & &1.event_type) == ["GrandfatheredStateAccepted"]
 
     assert List.last(events).payload["snapshot_content_id"] ==
              "sha256:" <> baseline.snapshot_digest
 
     assert {:error, :baseline_already_accepted} = Executor.run(:accept_grandfathered_baseline)
     assert {:ok, events_after} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
-    assert length(events_after) == 2
+    assert length(events_after) == 1
   end
 
   test "snapshot bytes and row are immutable and credential relations are excluded" do
@@ -132,6 +138,57 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
     assert {:ok, %{parity: true, lag: 0}} = Executor.run(:task_projection_status)
   end
 
+  test "mutations partition per project as linked transitions, and replay covers every stream" do
+    a = task_fixture()
+    b = task_fixture()
+    assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
+    assert {:ok, _} = Executor.run({:link_task, a.task_id, "evidence", "one"})
+    assert {:ok, _} = Executor.run({:link_task, a.task_id, "evidence", "two"})
+    assert {:ok, _} = Executor.run({:link_task, b.task_id, "evidence", "three"})
+
+    stream_a = ShadowEvents.stream_for(a)
+    stream_b = ShadowEvents.stream_for(b)
+    assert stream_a =~ ~r/^authority:project:/
+    refute stream_a == stream_b
+
+    assert {:ok, [first, second]} = EventLedger.read(EventLedger.new(), stream_a)
+    assert first.payload["previous"] == nil
+    assert second.payload["previous"] == first.identity.digest
+    assert first.payload["request"] == [a.task_id, "evidence", "one"]
+    assert first.payload["shadow_schema"] == "sprucegoose-mutation-shadow-v2"
+    assert first.canonical_form == :jcs
+    assert {:ok, [_only]} = EventLedger.read(EventLedger.new(), stream_b)
+
+    # The legacy stream holds only the acceptance event now.
+    assert {:ok, [%{event_type: "GrandfatheredStateAccepted"}]} =
+             EventLedger.read(EventLedger.new(), ShadowEvents.legacy_stream())
+
+    assert {:ok, %{tasks: tasks}} = Executor.run(:rebuild_task_projection)
+    assert tasks >= 2
+    assert {:ok, %{parity: true, lag: 0}} = Executor.run(:task_projection_status)
+
+    # A gap written around the ledger's writer is refused on replay.
+    {:ok, gap} =
+      CertifiedEvent.new(%{
+        stream: stream_b,
+        event_type: "MutationAccepted",
+        idempotency_key: "gap",
+        payload: %{"command" => "apply_blueprint", "result" => %{"project" => "x"}},
+        roots: shadow_roots()
+      })
+
+    Repo.query!(
+      """
+      INSERT INTO certified_events (stream, stream_position, event_type, idempotency_key, payload, roots,
+        canonical_bytes, identity_algorithm, identity_digest, canonical_form)
+      VALUES ($1, 9, 'MutationAccepted', 'gap', $2::jsonb, $3::jsonb, $4, 'sha256', $5, 'jcs-v1')
+      """,
+      [stream_b, gap.payload, gap.roots, gap.canonical_bytes, gap.identity.digest]
+    )
+
+    assert {:error, :noncontiguous_certified_history} = Executor.run(:rebuild_task_projection)
+  end
+
   test "replay refuses a malformed task mutation" do
     assert {:ok, _} = Executor.run(:accept_grandfathered_baseline)
 
@@ -175,11 +232,15 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
     assert match?({:ok, _}, mutation)
     assert match?({:ok, _}, acceptance)
 
-    assert %{rows: [[1], [2]]} =
-             Repo.query!("SELECT stream_position FROM certified_events ORDER BY stream_position")
+    # Partitioned streams: the two do not contend, and each is contiguous from 1.
+    assert %{rows: rows} =
+             Repo.query!("SELECT stream, stream_position FROM certified_events ORDER BY stream")
+
+    assert Enum.sort(rows) ==
+             Enum.sort([["authority:sprucegoose", 1], [ShadowEvents.stream_for(task), 1]])
 
     assert {:ok, baseline} = Executor.run(:show_grandfathered_baseline)
-    assert baseline.acceptance_stream_position in [1, 2]
+    assert baseline.acceptance_stream_position == 1
   end
 
   defp task_fixture do

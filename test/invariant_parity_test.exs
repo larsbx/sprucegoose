@@ -69,7 +69,7 @@ defmodule SpruceGoose.InvariantParityTest do
     for {table, port} <- @port_owned do
       assert @migrations =~ ~r/ON #{table}\b/
       callbacks = port.behaviour_info(:callbacks) |> Keyword.keys()
-      assert Enum.sort(callbacks) == [:append, :read, :streams, :verify]
+      assert Enum.sort(callbacks) == [:append, :head, :read, :streams, :verify]
     end
   end
 end

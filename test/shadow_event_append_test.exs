@@ -4,6 +4,7 @@ defmodule SpruceGoose.ShadowEventAppendTest do
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.SopGate
   alias SpruceGoose.Kernel.Postgres.EventLedger
+  alias SpruceGoose.Kernel.ShadowEvents
   alias SpruceGoose.ReleaseProvenance
   alias SpruceGoose.Repo
 
@@ -19,7 +20,7 @@ defmodule SpruceGoose.ShadowEventAppendTest do
     assert {:ok, updated} = Executor.run({:link_task, task.task_id, "evidence", "shadow-proof"})
     assert updated.lock_version > task.lock_version
 
-    assert {:ok, [event]} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert {:ok, [event]} = EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
     assert event.event_type == "MutationAccepted"
     assert event.payload["command"] == "link_task"
     assert event.payload["result"]["id"] == task.task_id
@@ -50,14 +51,14 @@ defmodule SpruceGoose.ShadowEventAppendTest do
     assert {:error, :shadow_roots_unavailable} =
              Executor.run({:link_task, task.task_id, "evidence", "rolled-back"})
 
-    assert {:ok, []} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert {:ok, []} = EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
     assert {:ok, current} = Executor.run({:show_task, task.task_id})
     refute %{"kind" => "evidence", "value" => "rolled-back"} in current.references
   end
 
   test "read-only commands do not append shadow events", %{task: task} do
     assert {:ok, _current} = Executor.run({:show_task, task.task_id})
-    assert {:ok, []} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert {:ok, []} = EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
   end
 
   test "reconciliation detects a task mutation that bypassed the shadow wrapper", %{task: task} do
@@ -109,7 +110,7 @@ defmodule SpruceGoose.ShadowEventAppendTest do
   @tag :separate_sessions
   test "concurrent accepted mutations retain one contiguous certified position" do
     parent = self()
-    tasks = Enum.map(1..12, fn index -> task_fixture("concurrent-#{index}") end)
+    tasks = tasks_in_one_project(12)
 
     results =
       tasks
@@ -125,10 +126,61 @@ defmodule SpruceGoose.ShadowEventAppendTest do
 
     assert Enum.all?(results, &match?({:ok, {:ok, _}}, &1))
 
+    # One project, one stream: positions are contiguous and every event links
+    # the identity of the one before it, whatever order the twelve committed in.
+    stream = ShadowEvents.stream_for(hd(tasks))
+    assert {:ok, events} = EventLedger.read(EventLedger.new(), stream)
+    assert length(events) == 12
+
     assert %{rows: positions} =
-             Repo.query!("SELECT stream_position FROM certified_events ORDER BY stream_position")
+             Repo.query!(
+               "SELECT stream_position FROM certified_events WHERE stream = $1 ORDER BY stream_position",
+               [stream]
+             )
 
     assert Enum.map(positions, &hd/1) == Enum.to_list(1..12)
+
+    events
+    |> Enum.reduce(nil, fn event, previous ->
+      assert event.payload["previous"] == previous
+      event.identity.digest
+    end)
+  end
+
+  defp tasks_in_one_project(count) do
+    suffix = "shared-#{System.unique_integer([:positive])}"
+
+    project =
+      Ash.create!(SpruceGoose.Workflows.Project, %{key: "shadow-#{suffix}", name: "Shadow"})
+
+    roadmap =
+      Ash.create!(SpruceGoose.Workflows.Roadmap, %{
+        project_id: project.id,
+        key: "shadow-#{suffix}",
+        name: "Shadow"
+      })
+
+    workflow =
+      Ash.create!(SpruceGoose.Workflows.Workflow, %{
+        roadmap_id: roadmap.id,
+        workflow_id: "shadow-#{suffix}",
+        name: "Shadow",
+        definition: %{
+          schema_version: 1,
+          tasks: [%{id: "work", kind: :openclaw, depends_on: [], input: %{}}]
+        }
+      })
+
+    for _ <- 1..count do
+      Ash.create!(SpruceGoose.Workflows.Task, %{
+        workflow_id: workflow.id,
+        task_id: SpruceGoose.TaskId.generate(),
+        task_type: :task,
+        title: "Shadow task",
+        definition_of_done: "Shadow proof passes.",
+        runner: :openclaw
+      })
+    end
   end
 
   defp task_fixture(prefix \\ "shadow") do

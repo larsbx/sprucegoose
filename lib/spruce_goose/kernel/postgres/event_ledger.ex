@@ -44,6 +44,19 @@ defmodule SpruceGoose.Kernel.Postgres.EventLedger do
   end
 
   @impl true
+  def head(%__MODULE__{}, stream) when is_binary(stream) and stream != "" do
+    # AUTHORIZATION: internal adapter; the stream head is read under the caller's stream lock.
+    case Repo.query(
+           "SELECT identity_digest FROM certified_events WHERE stream = $1 ORDER BY stream_position DESC LIMIT 1",
+           [stream]
+         ) do
+      {:ok, %{rows: [[digest]]}} -> {:ok, %ContentID{algorithm: :sha256, digest: digest}}
+      {:ok, %{rows: []}} -> {:ok, nil}
+      {:error, _error} -> {:error, :ledger_unavailable}
+    end
+  end
+
+  @impl true
   def streams(%__MODULE__{}) do
     # AUTHORIZATION: this internal adapter lists stream names only, for export and projection.
     case Repo.query("SELECT DISTINCT stream FROM certified_events ORDER BY stream") do

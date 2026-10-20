@@ -2,10 +2,11 @@ defmodule SpruceGoose.Kernel.TaskProjector do
   @moduledoc "Deterministically rebuilds the authoritative task projection from certified history."
 
   alias SpruceGoose.Actors.Scope
-  alias SpruceGoose.Kernel.{Canonical, ContentID}
+  alias SpruceGoose.Kernel.{Canonical, ContentID, Locks}
   alias SpruceGoose.{Authz, Repo}
 
   @projection_id "sprucegoose-authoritative-tasks-v1"
+  @legacy_stream "authority:sprucegoose"
   @task_commands ~w(acknowledge_sop add_task instantiate_task link_task move_task record_artifact_receipt transition_task unlink_task update_task_metadata)
   @fields ~w(artifact_receipts artifact_requirements assignees blueprint_revision_id board_id board_revision column_id custom_fields definition_key definition_of_done description due_at id labels lock_version priority rank sop_digest sop_gate_required sop_id sop_path sop_version state task_type title workflow_id)
 
@@ -48,23 +49,38 @@ defmodule SpruceGoose.Kernel.TaskProjector do
     end
   end
 
+  # Authority history is partitioned per project (D-2). Replay reads every
+  # `authority:` stream except the kernel's own, in global sequence order, and
+  # requires each stream's positions to be contiguous. The stored position is
+  # the last global sequence consumed.
+  @authority_prefix "authority:"
+  @kernel_stream "authority:kernel"
+
   defp rebuild_transaction do
-    # AUTHORIZATION: rebuild/0 established global-admin authority before taking this stream lock.
-    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", ["authority:sprucegoose"])
+    Locks.acquire(@legacy_stream)
 
     # AUTHORIZATION: rebuild/0 gates these bounded reads of accepted baseline and certified history.
-    with {:ok, %{rows: [[baseline, accepted_at]]}} <-
+    with {:ok, %{rows: [[baseline, accepted_at, accepted_event]]}} <-
            Repo.query(
-             "SELECT snapshot, acceptance_stream_position FROM grandfathered_baselines WHERE baseline_id = 'grandfathered-baseline-v1'"
+             "SELECT snapshot, acceptance_stream_position, accepted_event_digest FROM grandfathered_baselines WHERE baseline_id = 'grandfathered-baseline-v1'"
            ),
-         # AUTHORIZATION: the same global-admin gate covers the contiguous event read.
+         # AUTHORIZATION: the same global-admin gate covers locating the acceptance event.
+         {:ok, %{rows: [[accepted_sequence]]}} <-
+           Repo.query("SELECT sequence FROM certified_events WHERE identity_digest = $1", [
+             accepted_event
+           ]),
+         # AUTHORIZATION: the same global-admin gate covers the ordered event read.
          {:ok, %{rows: events}} <-
            Repo.query(
-             "SELECT stream_position, event_type, payload FROM certified_events WHERE stream = 'authority:sprucegoose' AND stream_position > $1 ORDER BY stream_position",
-             [accepted_at]
+             """
+             SELECT sequence, stream, stream_position, event_type, payload FROM certified_events
+             WHERE stream LIKE $1 AND stream <> $2 AND sequence > $3 ORDER BY sequence
+             """,
+             [@authority_prefix <> "%", @kernel_stream, accepted_sequence]
            ),
          {:ok, initial} <- baseline_state(baseline),
-         {:ok, state, position} <- replay(initial, accepted_at, events),
+         {:ok, state, position} <-
+           replay(initial, accepted_sequence, %{@legacy_stream => accepted_at}, events),
          {:ok, digest} <- digest(state),
          :ok <- store(position, state, digest) do
       %{
@@ -91,37 +107,49 @@ defmodule SpruceGoose.Kernel.TaskProjector do
 
   defp baseline_state(_), do: {:error, :invalid_baseline_projection}
 
-  defp replay(state, position, events) do
-    Enum.reduce_while(events, {:ok, state, position}, fn
-      [next, _type, _payload], {:ok, _acc, prior} when next != prior + 1 ->
-        {:halt, {:error, :noncontiguous_certified_history}}
-
-      [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, _prior}
-      when command in @task_commands and is_map(result) ->
-        case normalize(result) do
-          %{"id" => id} = task when is_binary(id) and id != "" ->
-            {:cont, {:ok, put_in(acc, ["tasks", id], task), next}}
-
-          _invalid_task ->
-            {:halt, {:error, :unsupported_certified_event}}
+  defp replay(state, sequence, positions, events) do
+    events
+    |> Enum.reduce_while({:ok, state, sequence, positions}, fn
+      [seq, stream, position, type, payload], {:ok, acc, _seq, seen} ->
+        if position != Map.get(seen, stream, 0) + 1 do
+          {:halt, {:error, :noncontiguous_certified_history}}
+        else
+          case apply_event(type, payload, acc) do
+            {:ok, acc} -> {:cont, {:ok, acc, seq, Map.put(seen, stream, position)}}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
         end
-
-      [_next, "MutationAccepted", %{"command" => command}], _acc
-      when command in @task_commands ->
-        {:halt, {:error, :unsupported_certified_event}}
-
-      [next, "MutationAccepted", %{"command" => command, "result" => result}], {:ok, acc, _prior}
-      when is_binary(command) and is_map(result) ->
-        {:cont, {:ok, acc, next}}
-
-      [next, event_type, payload], {:ok, acc, _prior}
-      when is_binary(event_type) and is_map(payload) and event_type != "MutationAccepted" ->
-        {:cont, {:ok, acc, next}}
-
-      [_next, _type, _payload], _acc ->
-        {:halt, {:error, :unsupported_certified_event}}
     end)
+    |> case do
+      {:ok, state, sequence, _positions} -> {:ok, state, sequence}
+      error -> error
+    end
   end
+
+  defp apply_event("MutationAccepted", %{"command" => command, "result" => result}, acc)
+       when command in @task_commands and is_map(result) do
+    case normalize(result) do
+      %{"id" => id} = task when is_binary(id) and id != "" ->
+        {:ok, put_in(acc, ["tasks", id], task)}
+
+      _invalid_task ->
+        {:error, :unsupported_certified_event}
+    end
+  end
+
+  defp apply_event("MutationAccepted", %{"command" => command}, _acc)
+       when command in @task_commands,
+       do: {:error, :unsupported_certified_event}
+
+  defp apply_event("MutationAccepted", %{"command" => command, "result" => result}, acc)
+       when is_binary(command) and is_map(result),
+       do: {:ok, acc}
+
+  defp apply_event(type, payload, acc)
+       when is_binary(type) and is_map(payload) and type != "MutationAccepted",
+       do: {:ok, acc}
+
+  defp apply_event(_type, _payload, _acc), do: {:error, :unsupported_certified_event}
 
   defp normalize(row) do
     row =
@@ -188,7 +216,8 @@ defmodule SpruceGoose.Kernel.TaskProjector do
   defp current_position do
     # AUTHORIZATION: status/0 established global-admin authority for this lag measurement.
     Repo.query!(
-      "SELECT COALESCE(max(stream_position), 0) FROM certified_events WHERE stream = 'authority:sprucegoose'"
+      "SELECT COALESCE(max(sequence), 0) FROM certified_events WHERE stream LIKE $1 AND stream <> $2",
+      [@authority_prefix <> "%", @kernel_stream]
     ).rows
     |> hd()
     |> hd()

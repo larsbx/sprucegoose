@@ -18,4 +18,5 @@ defmodule SpruceGoose.Kernel.EventLedger do
   @callback read(term(), String.t()) :: {:ok, [CertifiedEvent.t()]} | {:error, atom()}
   @callback verify(term(), ContentID.t()) :: :ok | {:error, atom()}
   @callback streams(term()) :: {:ok, [String.t()]} | {:error, atom()}
+  @callback head(term(), String.t()) :: {:ok, ContentID.t() | nil} | {:error, atom()}
 end

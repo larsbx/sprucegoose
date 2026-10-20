@@ -8,6 +8,7 @@ defmodule SpruceGoose.Web.CommandEndpointTest do
   alias SpruceGoose.Actors.{Actor, Grant}
   alias SpruceGoose.CLI.Executor
   alias SpruceGoose.Kernel.Postgres.EventLedger
+  alias SpruceGoose.Kernel.ShadowEvents
 
   @opts SpruceGoose.Web.Router.init([])
 
@@ -43,7 +44,7 @@ defmodule SpruceGoose.Web.CommandEndpointTest do
 
     assert conn.status == 200, conn.resp_body
 
-    assert {:ok, events} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert {:ok, events} = EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
     event = List.last(events)
     assert event.payload["command"] == "link_task"
     assert event.payload["actor"] == %{"name" => actor.name, "binding" => "token"}
@@ -51,7 +52,7 @@ defmodule SpruceGoose.Web.CommandEndpointTest do
     assert {:ok, _} =
              Executor.run({:link_task, task.task_id, "evidence", "https://e/2"}, actor.name)
 
-    assert {:ok, events} = EventLedger.read(EventLedger.new(), "authority:sprucegoose")
+    assert {:ok, events} = EventLedger.read(EventLedger.new(), ShadowEvents.stream_for(task))
     assert List.last(events).payload["actor"] == %{"name" => actor.name, "binding" => "declared"}
   end
 

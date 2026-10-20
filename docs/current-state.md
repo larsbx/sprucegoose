@@ -135,15 +135,17 @@ a caller asserted a set of premises — real, and not the independently
 answerable constitutional questions the v0.2 audit requires. Its disposition is
 [decision D-4](decisions/2026-09-08-kernel-and-ledger-shape.md).
 
-The deployed PostgreSQL EventLedger appends immutable, per-stream ordered
-certified events with exact content identities, root-shape validation, and
-conflict-safe idempotency. Two qualifications belong with that claim: the
-events carry whole aggregate snapshots rather than certified transitions, so
-replay is last-write-wins and a dropped event is invisible whenever a later
-snapshot survives; and "required constitutional roots" is a check that eight
-named strings are 64-hex, not that they resolve to anything. See decisions
-[D-2](decisions/2026-09-08-kernel-and-ledger-shape.md) and
-[D-3](decisions/2026-09-08-kernel-and-ledger-shape.md). Database constraints recheck identities and
+The PostgreSQL EventLedger appends immutable, per-stream ordered certified
+events with exact content identities, root-shape validation, and
+conflict-safe idempotency. Since 2026-10-20 (D-1 revisited, D-2 decided)
+identities are over RFC 8785 canonical bytes, the ledger exports to a file a
+non-BEAM verifier checks, and shadowed mutations are partitioned per project
+as linked transitions that carry the request as well as the snapshot. One
+qualification remains: "required constitutional roots" is a check that eight
+named strings are 64-hex, not that they resolve to anything; see
+[D-3](decisions/2026-09-08-kernel-and-ledger-shape.md). These claims describe
+the code on the branch; the production ledger has not been rekeyed or
+exported yet. Database constraints recheck identities and
 required roots, and a trigger refuses updates and deletes. Its recovery,
 separate-session concurrency, retry, and conflict behavior has passed. The
 supported mutation path now appends one root-valid candidate event in the same

@@ -52,7 +52,20 @@ claim as the answer.
 
 ---
 
-## D-2 · Certified stream shape — **proposed, awaiting sign-off**
+## D-2 · Certified stream shape — **decided 2026-10-20, implemented**
+
+**Taken: transitions partitioned per project, with the snapshot kept.** Every
+shadowed mutation now appends to `authority:project:<key>` (or
+`authority:global` for a result with no project) under that stream's lock
+only. The payload (`sprucegoose-mutation-shadow-v2`) carries `request`, the
+command's arguments, which is what changed and why; `result`, the snapshot,
+which keeps last-write-wins replay valid; and `previous`, the identity of the
+stream's prior event, which makes a gap or a fork detectable without a global
+position. `authority:sprucegoose` is retained as the legacy stream holding
+history written before the decision and the baseline acceptance event; the
+projector replays every `authority:` stream in global sequence order and
+requires each stream's positions to be contiguous. No existing event changed.
+The analysis that led here follows.
 
 Covers R-09 (partitioning) and R-10 (payload), which cannot be decided apart:
 snapshots need less ordering than transitions do.
@@ -238,7 +251,7 @@ reader and one that does a smaller job correctly.
 | Decision | State | Blocks |
 | --- | --- | --- |
 | D-1 canonical form | decided, implemented, verified inert | — |
-| D-2 stream shape | proposed | Phase 8 cutover |
+| D-2 stream shape | decided, implemented 2026-10-20 | — |
 | D-3 root semantics | proposed | D-4 |
 | D-4 kernel disposition | proposed | conformance claims |
 
