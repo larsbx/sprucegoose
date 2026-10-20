@@ -22,14 +22,15 @@ defmodule SpruceGoose.Kernel.TaskProjector do
   def status do
     # AUTHORIZATION: only a global admin may compare certified and live task projections.
     with :ok <- authorize_admin(),
-         {:ok, %{rows: [[position, state, digest]]}} <-
+         {:ok, %{rows: [[position, state, digest, form_name]]}} <-
            Repo.query(
-             "SELECT stream_position, state, state_digest FROM replay_projections WHERE projection_id = $1",
+             "SELECT stream_position, state, state_digest, canonical_form FROM replay_projections WHERE projection_id = $1",
              [@projection_id]
            ),
+         {:ok, form} <- Canonical.form_from_name(form_name),
          {:ok, live} <- live_state(),
          {:ok, live_digest} <- digest(live),
-         {:ok, stored_digest} <- digest(state) do
+         {:ok, stored_digest} <- digest(state, form) do
       {:ok,
        %{
          projection_id: @projection_id,
@@ -161,12 +162,13 @@ defmodule SpruceGoose.Kernel.TaskProjector do
     result =
       case Repo.query(
              """
-               INSERT INTO replay_projections (projection_id, stream_position, state, state_digest)
-               VALUES ($1, $2, $3::jsonb, $4)
+               INSERT INTO replay_projections (projection_id, stream_position, state, state_digest, canonical_form)
+               VALUES ($1, $2, $3::jsonb, $4, $5)
                ON CONFLICT (projection_id) DO UPDATE SET stream_position = EXCLUDED.stream_position,
-                 state = EXCLUDED.state, state_digest = EXCLUDED.state_digest, updated_at = now()
+                 state = EXCLUDED.state, state_digest = EXCLUDED.state_digest,
+                 canonical_form = EXCLUDED.canonical_form, updated_at = now()
              """,
-             [@projection_id, position, state, digest]
+             [@projection_id, position, state, digest, Canonical.form_name(:jcs)]
            ) do
         {:ok, _} -> :ok
         _ -> {:error, :projection_store_unavailable}
@@ -177,8 +179,8 @@ defmodule SpruceGoose.Kernel.TaskProjector do
     result
   end
 
-  defp digest(state) do
-    with {:ok, bytes} <- Canonical.encode(state),
+  defp digest(state, form \\ :jcs) do
+    with {:ok, bytes} <- Canonical.encode(state, form),
          {:ok, %ContentID{digest: digest}} <- ContentID.derive(:sha256, bytes),
          do: {:ok, digest}
   end

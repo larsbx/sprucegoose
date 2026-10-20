@@ -48,6 +48,10 @@ authoritative record per deployment, human-approved single-use execution
 authorizations, and a bounded host adapter. See
 [`docs/deployment-domain.md`](docs/deployment-domain.md).
 
+Certified history is written in RFC 8785 canonical form and exports to a
+file that `scripts/verify-certified-ledger.py` checks without the BEAM; see
+[`docs/certified-ledger.md`](docs/certified-ledger.md).
+
 See [`docs/current-state.md`](docs/current-state.md) for the exact production
 release, database baseline, artifact boundary, and open architecture gaps.
 

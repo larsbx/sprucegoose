@@ -108,7 +108,10 @@ The Forgejo ArtifactStore adapter currently verifies exact commit, tree,
 path bytes, and digest, and applies Project-scoped Roadmap and Workflow
 definitions transactionally. PostgreSQL is still the live authority for task
 rows and several mutable aggregates; the transactional outbox is not yet a
-complete append-only EventLedger adapter.
+complete append-only EventLedger adapter. Certified events are written in a
+specified canonical form and the whole ledger exports to a format any JSON
+implementation can verify (see [`certified-ledger.md`](certified-ledger.md)),
+so the history is no longer captive to one database or one runtime.
 
 Until the migration is complete, SpruceGoose must not claim full event-sourced
 authority. The required sequence is:

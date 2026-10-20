@@ -572,6 +572,11 @@ defmodule SpruceGoose.CLI.Executor do
   defp dispatch(:rebuild_task_projection), do: TaskProjector.rebuild()
   defp dispatch(:task_projection_status), do: TaskProjector.status()
 
+  defp dispatch({:export_certified_ledger, path}),
+    do: SpruceGoose.Kernel.LedgerExport.export(path)
+
+  defp dispatch(:rekey_certified_ledger), do: SpruceGoose.Kernel.LedgerExport.rekey()
+
   defp dispatch({:shadow_runtime, task_id, envelope}) do
     with {:ok, task} <- Authz.read_one(Task, task_id: task_id) do
       RuntimeShadow.import(task, envelope)

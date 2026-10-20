@@ -8,7 +8,7 @@ defmodule SpruceGoose.GrandfatheredBaselineTest do
 
   setup do
     Repo.query!(
-      "TRUNCATE replay_projections, grandfathered_baselines, certified_events RESTART IDENTITY"
+      "TRUNCATE replay_projections, grandfathered_baselines, certified_event_rekeys, certified_events RESTART IDENTITY"
     )
 
     :ok

@@ -3,11 +3,12 @@ defmodule SpruceGoose.Kernel.EventLedger do
   Port for ordered, immutable certified events.
 
   `verify/2` re-derives an event's identity from its stored canonical bytes, so
-  a ledger can prove it did not alter what it holds. That is not the same as
-  *independent* verification, which this port used to claim: the canonical form
-  is Erlang External Term Format, so recomputing an identity requires the BEAM.
-  See `SpruceGoose.Kernel.Canonical` and
-  `docs/decisions/2026-09-08-canonical-form.md`.
+  a ledger can prove it did not alter what it holds. Events written in the
+  `jcs-v1` canonical form are also independently verifiable: any JSON
+  implementation can recompute their identity from the exported ledger. Events
+  in the legacy `etf-v1` form are verifiable only on the BEAM and are mapped
+  to their `jcs-v1` identity by the re-rooting record. See
+  `SpruceGoose.Kernel.Canonical` and `docs/certified-ledger.md`.
   """
 
   alias SpruceGoose.Kernel.{CertifiedEvent, ContentID}
@@ -16,4 +17,5 @@ defmodule SpruceGoose.Kernel.EventLedger do
               {:ok, ContentID.t(), term()} | {:error, atom()}
   @callback read(term(), String.t()) :: {:ok, [CertifiedEvent.t()]} | {:error, atom()}
   @callback verify(term(), ContentID.t()) :: :ok | {:error, atom()}
+  @callback streams(term()) :: {:ok, [String.t()]} | {:error, atom()}
 end

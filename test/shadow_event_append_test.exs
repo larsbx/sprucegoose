@@ -8,7 +8,7 @@ defmodule SpruceGoose.ShadowEventAppendTest do
   alias SpruceGoose.Repo
 
   setup do
-    Repo.query!("TRUNCATE certified_events RESTART IDENTITY")
+    Repo.query!("TRUNCATE certified_event_rekeys, certified_events RESTART IDENTITY")
     task = task_fixture()
     %{task: task}
   end

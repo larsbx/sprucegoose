@@ -5,7 +5,7 @@ defmodule SpruceGoose.PostgresEventLedgerTest do
   alias SpruceGoose.Kernel.Postgres.EventLedger
 
   setup do
-    Repo.query!("TRUNCATE certified_events RESTART IDENTITY")
+    Repo.query!("TRUNCATE certified_event_rekeys, certified_events RESTART IDENTITY")
     %{ledger: EventLedger.new()}
   end
 

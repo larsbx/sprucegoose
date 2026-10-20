@@ -29,10 +29,12 @@ across runtime defaults.
   `verify/2` re-derives an identity from stored bytes, which proves a ledger
   did not alter what it holds — a real and useful property, and a different one.
 
-**Rejected: adopt a specified format now** (RFC 8785 JCS, or a length-prefixed
-encoding defined in the module). This is the option that would *earn* the
-withdrawn claim, and it should be taken eventually. It changes every existing
-identity, so it re-roots history, so it is not a remediation change.
+**Rejected on 2026-09-08, taken on 2026-10-20: adopt a specified format.**
+RFC 8785 JCS is now the canonical form for every new certified event
+(`jcs-v1`); the ETF form is retained as `etf-v1` for verification of events
+written before the adoption, and a one-time `ledger rekey` records the JCS
+identity of every legacy event in an immutable re-rooting record. No existing
+identity changed. See [`certified-ledger.md`](../certified-ledger.md).
 
 **Verification.** The pin had to be provably inert, or it would have silently
 re-rooted production history:

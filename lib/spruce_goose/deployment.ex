@@ -388,10 +388,7 @@ defmodule SpruceGoose.Deployment do
     end)
   end
 
-  defp lock(key) do
-    # AUTHORIZATION: the actor-bound read in mutate/2 precedes this; the lock only serializes writers.
-    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key])
-  end
+  defp lock(key), do: SpruceGoose.Kernel.Locks.acquire(key)
 
   defp environment_key(record), do: "environment:#{record.project_id}:#{record.environment}"
 
