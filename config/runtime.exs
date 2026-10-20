@@ -50,6 +50,12 @@ if outbox_enabled? do
   end
 end
 
+# Declared (`--as`) resolution is the break-glass path over the local socket.
+# Once every agent holds a token, disable it so the socket cannot assert a name.
+config :spruce_goose,
+  declared_actor_resolution:
+    System.get_env("SPRUCE_GOOSE_DECLARED_ACTORS", "true") in ["1", "true"]
+
 config :spruce_goose,
   start_outbox_dispatcher: outbox_enabled?,
   outbox_handler: outbox_handler,

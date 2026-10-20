@@ -3,7 +3,7 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
 
   alias SpruceGoose.Kernel.{Canonical, CertifiedEvent, ContentID}
   alias SpruceGoose.Kernel.Postgres.EventLedger
-  alias SpruceGoose.Repo
+  alias SpruceGoose.{Authz, Repo}
 
   @policy "kernel/shadow-event-roots.json"
   @policy_path Path.expand("../../../priv/#{@policy}", __DIR__)
@@ -152,6 +152,7 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
 
       {:ok,
        %{
+         "actor" => Authz.attribution(),
          "command" => command |> elem(0) |> Atom.to_string(),
          "outbox_event_key" => outbox_key,
          "result" => normalized,

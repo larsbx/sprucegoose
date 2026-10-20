@@ -143,6 +143,22 @@ An implicit dependency that cannot fail quietly beats an explicit one that can.
 The scope is the calling process, and `SocketPlug` runs each request in its own
 supervised task, so requests cannot see each other's actor.
 
+## Binding the actor
+
+There are two write paths, and the ledger records which one a mutation came
+through. Every certified event carries `actor: {name, binding}`:
+
+| binding | path | what it proves |
+|---|---|---|
+| `token` | `POST /commands` with `{"argv": [...]}` behind the OAuth bearer, scope, and client-to-actor binding pipeline | a verified OAuth client, bound by an administrator to this actor |
+| `declared` | the local socket with `--as NAME` | that the caller asserted the name; nothing more |
+| `configured` | service actors named by the node's configuration (derivation and deployment executors, tests) | the node's own configuration |
+
+The authenticated endpoint refuses `--as` outright: on that path identity is
+established, not declared. Set `SPRUCE_GOOSE_DECLARED_ACTORS=false` once every
+agent holds a token, and the socket can no longer assert a name; it remains
+the break-glass path only while declared resolution is enabled.
+
 ## Naming the actor
 
 Precedence: `--as NAME`, then `SPRUCE_GOOSE_ACTOR`, then the `:default_actor`

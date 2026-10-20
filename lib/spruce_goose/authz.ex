@@ -31,16 +31,40 @@ defmodule SpruceGoose.Authz do
   require Ash.Query
 
   @key :spruce_goose_actor
+  @binding_key :spruce_goose_actor_binding
+
+  # How the acting actor was established. `:token` is an authenticated OAuth
+  # client bound to an actor; `:configured` is a service actor named by the
+  # node's own configuration; `:declared` is a name the caller asserted.
+  @bindings [:token, :configured, :declared]
+
+  def bindings, do: @bindings
 
   @doc "Run `fun` with `actor` as the acting party for every Authz call inside it."
-  def with_actor(actor, fun) do
+  def with_actor(actor, fun) when is_function(fun, 0), do: with_actor(actor, :configured, fun)
+
+  @doc "Run `fun` as `actor`, recording how that actor was bound to this request."
+  def with_actor(actor, binding, fun) when binding in @bindings and is_function(fun, 0) do
     previous = Process.put(@key, actor)
+    previous_binding = Process.put(@binding_key, binding)
 
     try do
       fun.()
     after
       if is_nil(previous), do: Process.delete(@key), else: Process.put(@key, previous)
+
+      if is_nil(previous_binding),
+        do: Process.delete(@binding_key),
+        else: Process.put(@binding_key, previous_binding)
     end
+  end
+
+  @doc "The binding strength of the acting actor, or nil outside a request."
+  def actor_binding, do: Process.get(@binding_key)
+
+  @doc "Who is acting and how they were bound, in the shape certified events record."
+  def attribution do
+    %{"name" => actor!().name, "binding" => Atom.to_string(actor_binding() || :configured)}
   end
 
   @doc "The acting actor. Raises rather than defaulting: no actor is not a permission."

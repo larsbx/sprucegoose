@@ -152,18 +152,6 @@ defmodule SpruceGoose.Deployment.Projection do
          do: {:ok, %{projection | cancellation_reason: reason}}
   end
 
-  # From deploying, cancellation is only ever the tail of a withdrawal: the
-  # facade writes the withdrawn completion and the cancellation together, so a
-  # cancellation after an executor completion is a history it cannot produce.
-  defp withdrawal_precedes_cancel(%{state: :deploying} = projection) do
-    case projection.operations[projection.last_operation_id] do
-      %{source: "withdrawn"} -> :ok
-      _ -> {:error, :not_admitted}
-    end
-  end
-
-  defp withdrawal_precedes_cancel(_projection), do: :ok
-
   # Host evidence recorded although the lifecycle could not move on it.
   defp step("DeploymentTransitionRefused", %{"from" => from, "to" => to}, projection) do
     with {:ok, from} <- Lifecycle.parse(from),
@@ -256,6 +244,18 @@ defmodule SpruceGoose.Deployment.Projection do
   end
 
   defp step(_type, _payload, _projection), do: {:error, :unknown_event}
+
+  # From deploying, cancellation is only ever the tail of a withdrawal: the
+  # facade writes the withdrawn completion and the cancellation together, so a
+  # cancellation after an executor completion is a history it cannot produce.
+  defp withdrawal_precedes_cancel(%{state: :deploying} = projection) do
+    case projection.operations[projection.last_operation_id] do
+      %{source: "withdrawn"} -> :ok
+      _ -> {:error, :not_admitted}
+    end
+  end
+
+  defp withdrawal_precedes_cancel(_projection), do: :ok
 
   defp phase(projection, id, allowed, update) do
     case Map.fetch(projection.operations, id) do

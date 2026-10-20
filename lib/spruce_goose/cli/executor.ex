@@ -93,18 +93,41 @@ defmodule SpruceGoose.CLI.Executor do
 
   def run(command, actor_name) do
     case Resolver.resolve(actor_name) do
-      {:ok, actor} ->
-        actor
-        |> Authz.with_actor(fn ->
-          if ShadowEvents.shadowed?(command),
-            do: ShadowEvents.transaction(command, fn -> dispatch(command) end),
-            else: dispatch(command)
-        end)
-        |> explain(actor)
-
-      {:error, message} ->
-        {:error, message}
+      {:ok, actor} -> run_as(command, actor, :declared)
+      {:error, message} -> {:error, message}
     end
+  end
+
+  @doc """
+  Run one parsed command as an actor that was *authenticated* upstream.
+
+  The web command endpoint resolves the actor from a verified OAuth client
+  binding before calling this, so no name is accepted here and the binding
+  is recorded as `:token` on every certified event the command produces.
+  """
+  def run_authenticated(command, %SpruceGoose.Actors.Actor{} = actor) do
+    cond do
+      command in @unauthenticated -> dispatch(command)
+      match?({:help, _}, command) or match?({:validate_id, _}, command) -> dispatch(command)
+      registry_command?(command) -> registry(command, actor)
+      command == :whoami -> Registry.whoami(actor)
+      true -> run_as(command, actor, :token)
+    end
+  end
+
+  defp registry_command?(command) when is_tuple(command) and tuple_size(command) > 0,
+    do: elem(command, 0) in @registry_verbs
+
+  defp registry_command?(_command), do: false
+
+  defp run_as(command, actor, binding) do
+    actor
+    |> Authz.with_actor(binding, fn ->
+      if ShadowEvents.shadowed?(command),
+        do: ShadowEvents.transaction(command, fn -> dispatch(command) end),
+        else: dispatch(command)
+    end)
+    |> explain(actor)
   end
 
   # A refusal is only useful if it names the grant that was missing, so an Ash
