@@ -48,11 +48,17 @@ authoritative record per deployment, human-approved single-use execution
 authorizations, and a bounded host adapter. See
 [`docs/deployment-domain.md`](docs/deployment-domain.md).
 
+Certified history is written in RFC 8785 canonical form and exports to a
+file that `scripts/verify-certified-ledger.py` checks without the BEAM; see
+[`docs/certified-ledger.md`](docs/certified-ledger.md).
+
 See [`docs/current-state.md`](docs/current-state.md) for the exact production
 release, database baseline, artifact boundary, and open architecture gaps.
 
 Every command acts as a named actor and is authorized against that actor's
-scoped grants. A store with an empty actor registry bootstraps its first
+scoped grants. The authenticated write surface is `POST /commands` behind the
+OAuth pipeline; the local socket's `--as NAME` is a declared, break-glass
+binding, and every certified event records which binding was used. A store with an empty actor registry bootstraps its first
 operator through genesis; after that, `--as NAME` (or `SPRUCE_GOOSE_ACTOR`)
 identifies the caller and an unnamed request is refused. See
 [`docs/authorization.md`](docs/authorization.md) for the model, the roles, and

@@ -23,7 +23,8 @@ defmodule SpruceGoose.Deployment.HostAdapter.Scripted do
         install_dir: "/path/to/install",
         records_dir: "/path/to/activation-records",
         inventory: "/path/to/destination-migration-inventory",
-        target: "mama"
+        target: "mama",
+        service: "sprucegoose.service"      # optional; probed with systemctl --user is-active
       }
   """
 
@@ -40,8 +41,17 @@ defmodule SpruceGoose.Deployment.HostAdapter.Scripted do
   def execute(request) do
     with {:ok, config} <- config(),
          {:ok, argv} <- command(request, config) do
-      case System.cmd(config.script, argv, stderr_to_stdout: true, env: []) do
+      # The executor's budget bounds the host too: past it the script is
+      # terminated, then killed, so a late activation cannot outlive the
+      # decision to reconcile. Exit 124 is timeout(1)'s own signal.
+      seconds =
+        div(Application.get_env(:spruce_goose, :deployment_operation_timeout_ms, 600_000), 1_000)
+
+      bounded = ["--kill-after=10", Integer.to_string(max(seconds, 1)), config.script | argv]
+
+      case System.cmd("timeout", bounded, stderr_to_stdout: true, env: []) do
         {output, 0} -> {:ok, %{evidence_digest: evidence(output), detail: truncate(output)}}
+        {output, 124} -> {:error, "host script exceeded #{seconds}s: #{truncate(output)}"}
         {output, status} -> {:error, "exit #{status}: #{truncate(output)}"}
       end
     end
@@ -75,6 +85,21 @@ defmodule SpruceGoose.Deployment.HostAdapter.Scripted do
 
         true ->
           {:ok, %{status: :unknown, detail: "no activation record for #{operation_id}"}}
+      end
+    end
+  end
+
+  @impl true
+  def probe(_request) do
+    with {:ok, config} <- config() do
+      service = Map.get(config, :service, "sprucegoose.service")
+
+      case System.cmd("systemctl", ["--user", "is-active", service],
+             stderr_to_stdout: true,
+             env: []
+           ) do
+        {output, 0} -> {:ok, %{status: :healthy, detail: "#{service}: #{String.trim(output)}"}}
+        {output, _} -> {:ok, %{status: :unhealthy, detail: "#{service}: #{String.trim(output)}"}}
       end
     end
   end

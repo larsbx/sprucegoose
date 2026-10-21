@@ -39,6 +39,18 @@ defmodule SpruceGoose.Kernel.Memory.EventLedger do
   end
 
   @impl true
+  def head(%__MODULE__{} = ledger, stream) when is_binary(stream) do
+    case ledger.events |> Enum.filter(&(&1.stream == stream)) |> List.last() do
+      nil -> {:ok, nil}
+      event -> {:ok, event.identity}
+    end
+  end
+
+  @impl true
+  def streams(%__MODULE__{} = ledger),
+    do: {:ok, ledger.events |> Enum.map(& &1.stream) |> Enum.uniq()}
+
+  @impl true
   def verify(%__MODULE__{} = ledger, %ContentID{} = identity) do
     case Enum.find(ledger.events, &(&1.identity == identity)) do
       nil -> {:error, :not_found}

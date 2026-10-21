@@ -39,6 +39,7 @@ defmodule SpruceGoose.Deployment.Projection do
 
   defp apply_event(%CertifiedEvent{} = event, position, projection) do
     with :ok <- check_link(event, projection),
+         :ok <- check_transient(event, projection),
          {:ok, next} <- step(event.event_type, event.payload, projection) do
       {:ok, %{next | last_identity: event.identity.digest, event_count: position}}
     else
@@ -56,6 +57,28 @@ defmodule SpruceGoose.Deployment.Projection do
 
   defp check_link(_, _), do: {:error, :unlinked_event}
 
+  # A transient state admits exactly one successor and nothing else in between.
+  defp check_transient(_event, nil), do: :ok
+
+  defp check_transient(%{event_type: type, payload: payload}, %{state: state}) do
+    if Lifecycle.transient?(state) and
+         not (type == "DeploymentTransitioned" and payload["state"] == "staged"),
+       do: {:error, :transient_state_escaped},
+       else: :ok
+  end
+
+  defp admitted(projection, event) do
+    if Lifecycle.admits?(projection.state, projection.environment, event),
+      do: :ok,
+      else: {:error, :not_admitted}
+  end
+
+  defp no_open_operation(projection) do
+    if Enum.all?(projection.operations, fn {_id, op} -> op.phase == :completed end),
+      do: :ok,
+      else: {:error, :operation_in_flight}
+  end
+
   defp step("DeploymentCreated", payload, nil) do
     with {:ok, release} <- ReleaseIdentity.new(Map.get(payload, "release", %{})),
          {:ok, environment} <- environment(payload["environment"]),
@@ -69,10 +92,13 @@ defmodule SpruceGoose.Deployment.Projection do
          release_id: payload["release_id"],
          requires_routing: payload["requires_routing"] == true,
          state: :queued,
-         health: %{status: :unknown, detail: nil},
+         active: false,
+         superseded_by: nil,
+         health: %{status: :unknown, detail: nil, source: nil},
          cancellation_reason: nil,
          rollback_target: nil,
          operations: %{},
+         last_operation_id: nil,
          last_identity: nil,
          event_count: 0
        }}
@@ -93,13 +119,49 @@ defmodule SpruceGoose.Deployment.Projection do
 
   defp step("DeploymentHealthObserved", %{"status" => status} = payload, projection)
        when status in @health do
-    {:ok,
-     %{projection | health: %{status: String.to_existing_atom(status), detail: payload["detail"]}}}
+    with :ok <- admitted(projection, :health) do
+      {:ok,
+       %{
+         projection
+         | health: %{
+             status: String.to_existing_atom(status),
+             detail: payload["detail"],
+             source: payload["source"]
+           }
+       }}
+    end
   end
+
+  # The live-release pointer moves only through these two events.
+  defp step("DeploymentActivated", _payload, projection) do
+    with :ok <- admitted(projection, :activate),
+         do: {:ok, %{projection | active: true, superseded_by: nil}}
+  end
+
+  defp step("DeploymentSuperseded", %{"by" => by}, %{active: true} = projection)
+       when is_binary(by) and by != "",
+       do: {:ok, %{projection | active: false, superseded_by: by}}
+
+  defp step("DeploymentSuperseded", _payload, _projection), do: {:error, :not_active}
 
   defp step("DeploymentCancellationRequested", %{"reason" => reason}, projection)
        when is_binary(reason) and reason != "" and byte_size(reason) <= @max_reason do
-    {:ok, %{projection | cancellation_reason: reason}}
+    with :ok <- admitted(projection, :cancel),
+         :ok <- no_open_operation(projection),
+         :ok <- withdrawal_precedes_cancel(projection),
+         do: {:ok, %{projection | cancellation_reason: reason}}
+  end
+
+  # Host evidence recorded although the lifecycle could not move on it.
+  defp step("DeploymentTransitionRefused", %{"from" => from, "to" => to}, projection) do
+    with {:ok, from} <- Lifecycle.parse(from),
+         {:ok, to} <- Lifecycle.parse(to),
+         true <- from == projection.state,
+         {:error, :invalid_transition} <- Lifecycle.transition(from, to) do
+      {:ok, projection}
+    else
+      _ -> {:error, :unfounded_refusal}
+    end
   end
 
   defp step(
@@ -108,11 +170,13 @@ defmodule SpruceGoose.Deployment.Projection do
          projection
        )
        when is_binary(target) and target != "" do
-    {:ok,
-     %{
-       projection
-       | rollback_target: %{deployment_id: target, release_id: payload["target_release_id"]}
-     }}
+    with :ok <- admitted(projection, :rollback) do
+      {:ok,
+       %{
+         projection
+         | rollback_target: %{deployment_id: target, release_id: payload["target_release_id"]}
+       }}
+    end
   end
 
   defp step(
@@ -122,7 +186,9 @@ defmodule SpruceGoose.Deployment.Projection do
        )
        when is_binary(id) and id != "" do
     with {:ok, action} <- operation_action(action),
-         false <- Map.has_key?(projection.operations, id) do
+         false <- Map.has_key?(projection.operations, id),
+         :ok <- admitted(projection, {:operation, action}),
+         :ok <- no_open_operation(projection) do
       operation = %{
         action: action,
         phase: :requested,
@@ -133,7 +199,7 @@ defmodule SpruceGoose.Deployment.Projection do
         observations: []
       }
 
-      {:ok, put_in(projection, [:operations, id], operation)}
+      {:ok, %{put_in(projection, [:operations, id], operation) | last_operation_id: id}}
     else
       true -> {:error, :duplicate_operation}
       error -> error
@@ -149,7 +215,11 @@ defmodule SpruceGoose.Deployment.Projection do
          projection
        )
        when outcome in ["succeeded", "failed"] do
-    phase(projection, id, [:started], fn operation ->
+    # A withdrawal closes an operation the executor never started; anything
+    # else completes only what was started.
+    from = if payload["source"] == "withdrawn", do: [:requested], else: [:started]
+
+    phase(projection, id, from, fn operation ->
       %{
         operation
         | phase: :completed,
@@ -174,6 +244,18 @@ defmodule SpruceGoose.Deployment.Projection do
   end
 
   defp step(_type, _payload, _projection), do: {:error, :unknown_event}
+
+  # From deploying, cancellation is only ever the tail of a withdrawal: the
+  # facade writes the withdrawn completion and the cancellation together, so a
+  # cancellation after an executor completion is a history it cannot produce.
+  defp withdrawal_precedes_cancel(%{state: :deploying} = projection) do
+    case projection.operations[projection.last_operation_id] do
+      %{source: "withdrawn"} -> :ok
+      _ -> {:error, :not_admitted}
+    end
+  end
+
+  defp withdrawal_precedes_cancel(_projection), do: :ok
 
   defp phase(projection, id, allowed, update) do
     case Map.fetch(projection.operations, id) do

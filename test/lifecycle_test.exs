@@ -128,15 +128,17 @@ defmodule SpruceGoose.LifecycleTest do
   end
 
   describe "deployment lifecycle" do
-    test "carries the native control plane's relation unchanged" do
+    test "carries the native control plane's relation, plus withdrawal of an unstarted deploy" do
       assert Deployment.Lifecycle.version() == 1
       assert Deployment.Lifecycle.initial() == :queued
 
+      # `deploying → cancelled` is the one addition: it withdraws a requested
+      # deploy operation the executor has not started (see deployment_test).
       assert Deployment.Lifecycle.transitions() == %{
                queued: [:building, :cancelled],
                building: [:staged, :failed, :cancelled],
                staged: [:deploying, :cancelled],
-               deploying: [:verifying, :failed, :rolling_back],
+               deploying: [:verifying, :failed, :rolling_back, :cancelled],
                verifying: [:ready, :failed, :rolling_back],
                ready: [:rolling_back],
                failed: [:rolling_back],

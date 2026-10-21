@@ -57,6 +57,21 @@ defmodule SpruceGoose.Deployment.CLI do
     end
   end
 
+  # Abandonment takes one fresh host observation first, so the decision is
+  # made against what the host says now rather than what a stale job saw.
+  def run(:abandon, %{operation_id: id, reason: reason}) do
+    with {:ok, operation} <- Authz.read_one(Operation, operation_id: id),
+         {:ok, adapter} <- Executor.adapter(),
+         {:ok, request} <- Deployment.operation_request(operation),
+         {:ok, %{status: _} = observation} <- adapter.observe(request),
+         {:ok, operation} <- Deployment.abandon_operation(id, reason, observation) do
+      {:ok, operation_json(operation)}
+    else
+      {:ok, other} -> {:error, "adapter returned malformed observation: #{inspect(other)}"}
+      error -> error
+    end
+  end
+
   def run(:show, %{deployment_id: id}) do
     with {:ok, record} <- Authz.read_one(Record, deployment_id: id),
          {:ok, operations} <-
@@ -83,6 +98,18 @@ defmodule SpruceGoose.Deployment.CLI do
     with {:ok, records} <-
            Record |> Ash.Query.filter_input(release: [project: [key: key]]) |> Authz.read(),
          do: {:ok, %{deployments: Enum.map(records, &record_json/1)}}
+  end
+
+  def run(:revoke, %{authorization_id: id, reason: reason}) do
+    with {:ok, revocation} <- Deployment.revoke_authorization(id, reason),
+         do: {:ok, Map.take(revocation, [:authorization_id, :revoked_by, :reason, :inserted_at])}
+  end
+
+  def run(:active, %{project: project, environment: environment}) do
+    with {:ok, record} <- Deployment.active(project, environment),
+         do:
+           {:ok,
+            %{project: project, environment: environment, active: record && record_json(record)}}
   end
 
   def run(:events, %{deployment_id: id}) do
@@ -208,7 +235,21 @@ defmodule SpruceGoose.Deployment.CLI do
   end
 
   def parse(["reconcile", id]), do: {:ok, {:deployment, :reconcile, %{operation_id: id}}}
+
+  def parse(["revoke", id, reason]),
+    do: {:ok, {:deployment, :revoke, %{authorization_id: id, reason: reason}}}
+
+  def parse(["abandon", id, reason]),
+    do: {:ok, {:deployment, :abandon, %{operation_id: id, reason: reason}}}
+
   def parse(["show", id]), do: {:ok, {:deployment, :show, %{deployment_id: id}}}
+
+  def parse(["active", project, environment]) when environment in ~w(preview staging production),
+    do:
+      {:ok,
+       {:deployment, :active,
+        %{project: project, environment: String.to_existing_atom(environment)}}}
+
   def parse(["events", id]), do: {:ok, {:deployment, :events, %{deployment_id: id}}}
 
   def parse(["list" | args]) do
@@ -227,8 +268,11 @@ defmodule SpruceGoose.Deployment.CLI do
       "observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]",
       "authorize DEPLOYMENT_ID --action execute_deploy|execute_rollback|execute_reclaim --reference REF [--target DEPLOYMENT_ID] [--ttl SECONDS]",
       "request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]",
+      "revoke AUTHORIZATION_ID REASON",
       "reconcile OPERATION_ID",
+      "abandon OPERATION_ID REASON",
       "show DEPLOYMENT_ID",
+      "active PROJECT preview|staging|production",
       "list [--project KEY]",
       "events DEPLOYMENT_ID"
     ]
@@ -300,8 +344,11 @@ defmodule SpruceGoose.Deployment.CLI do
       :environment,
       :requires_routing,
       :state,
+      :active,
+      :superseded_by,
       :health_status,
       :health_detail,
+      :health_source,
       :cancellation_reason,
       :rollback_target_id,
       :pinned,

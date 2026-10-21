@@ -34,7 +34,8 @@ defmodule SpruceGoose.Deployment.Ledger do
       Map.merge(payload, %{
         "schema" => Projection.schema(),
         "deployment_id" => deployment_id,
-        "previous" => previous
+        "previous" => previous,
+        "actor" => SpruceGoose.Authz.attribution()
       })
 
     with {:ok, roots} <- ShadowEvents.roots(),

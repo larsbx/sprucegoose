@@ -19,6 +19,7 @@ defmodule SpruceGoose.Deployment.LifecycleTest do
   test "only declared transitions are accepted" do
     assert {:ok, :building} = Lifecycle.transition(:queued, :building)
     assert {:ok, :rolling_back} = Lifecycle.transition(:ready, :rolling_back)
+    assert {:ok, :cancelled} = Lifecycle.transition(:deploying, :cancelled)
     assert {:error, :invalid_transition} = Lifecycle.transition(:queued, :ready)
     assert {:error, :invalid_transition} = Lifecycle.transition(:ready, :deploying)
     assert {:error, :invalid_transition} = Lifecycle.transition(:cancelled, :queued)
@@ -30,6 +31,34 @@ defmodule SpruceGoose.Deployment.LifecycleTest do
     assert {:ok, :verifying} = Lifecycle.parse(:verifying)
     assert {:error, :unknown_state} = Lifecycle.parse("sudo")
     assert {:error, :unknown_state} = Lifecycle.parse(:sudo)
+  end
+
+  test "one admission relation serves the facade and replay" do
+    assert Lifecycle.admits?(:verifying, :staging, :health)
+    refute Lifecycle.admits?(:ready, :staging, :health)
+    assert Lifecycle.admits?(:staged, :staging, :cancel)
+    # Withdrawal: admitted by the contract, and further guarded by the open operation's phase.
+    assert Lifecycle.admits?(:deploying, :staging, :cancel)
+    refute Lifecycle.admits?(:verifying, :staging, :cancel)
+    assert Lifecycle.admits?(:staged, :staging, {:operation, :execute_deploy})
+    refute Lifecycle.admits?(:deploying, :staging, {:operation, :execute_deploy})
+
+    for state <- Lifecycle.rollback_sources() do
+      assert Lifecycle.admits?(state, :staging, :rollback)
+      assert Lifecycle.admits?(state, :staging, {:operation, :execute_rollback})
+    end
+
+    # A deployment is deploying exactly while its deploy operation is open.
+    refute :deploying in Lifecycle.rollback_sources()
+    refute Lifecycle.admits?(:deploying, :staging, :rollback)
+
+    assert Lifecycle.admits?(:cancelled, :preview, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:cancelled, :staging, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:staged, :preview, {:operation, :execute_reclaim})
+    refute Lifecycle.admits?(:ready, :staging, {:operation, :sudo})
+
+    assert Lifecycle.transient?(:building)
+    refute Lifecycle.transient?(:staged)
   end
 
   test "routing evidence is required exactly for production" do

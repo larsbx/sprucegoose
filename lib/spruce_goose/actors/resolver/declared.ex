@@ -26,6 +26,15 @@ defmodule SpruceGoose.Actors.Resolver.Declared do
 
   @impl true
   def resolve(name) do
+    if Application.get_env(:spruce_goose, :declared_actor_resolution, true),
+      do: resolve_declared(name),
+      else:
+        {:error,
+         "declared actor resolution is disabled on this service; " <>
+           "use the authenticated command endpoint"}
+  end
+
+  defp resolve_declared(name) do
     case declared(name) do
       nil ->
         {:error,

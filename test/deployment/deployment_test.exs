@@ -22,6 +22,12 @@ defmodule SpruceGoose.DeploymentTest do
     def observe(_request), do: {:ok, %{status: :succeeded, detail: "running"}}
   end
 
+  defmodule ProbingAdapter do
+    def execute(_request), do: {:ok, %{detail: "applied"}}
+    def observe(_request), do: {:ok, %{status: :succeeded}}
+    def probe(_request), do: {:ok, Application.get_env(:spruce_goose, :test_host_health)}
+  end
+
   defmodule FailingAdapter do
     def execute(_request), do: {:error, "systemctl restart failed"}
     def observe(_request), do: {:ok, %{status: :failed, detail: "service inactive"}}
@@ -207,7 +213,8 @@ defmodule SpruceGoose.DeploymentTest do
              "DeploymentOperationCompleted",
              "DeploymentTransitioned",
              "DeploymentHealthObserved",
-             "DeploymentTransitioned"
+             "DeploymentTransitioned",
+             "DeploymentActivated"
            ]
 
     requested = Enum.find(events, &(&1.event_type == "DeploymentOperationRequested"))
@@ -601,6 +608,377 @@ defmodule SpruceGoose.DeploymentTest do
              as(system, fn -> Deployment.request(wrong_env.authorization_id, policy: policy) end)
   end
 
+  # --- one open operation per deployment (G1) -------------------------------------------------
+
+  test "an open operation blocks every further request, so a rollback cannot supersede a running deploy",
+       %{system: system} do
+    project = project_with_custody("inflight", @archive)
+
+    {:ok, rel_a} =
+      as(system, fn -> Deployment.accept_release(project.key, release_attrs(@archive)) end)
+
+    {:ok, rel_b} =
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: 8))
+      end)
+
+    approver = actor("inflight-approver", :human, [:approver])
+    executor = actor("inflight-executor", :agent, [:deployment_executor])
+
+    good = ready_path(rel_a.release_id, :healthy, system)
+    {:ok, b} = as(system, fn -> Deployment.create(rel_b.release_id, :staging) end)
+    {:ok, b} = as(system, fn -> Deployment.stage(b.deployment_id) end)
+
+    {:ok, auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{action: :execute_deploy, approval_reference: "r"})
+      end)
+
+    {:ok, op} = as(system, fn -> Deployment.request(auth.authorization_id) end)
+    {:ok, op} = as(executor, fn -> Deployment.start_operation(op.operation_id, executor.name) end)
+    assert op.deployment.state == :deploying
+
+    # The probe that found the defect: a rollback request while the deploy operation is started.
+    {:ok, rb_auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{
+          action: :execute_rollback,
+          target_deployment_id: good.deployment_id,
+          approval_reference: "r"
+        })
+      end)
+
+    assert {:error, :operation_in_flight} =
+             as(system, fn -> Deployment.request(rb_auth.authorization_id) end)
+
+    assert Repo.aggregate(Operation, :count) == 2
+    assert Ash.get!(Record, op.deployment_id, authorize?: false).state == :deploying
+
+    # The deploy completes normally; the same authorization is still unspent and now admitted from verifying.
+    {:ok, op} =
+      as(executor, fn -> Deployment.complete_operation(op.operation_id, :succeeded, %{}) end)
+
+    assert op.deployment.state == :verifying
+    assert {:ok, rb_op} = as(system, fn -> Deployment.request(rb_auth.authorization_id) end)
+    assert rb_op.deployment.state == :rolling_back
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+  end
+
+  test "an approver can abandon a started operation only against a host observation that is not success",
+       %{system: system} do
+    operation = requested_deploy("abandon", system)
+    executor = configure_executor("abandon", HangingAdapter)
+    approver = actor("abandon-human", :human, [:approver])
+    operator = actor("abandon-operator", :agent, [:operator])
+
+    {:ok, operation} =
+      as(executor, fn -> Deployment.start_operation(operation.operation_id, executor.name) end)
+
+    assert {:error, :host_reports_success} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "gave up", %{
+                 status: :succeeded
+               })
+             end)
+
+    assert {:error, _} =
+             as(operator, fn ->
+               Deployment.abandon_operation(operation.operation_id, "gave up", %{status: :unknown})
+             end)
+
+    assert {:error, :invalid_abandonment} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "", %{status: :unknown})
+             end)
+
+    assert {:ok, abandoned} =
+             as(approver, fn ->
+               Deployment.abandon_operation(operation.operation_id, "host unreachable for 2h", %{
+                 status: :unknown,
+                 detail: "no record"
+               })
+             end)
+
+    assert abandoned.phase == :completed
+    assert abandoned.outcome == :failed
+    assert abandoned.observation_count == 1
+    assert abandoned.deployment.state == :failed
+
+    {:ok, projection} = Deployment.projection(abandoned.deployment.deployment_id)
+    assert projection.operations[operation.operation_id].source == "operator"
+    assert projection.operations[operation.operation_id].observations == ["unknown"]
+
+    # The CLI verb observes through the configured adapter before abandoning.
+    release = Ash.get!(Release, abandoned.deployment.release_id, authorize?: false)
+    project = Ash.get!(Project, release.project_id, authorize?: false)
+
+    {:ok, second_release} =
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: 11))
+      end)
+
+    {:ok, second} = as(system, fn -> Deployment.create(second_release.release_id, :staging) end)
+    {:ok, second} = as(system, fn -> Deployment.stage(second.deployment_id) end)
+
+    {:ok, second_auth} =
+      as(approver, fn ->
+        Deployment.authorize(second.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, second_op} = as(system, fn -> Deployment.request(second_auth.authorization_id) end)
+
+    {:ok, _} =
+      as(executor, fn -> Deployment.start_operation(second_op.operation_id, executor.name) end)
+
+    Application.put_env(:spruce_goose, :test_host_observation, %{
+      status: :in_progress,
+      detail: "still restarting"
+    })
+
+    assert {:ok, %{phase: :completed, outcome: :failed}} =
+             SpruceGoose.CLI.Executor.run(
+               {:deployment, :abandon,
+                %{operation_id: second_op.operation_id, reason: "operator decision"}},
+               approver.name
+             )
+  end
+
+  test "completion is total: a refused lifecycle step is recorded instead of discarding the receipt",
+       %{system: system} do
+    operation = requested_deploy("total", system)
+    executor = actor("total-executor", :agent, [:deployment_executor])
+
+    {:ok, operation} =
+      as(executor, fn -> Deployment.start_operation(operation.operation_id, executor.name) end)
+
+    # Simulate lifecycle drift the domain itself no longer produces.
+    Repo.query!("UPDATE deployments SET state = 'ready' WHERE id = $1::uuid", [
+      Ecto.UUID.dump!(operation.deployment_id)
+    ])
+
+    assert {:ok, completed} =
+             as(executor, fn ->
+               Deployment.complete_operation(operation.operation_id, :succeeded, %{})
+             end)
+
+    assert completed.phase == :completed
+    assert completed.deployment.state == :ready
+
+    {:ok, events} = Ledger.read(completed.deployment.deployment_id)
+    assert %{payload: %{"from" => "ready", "to" => "verifying"}} = List.last(events)
+    assert List.last(events).event_type == "DeploymentTransitionRefused"
+  end
+
+  # --- withdrawal and revocation (G6, G8) ---------------------------------------------------
+
+  test "a requested, unstarted deploy can be withdrawn by cancelling; a started one cannot",
+       %{system: system} do
+    operation = requested_deploy("withdraw", system)
+    executor = configure_executor("withdraw", SucceedingAdapter)
+    deployment_id = Ash.get!(Record, operation.deployment_id, authorize?: false).deployment_id
+
+    assert {:ok, record} = as(system, fn -> Deployment.cancel(deployment_id, "wrong release") end)
+    assert record.state == :cancelled
+    withdrawn = Ash.get!(Operation, operation.id, authorize?: false)
+    assert withdrawn.phase == :completed
+    assert withdrawn.outcome == :failed
+    assert is_nil(withdrawn.started_at)
+    assert withdrawn.detail == "wrong release"
+
+    {:ok, projection} = Deployment.projection(deployment_id)
+    assert projection.operations[operation.operation_id].source == "withdrawn"
+    assert projection.state == :cancelled
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(deployment_id) end)
+
+    # The queued job finds a completed operation and does nothing.
+    assert {:discard, "operation already completed"} =
+             Executor.perform(%Oban.Job{args: %{"operation_id" => operation.operation_id}})
+
+    started = requested_deploy("withdraw-started", system)
+
+    {:ok, started} =
+      as(executor, fn -> Deployment.start_operation(started.operation_id, executor.name) end)
+
+    assert {:error, :operation_in_flight} =
+             as(system, fn -> Deployment.cancel(started.deployment.deployment_id, "too late") end)
+
+    assert Ash.get!(Record, started.deployment_id, authorize?: false).state == :deploying
+  end
+
+  test "an approver can revoke an unspent authorization, and a revoked one spends nothing",
+       %{system: system} do
+    {record, _release, _project} = staged("revoke", @archive, system)
+    approver = actor("revoke-approver", :human, [:approver])
+    operator = actor("revoke-operator", :agent, [:operator])
+
+    {:ok, authorization} =
+      as(approver, fn ->
+        Deployment.authorize(record.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    assert {:error, _} =
+             as(operator, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "oops")
+             end)
+
+    assert {:error, :invalid_revocation_reason} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "")
+             end)
+
+    assert {:ok, revocation} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(
+                 authorization.authorization_id,
+                 "approved the wrong build"
+               )
+             end)
+
+    assert revocation.revoked_by == approver.name
+
+    assert {:error, :authorization_revoked} =
+             as(system, fn -> Deployment.request(authorization.authorization_id) end)
+
+    assert Repo.aggregate(Operation, :count) == 0
+
+    assert {:error, duplicate} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(authorization.authorization_id, "again")
+             end)
+
+    assert Exception.message(duplicate) =~ "already"
+
+    assert {:error,
+            %Postgrex.Error{
+              postgres: %{message: "deployment_authorization_revocations is immutable"}
+            }} =
+             Ecto.Adapters.SQL.query(
+               Repo,
+               "DELETE FROM deployment_authorization_revocations WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(revocation.id)],
+               mode: :savepoint
+             )
+
+    # A spent authorization cannot be revoked after the fact.
+    {:ok, spent} =
+      as(approver, fn ->
+        Deployment.authorize(record.deployment_id, %{
+          action: :execute_deploy,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, _} = as(system, fn -> Deployment.request(spent.authorization_id) end)
+
+    assert {:error, :authorization_already_spent} =
+             as(approver, fn ->
+               Deployment.revoke_authorization(spent.authorization_id, "late")
+             end)
+  end
+
+  # --- live-release pointer (G3) ----------------------------------------------------------------
+
+  test "one deployment is live per environment; ready moves the pointer and rollback moves it back",
+       %{system: system} do
+    project = project_with_custody("live", @archive)
+    approver = actor("live-approver", :human, [:approver])
+    executor = actor("live-executor", :agent, [:deployment_executor])
+
+    accept = fn n ->
+      as(system, fn ->
+        Deployment.accept_release(project.key, release_attrs(@archive, pipeline_number: n))
+      end)
+    end
+
+    {:ok, rel_a} = accept.(1)
+    {:ok, rel_b} = accept.(2)
+
+    assert {:ok, nil} = as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    a = ready_path(rel_a.release_id, :healthy, system)
+    assert a.active
+
+    assert {:ok, %{deployment_id: live}} =
+             as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    assert live == a.deployment_id
+
+    # B becomes ready: A is superseded on its own stream, B holds the pointer.
+    b = ready_path(rel_b.release_id, :healthy, system)
+    assert b.active
+    a = Ash.get!(Record, a.id, authorize?: false)
+    refute a.active
+    assert a.superseded_by == b.deployment_id
+    assert a.superseded_at
+    {:ok, a_events} = Ledger.read(a.deployment_id)
+
+    assert %{event_type: "DeploymentSuperseded", payload: %{"by" => by, "cause" => "ready"}} =
+             List.last(a_events)
+
+    assert by == b.deployment_id
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(a.deployment_id) end)
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+
+    # The database refuses a second active deployment in the environment outright.
+    assert {:error,
+            %Postgrex.Error{postgres: %{constraint: "deployments_one_active_per_environment"}}} =
+             Ecto.Adapters.SQL.query(
+               Repo,
+               "UPDATE deployments SET active = true, superseded_at = NULL, superseded_by = NULL WHERE id = $1::uuid",
+               [Ecto.UUID.dump!(a.id)],
+               mode: :savepoint
+             )
+
+    # Rolling B back to A lands the pointer on A again, with the cause recorded.
+    {:ok, auth} =
+      as(approver, fn ->
+        Deployment.authorize(b.deployment_id, %{
+          action: :execute_rollback,
+          target_deployment_id: a.deployment_id,
+          approval_reference: "r"
+        })
+      end)
+
+    {:ok, op} = as(system, fn -> Deployment.request(auth.authorization_id) end)
+    {:ok, _} = as(executor, fn -> Deployment.start_operation(op.operation_id, executor.name) end)
+
+    {:ok, op} =
+      as(executor, fn -> Deployment.complete_operation(op.operation_id, :succeeded, %{}) end)
+
+    assert op.deployment.state == :rolled_back
+    refute op.deployment.active
+    assert op.deployment.superseded_by == a.deployment_id
+
+    a = Ash.get!(Record, a.id, authorize?: false)
+    assert a.active
+    assert is_nil(a.superseded_by)
+    {:ok, a_events} = Ledger.read(a.deployment_id)
+
+    assert %{
+             event_type: "DeploymentActivated",
+             payload: %{"cause" => "rollback", "supersedes" => supersedes}
+           } = List.last(a_events)
+
+    assert supersedes == b.deployment_id
+
+    assert {:ok, %{deployment_id: ^live}} =
+             as(system, fn -> Deployment.active(project.key, :staging) end)
+
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(a.deployment_id) end)
+    assert {:ok, :parity} = as(system, fn -> Deployment.parity(b.deployment_id) end)
+
+    # Environments are independent pointers.
+    {:ok, preview} = as(system, fn -> Deployment.create(rel_a.release_id, :preview) end)
+    assert preview.project_id == project.id
+    assert {:ok, nil} = as(system, fn -> Deployment.active(project.key, :preview) end)
+  end
+
   # --- executor ------------------------------------------------------------------------------
 
   test "the executor records started before acting and completes from the adapter receipt", %{
@@ -798,11 +1176,19 @@ defmodule SpruceGoose.DeploymentTest do
     }
   end
 
+  # Release identity is global, so each fixture project needs its own pipeline
+  # number or two suffixes would accept the same release into two projects.
   defp staged(suffix, archive_hex, system, environment \\ :staging) do
     project = project_with_custody(suffix, archive_hex)
+    pipeline = :erlang.phash2(suffix, 1_000_000) + 1
 
     {:ok, release} =
-      as(system, fn -> Deployment.accept_release(project.key, release_attrs(archive_hex)) end)
+      as(system, fn ->
+        Deployment.accept_release(
+          project.key,
+          release_attrs(archive_hex, pipeline_number: pipeline)
+        )
+      end)
 
     {:ok, record} = as(system, fn -> Deployment.create(release.release_id, environment) end)
     {:ok, record} = as(system, fn -> Deployment.stage(record.deployment_id) end)

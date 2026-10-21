@@ -1,9 +1,10 @@
 defmodule SpruceGoose.Kernel.ShadowEvents do
   @moduledoc "Transactional certified-event shadow for the baseline replay scope."
 
-  alias SpruceGoose.Kernel.{Canonical, CertifiedEvent, ContentID}
+  alias SpruceGoose.Actors.Scope
+  alias SpruceGoose.Kernel.{Canonical, CertifiedEvent, ContentID, Locks}
   alias SpruceGoose.Kernel.Postgres.EventLedger
-  alias SpruceGoose.Repo
+  alias SpruceGoose.{Authz, Repo}
 
   @policy "kernel/shadow-event-roots.json"
   @policy_path Path.expand("../../../priv/#{@policy}", __DIR__)
@@ -121,15 +122,45 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
 
   def shadowed?(_command), do: false
 
+  @legacy_stream "authority:sprucegoose"
+
+  @doc "The stream that held every shadowed mutation before per-project partitioning."
+  def legacy_stream, do: @legacy_stream
+
+  @doc "The stream a mutation belongs to: its project's, or the global one."
+  def stream_for(result) do
+    case scope_of(result) do
+      {:project, key} -> "authority:project:" <> key
+      :global -> "authority:global"
+    end
+  end
+
+  defp scope_of(%_{} = record) do
+    case Scope.of(record) do
+      {:ok, scope} -> scope
+      {:error, _} -> :global
+    end
+  end
+
+  defp scope_of(%{project: key}) when is_binary(key) and key != "", do: {:project, key}
+  defp scope_of(%{"project" => key}) when is_binary(key) and key != "", do: {:project, key}
+  defp scope_of(_), do: :global
+
+  # The stream lock is taken before the head is read, so the link cannot be
+  # stale; the adapter re-takes the same lock when it appends.
   defp run(command, fun) do
     case fun.() do
       {:ok, result} = accepted ->
-        with {:ok, payload} <- payload(command, result),
+        stream = stream_for(result)
+
+        with :ok <- Locks.acquire(stream),
+             {:ok, head} <- EventLedger.head(EventLedger.new(), stream),
+             {:ok, payload} <- payload(command, result, head),
              {:ok, roots} <- roots(),
              {:ok, idempotency_key} <- idempotency_key(payload),
              {:ok, event} <-
                CertifiedEvent.new(%{
-                 stream: "authority:sprucegoose",
+                 stream: stream,
                  event_type: "MutationAccepted",
                  idempotency_key: idempotency_key,
                  payload: payload,
@@ -146,16 +177,23 @@ defmodule SpruceGoose.Kernel.ShadowEvents do
     end
   end
 
-  defp payload(command, result) do
-    with {:ok, normalized} <- result |> json_result() |> Jason.encode() |> decode_json() do
+  # A transition is the request that was made and the state it left behind:
+  # `request` says what changed and why, `result` is the snapshot that keeps
+  # last-write-wins replay valid, and `previous` links the stream.
+  defp payload(command, result, head) do
+    with {:ok, normalized} <- result |> json_result() |> Jason.encode() |> decode_json(),
+         {:ok, request} <- command |> Tuple.to_list() |> tl() |> Jason.encode() |> decode_json() do
       outbox_key = outbox_event_key(normalized)
 
       {:ok,
        %{
+         "actor" => Authz.attribution(),
          "command" => command |> elem(0) |> Atom.to_string(),
          "outbox_event_key" => outbox_key,
+         "previous" => head && head.digest,
+         "request" => request,
          "result" => normalized,
-         "shadow_schema" => "sprucegoose-mutation-shadow-v1"
+         "shadow_schema" => "sprucegoose-mutation-shadow-v2"
        }}
     end
   end

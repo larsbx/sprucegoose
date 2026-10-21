@@ -9,6 +9,7 @@ defmodule SpruceGoose.Kernel.CertifiedEvent do
     :idempotency_key,
     :payload,
     :roots,
+    :canonical_form,
     :canonical_bytes,
     :identity
   ]
@@ -20,12 +21,16 @@ defmodule SpruceGoose.Kernel.CertifiedEvent do
           idempotency_key: String.t(),
           payload: map(),
           roots: map(),
+          canonical_form: Canonical.form(),
           canonical_bytes: binary(),
           identity: ContentID.t()
         }
 
-  @spec new(map()) :: {:ok, t()} | {:error, atom()}
-  def new(attrs) when is_map(attrs) do
+  @doc "Build an event in the default canonical form, or in `form` to re-derive a stored one."
+  @spec new(map(), Canonical.form()) :: {:ok, t()} | {:error, atom()}
+  def new(attrs, form \\ :jcs)
+
+  def new(attrs, form) when is_map(attrs) and form in [:jcs, :etf] do
     with {:ok, stream} <- required_string(attrs, :stream),
          {:ok, event_type} <- required_string(attrs, :event_type),
          {:ok, idempotency_key} <- required_string(attrs, :idempotency_key),
@@ -33,13 +38,16 @@ defmodule SpruceGoose.Kernel.CertifiedEvent do
          {:ok, roots} <- required_map(attrs, :roots),
          :ok <- require_roots(roots),
          {:ok, bytes} <-
-           Canonical.encode(%{
-             "event_type" => event_type,
-             "idempotency_key" => idempotency_key,
-             "payload" => payload,
-             "roots" => roots,
-             "stream" => stream
-           }),
+           Canonical.encode(
+             %{
+               "event_type" => event_type,
+               "idempotency_key" => idempotency_key,
+               "payload" => payload,
+               "roots" => roots,
+               "stream" => stream
+             },
+             form
+           ),
          {:ok, identity} <- ContentID.derive(:sha256, bytes) do
       {:ok,
        %__MODULE__{
@@ -48,13 +56,14 @@ defmodule SpruceGoose.Kernel.CertifiedEvent do
          idempotency_key: idempotency_key,
          payload: payload,
          roots: roots,
+         canonical_form: form,
          canonical_bytes: bytes,
          identity: identity
        }}
     end
   end
 
-  def new(_attrs), do: {:error, :invalid_event}
+  def new(_attrs, _form), do: {:error, :invalid_event}
 
   defp required_string(attrs, key) do
     case Map.fetch(attrs, key) do

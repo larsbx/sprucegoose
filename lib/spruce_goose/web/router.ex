@@ -50,6 +50,13 @@ defmodule SpruceGoose.Web.Router do
     oauth2_server_protocol_routes(oauth2_server: SpruceGoose.Oauth2Server)
   end
 
+  # The governed write surface: same bearer, scope, and binding pipeline as
+  # the reads, so a mutation is attributed to a verified client's actor.
+  scope "/commands" do
+    pipe_through(:mcp_protected)
+    post("/", SpruceGoose.Web.CommandPlug, [])
+  end
+
   scope "/mcp" do
     pipe_through(:mcp_protected)
 

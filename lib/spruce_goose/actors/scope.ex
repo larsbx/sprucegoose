@@ -14,7 +14,7 @@ defmodule SpruceGoose.Actors.Scope do
   require Ash.Query
 
   alias SpruceGoose.Actors.{Actor, Grant}
-  alias SpruceGoose.Deployment.{Authorization, Operation, Record, Release}
+  alias SpruceGoose.Deployment.{Authorization, Operation, Record, Release, Revocation}
   alias SpruceGoose.Derivations.{OutcomeReceipt, Permit}
   alias SpruceGoose.Repo
   alias SpruceGoose.Runtime.ShadowSnapshot
@@ -135,23 +135,27 @@ defmodule SpruceGoose.Actors.Scope do
     """,
     Record => """
     SELECT p.key FROM deployments d
-    JOIN deployment_releases rl ON rl.id = d.release_id
-    JOIN projects p ON p.id = rl.project_id
+    JOIN projects p ON p.id = d.project_id
     WHERE d.id = $1
     """,
     Authorization => """
     SELECT p.key FROM deployment_authorizations a
     JOIN deployments d ON d.id = a.deployment_id
-    JOIN deployment_releases rl ON rl.id = d.release_id
-    JOIN projects p ON p.id = rl.project_id
+    JOIN projects p ON p.id = d.project_id
     WHERE a.id = $1
     """,
     Operation => """
     SELECT p.key FROM deployment_operations o
     JOIN deployments d ON d.id = o.deployment_id
-    JOIN deployment_releases rl ON rl.id = d.release_id
-    JOIN projects p ON p.id = rl.project_id
+    JOIN projects p ON p.id = d.project_id
     WHERE o.id = $1
+    """,
+    Revocation => """
+    SELECT p.key FROM deployment_authorization_revocations rv
+    JOIN deployment_authorizations a ON a.id = rv.authorization_record_id
+    JOIN deployments d ON d.id = a.deployment_id
+    JOIN projects p ON p.id = d.project_id
+    WHERE rv.id = $1
     """
   }
 
@@ -171,9 +175,10 @@ defmodule SpruceGoose.Actors.Scope do
     OutcomeReceipt => {:task_id, Task},
     ShadowSnapshot => {:task_id, Task},
     Release => {:project_id, Project},
-    Record => {:release_id, Release},
+    Record => {:project_id, Project},
     Authorization => {:deployment_id, Record},
-    Operation => {:deployment_id, Record}
+    Operation => {:deployment_id, Record},
+    Revocation => {:authorization_record_id, Authorization}
   }
 
   # The relationship path from each resource to the owning project key, used to
@@ -195,9 +200,10 @@ defmodule SpruceGoose.Actors.Scope do
     OutcomeReceipt => [:task, :workflow, :roadmap, :project, :key],
     ShadowSnapshot => [:task, :workflow, :roadmap, :project, :key],
     Release => [:project, :key],
-    Record => [:release, :project, :key],
-    Authorization => [:deployment, :release, :project, :key],
-    Operation => [:deployment, :release, :project, :key]
+    Record => [:project, :key],
+    Authorization => [:deployment, :project, :key],
+    Operation => [:deployment, :project, :key],
+    Revocation => [:authorization, :deployment, :project, :key]
   }
 
   @doc """

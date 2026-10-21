@@ -27,7 +27,15 @@ defmodule SpruceGoose.Deployment.Operation do
   policies do
     policy action_type(:read), do: authorize_if(Readable)
     policy action(:request), do: authorize_if(HasRole.operator())
-    policy action([:start, :complete, :observe]), do: authorize_if(HasRole.deployment_executor())
+    policy action([:start, :complete]), do: authorize_if(HasRole.deployment_executor())
+
+    policy action(:observe) do
+      authorize_if(HasRole.deployment_executor())
+      authorize_if(HasRole.approver())
+    end
+
+    policy action(:abandon), do: authorize_if(HasRole.approver())
+    policy action(:withdraw), do: authorize_if(HasRole.operator())
   end
 
   attributes do
@@ -105,6 +113,37 @@ defmodule SpruceGoose.Deployment.Operation do
 
       change(fn changeset, _context ->
         changeset
+        |> Ash.Changeset.change_attribute(:phase, :completed)
+        |> Ash.Changeset.change_attribute(:completed_at, DateTime.utc_now())
+      end)
+    end
+
+    # Withdrawal: a requested operation the executor has not started is closed
+    # without ever reaching the host. Safe by construction, because `started`
+    # is committed before any host call.
+    update :withdraw do
+      require_atomic?(false)
+      accept([:detail])
+      validate(fn changeset, _context -> require_phase(changeset, [:requested]) end)
+
+      change(fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.change_attribute(:outcome, :failed)
+        |> Ash.Changeset.change_attribute(:phase, :completed)
+        |> Ash.Changeset.change_attribute(:completed_at, DateTime.utc_now())
+      end)
+    end
+
+    # The operator exit: a started operation the executor could not conclude
+    # is closed as failed by an approver, after a fresh host observation.
+    update :abandon do
+      require_atomic?(false)
+      accept([:detail])
+      validate(fn changeset, _context -> require_phase(changeset, [:started]) end)
+
+      change(fn changeset, _context ->
+        changeset
+        |> Ash.Changeset.change_attribute(:outcome, :failed)
         |> Ash.Changeset.change_attribute(:phase, :completed)
         |> Ash.Changeset.change_attribute(:completed_at, DateTime.utc_now())
       end)

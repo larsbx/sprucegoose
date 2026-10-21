@@ -21,6 +21,7 @@ config :spruce_goose, ecto_repos: [SpruceGoose.Repo]
 # unconfigured deployment refuses rather than assuming an identity. Set it only
 # where one known party drives the CLI.
 config :spruce_goose, :default_actor, nil
+config :spruce_goose, :declared_actor_resolution, true
 
 config :spruce_goose, SpruceGoose.Repo,
   username: "postgres",

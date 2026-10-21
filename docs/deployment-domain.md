@@ -52,12 +52,56 @@ States and transitions are carried over unchanged from the native plane:
 
 ```
 queued → building → staged → deploying → verifying → ready
-                  ↘ cancelled          ↘ failed ↘ rolling_back → rolled_back
+                  ↘ cancelled ↙        ↘ failed ↘ rolling_back → rolled_back
 ```
+
+`deploying → cancelled` exists only to **withdraw** a deploy operation the
+executor has not started: `cancel/2` closes the `requested` operation as
+failed with source `withdrawn` and moves the deployment to `cancelled`. Once
+the operation is `started` cancellation is refused as `:operation_in_flight`;
+the way out is reconcile or abandon.
 
 `ready`, `failed`, `rolled_back`, `cancelled` are terminal: the rollout has
 finished. Rollback is a new operation on a finished deployment, not a
 continuation of it. Production deployments carry `requires_routing: true`.
+
+`building` is transient: `stage/1` enters and leaves it in one transaction,
+and replay refuses any history that rests there. Its declared escape edges
+are kept for the native ledger's vocabulary and are never driven here.
+
+One admission relation, `Lifecycle.admits?/3`, decides where each request is
+legal, and both the facade and replay consult it. Rollback may be requested
+from `ready`, `failed`, or `verifying`, never from `deploying`: a deployment
+is deploying exactly while its deploy operation is open, and **at most one
+operation may be open per deployment**. A request while one is open is
+refused as `:operation_in_flight`, by the facade and on replay alike.
+
+### The live-release pointer
+
+Each project and environment has at most one **active** deployment: the one
+whose release is live. `deployments_one_active_per_environment` is a partial
+unique index, so the pointer is a database invariant. It moves only through
+two events:
+
+| Event | On whose stream | When |
+| --- | --- | --- |
+| `DeploymentActivated` (`cause: ready` or `rollback`, `supersedes`) | the deployment gaining the pointer | it reaches `ready`, or it is the target of a rollback that landed |
+| `DeploymentSuperseded` (`by`, `cause`) | the deployment losing it | another deployment in its environment was activated |
+
+`deployment active PROJECT ENV` reads the pointer. Every mutation takes the
+environment's advisory lock before the deployment's, so activation, which
+touches two deployments, cannot deadlock against either of their own
+mutations.
+
+### Health
+
+`DeploymentHealthObserved` carries a `source`: `adapter` when the executor
+probed the host through `HostAdapter.probe/1`, `operator` when a person
+asserted it with `deployment observe-health`. The row keeps it as
+`health_source`. `probe/1` is optional; an adapter without it leaves
+verification to an operator, and the ledger says which happened. After a
+deploy completes the executor probes; a failed probe leaves the deployment
+`verifying` and retries the probe alone, never the effect.
 
 ### Certified stream
 
@@ -78,8 +122,12 @@ Events distinguish what was requested from what happened:
 | `DeploymentOperationStarted` | an executor committed to acting, *before* acting |
 | `DeploymentOperationCompleted` | outcome, with `source` = `executor` (adapter receipt) or `observation` (host inspection) |
 | `DeploymentOperationObserved` | what host inspection reported |
+| `DeploymentTransitionRefused` | a completion was recorded although the lifecycle could not move on it; names `from` and `to` |
+| `DeploymentActivated`, `DeploymentSuperseded` | the live-release pointer moved |
 
-A deploy is not "executed" until its completion is recorded.
+A deploy is not "executed" until its completion is recorded. Completion is
+total: the host's outcome is never discarded because the lifecycle refused a
+step; the refusal is itself recorded and the state stays put.
 
 ## Authorization
 
@@ -88,6 +136,11 @@ needs an `Authorization`: issued by a **human** holding `approver` over the
 project, bound to one deployment and one action (a rollback names its
 target), carrying an approval reference, expiring within an hour. The row is
 immutable.
+
+`deployment revoke AUTHORIZATION_ID REASON` withdraws an issued, unspent
+authorization: an append-only `Revocation` row keyed by the authorization,
+which `request/2` refuses as `:authorization_revoked`. A spent authorization
+cannot be revoked after the fact.
 
 `Deployment.request/2` spends it. In one transaction it re-validates every
 precondition against live state, inserts the `Operation` (unique on
@@ -124,19 +177,23 @@ actor named by `SPRUCE_GOOSE_DEPLOYMENT_EXECUTOR_ACTOR`, which must hold
 4. A retry finding `started` reconciles; finding `completed` discards.
 
 `deployment reconcile OPERATION_ID` re-queues an operation whose job was
-exhausted. Completion advances the lifecycle: deploy → `verifying` (then
+exhausted. `deployment abandon OPERATION_ID REASON` is the operator exit for
+an operation the executor cannot conclude: it takes one fresh
+`adapter.observe`, records it, and completes the operation as failed with
+source `operator`. It requires `approver` and is refused when the host reports
+success, because that is a reconcile, not an abandonment. Completion advances the lifecycle: deploy → `verifying` (then
 `observe-health`), rollback → `rolled_back`, failure → `failed`, reclaim →
 `reclaimed_at`.
 
 ### Host adapters
 
-`SpruceGoose.Deployment.HostAdapter` is the behaviour: `execute/1` and
-`observe/1` over an identity-only request. `HostAdapter.Scripted` drives the
+`SpruceGoose.Deployment.HostAdapter` is the behaviour: `execute/1`,
+`observe/1`, and optional `probe/1` over an identity-only request. `HostAdapter.Scripted` drives the
 existing `scripts/activate-sprucegoose-release`: it derives every path from
 static configuration and the release's governed receipt, passes the operation
 ID as the script's `--task` and confirmation token, and observes by reading
 the activation record and failed-release marker the script itself leaves
-behind. The script's "activation record already exists" check is the host-side
+behind. Its probe is `systemctl --user is-active` on the configured service. The script's "activation record already exists" check is the host-side
 duplicate detection.
 
 The live host has not run this adapter. Before the standalone control plane
@@ -152,9 +209,28 @@ sprucegoose deployment stage DEPLOYMENT_ID
 sprucegoose deployment authorize DEPLOYMENT_ID --action execute_deploy --reference REF --as lars
 sprucegoose deployment request AUTHORIZATION_ID [--routing JSON] [--recovery-verified]
 sprucegoose deployment observe-health DEPLOYMENT_ID healthy|unhealthy [DETAIL]
+sprucegoose deployment revoke AUTHORIZATION_ID REASON
+sprucegoose deployment reconcile|abandon OPERATION_ID [REASON]
 sprucegoose deployment show|events DEPLOYMENT_ID
+sprucegoose deployment active PROJECT preview|staging|production
 sprucegoose deployment list [--project KEY]
 ```
+
+## Operational notes
+
+- The `deployments` Oban queue has concurrency 1, so operations across every
+  deployment on the node serialise. That matches one host and one activation
+  script; it also queues an unrelated preview reclaim behind a production
+  deploy. Raise it only with per-environment locking in mind (activation
+  already takes the environment lock before the deployment lock).
+- `terminal_at` is stamped on first entry into a terminal state and never
+  moved. A preview that goes `failed → rolling_back → rolled_back` ages from
+  its first failure, and retention reads that stamp.
+- The scripted adapter runs the activation script under `timeout(1)` with the
+  executor's `:deployment_operation_timeout_ms` budget, so a late activation
+  cannot outlive the decision to reconcile; exit 124 is reported as such.
+- Release identity is global: the same forge, repository, commit, pipeline,
+  and artifacts accepted into two projects is a refused duplicate.
 
 ## Migration from the native plane
 

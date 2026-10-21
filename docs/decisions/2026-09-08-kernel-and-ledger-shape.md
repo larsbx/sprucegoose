@@ -29,10 +29,12 @@ across runtime defaults.
   `verify/2` re-derives an identity from stored bytes, which proves a ledger
   did not alter what it holds — a real and useful property, and a different one.
 
-**Rejected: adopt a specified format now** (RFC 8785 JCS, or a length-prefixed
-encoding defined in the module). This is the option that would *earn* the
-withdrawn claim, and it should be taken eventually. It changes every existing
-identity, so it re-roots history, so it is not a remediation change.
+**Rejected on 2026-09-08, taken on 2026-10-20: adopt a specified format.**
+RFC 8785 JCS is now the canonical form for every new certified event
+(`jcs-v1`); the ETF form is retained as `etf-v1` for verification of events
+written before the adoption, and a one-time `ledger rekey` records the JCS
+identity of every legacy event in an immutable re-rooting record. No existing
+identity changed. See [`certified-ledger.md`](../certified-ledger.md).
 
 **Verification.** The pin had to be provably inert, or it would have silently
 re-rooted production history:
@@ -50,7 +52,20 @@ claim as the answer.
 
 ---
 
-## D-2 · Certified stream shape — **proposed, awaiting sign-off**
+## D-2 · Certified stream shape — **decided 2026-10-20, implemented**
+
+**Taken: transitions partitioned per project, with the snapshot kept.** Every
+shadowed mutation now appends to `authority:project:<key>` (or
+`authority:global` for a result with no project) under that stream's lock
+only. The payload (`sprucegoose-mutation-shadow-v2`) carries `request`, the
+command's arguments, which is what changed and why; `result`, the snapshot,
+which keeps last-write-wins replay valid; and `previous`, the identity of the
+stream's prior event, which makes a gap or a fork detectable without a global
+position. `authority:sprucegoose` is retained as the legacy stream holding
+history written before the decision and the baseline acceptance event; the
+projector replays every `authority:` stream in global sequence order and
+requires each stream's positions to be contiguous. No existing event changed.
+The analysis that led here follows.
 
 Covers R-09 (partitioning) and R-10 (payload), which cannot be decided apart:
 snapshots need less ordering than transitions do.
@@ -236,7 +251,7 @@ reader and one that does a smaller job correctly.
 | Decision | State | Blocks |
 | --- | --- | --- |
 | D-1 canonical form | decided, implemented, verified inert | — |
-| D-2 stream shape | proposed | Phase 8 cutover |
+| D-2 stream shape | decided, implemented 2026-10-20 | — |
 | D-3 root semantics | proposed | D-4 |
 | D-4 kernel disposition | proposed | conformance claims |
 

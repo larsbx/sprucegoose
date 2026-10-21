@@ -34,4 +34,14 @@ defmodule SpruceGoose.Deployment.HostAdapter do
 
   @doc "Inspect the host for the outcome of a previously started operation."
   @callback observe(request()) :: {:ok, observation()} | {:error, term()}
+
+  @type health :: %{optional(:detail) => String.t() | nil, status: :healthy | :unhealthy}
+
+  @doc """
+  Probe the deployed service's health. Optional: an adapter without it leaves
+  verification to an operator, and the ledger records which it was.
+  """
+  @callback probe(request()) :: {:ok, health()} | {:error, term()}
+
+  @optional_callbacks probe: 1
 end

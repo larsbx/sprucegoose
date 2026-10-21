@@ -100,7 +100,9 @@ defmodule SpruceGoose.CLI.Command do
        "baseline-accept",
        "baseline-show",
        "replay-rebuild",
-       "replay-status"
+       "replay-status",
+       "export PATH",
+       "rekey"
      ]},
     {"runtime", ["shadow TASK_ID JSON", "parity TASK_ID JSON"]},
     {"outbox", ["failed", "replay EVENT_ID"]},
@@ -491,6 +493,8 @@ defmodule SpruceGoose.CLI.Command do
   def parse(["ledger", "baseline-show"]), do: {:ok, :show_grandfathered_baseline}
   def parse(["ledger", "replay-rebuild"]), do: {:ok, :rebuild_task_projection}
   def parse(["ledger", "replay-status"]), do: {:ok, :task_projection_status}
+  def parse(["ledger", "export", path]), do: {:ok, {:export_certified_ledger, path}}
+  def parse(["ledger", "rekey"]), do: {:ok, :rekey_certified_ledger}
   def parse(["outbox", "failed"]), do: {:ok, :list_failed_outbox}
   def parse(["outbox", "replay", event_id]), do: {:ok, {:replay_outbox, event_id}}
 

@@ -53,8 +53,7 @@ defmodule SpruceGoose.Kernel.GrandfatheredBaseline do
   end
 
   defp accept_transaction do
-    # AUTHORIZATION: accept/0 established a global-admin actor before entering this stream lock.
-    Repo.query!("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [@stream])
+    SpruceGoose.Kernel.Locks.acquire(@stream)
     refuse_existing!()
 
     with {:ok, %{reconciled: true}} <- ShadowEvents.status(),
