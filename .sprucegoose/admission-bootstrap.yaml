@@ -1,0 +1,98 @@
+schema_version: 1
+#
+# Bare-string `project` form is deliberate: Applier.project_spec/1 returns
+# name: nil for it, and update_project/2 is then a no-op, so applying this
+# manifest does not rewrite the openclaw-system project row.
+#
+# Applier.materialize is upsert-only (no destroy, delete, or prune). The
+# roadmap key and workflow id introduced here did not exist when this manifest
+# was authored, so applying it adds rows rather than replacing any.
+project: openclaw-system
+roadmaps:
+  - key: task-admission-bootstrap
+    name: Task Admission Bootstrap
+    workflows:
+      - id: admission-bootstrap-v1
+        name: Admission Bootstrap v1
+        definition:
+          schema_version: 1
+          tasks:
+            - id: admission-gate-diagnosis
+              kind: openclaw
+              title: Diagnose the closed task-admission gate
+              definition_of_done: >-
+                The retirement of `task add`, the replacement
+                blueprint/instantiate path, and the empty
+                workflow_blueprint_revisions state are established from direct
+                source and authority-database evidence, including the exact
+                commit that introduced the gate and its presence on main.
+                Legacy versus blueprint-bound task counts are recorded. The
+                stale `task add` instructions in AGENTS.md are identified. No
+                production state, credential, or hierarchy row is modified.
+              depends_on: []
+              input: {}
+            - id: admission-blueprint-bootstrap
+              kind: openclaw
+              title: Bootstrap the first repository-authored blueprint revision
+              definition_of_done: >-
+                A repository-authored blueprint manifest is committed to the
+                canonical forge, registered against the authority host, and
+                proven end to end by instantiating exactly one task from it.
+                Registration precedes application, the registered revision is
+                inspected before any materialization, and existing project,
+                roadmap, and workflow rows are confirmed unchanged afterward.
+                The bootstrap is performed against the authority database, not
+                a development instance.
+              depends_on: [admission-gate-diagnosis]
+              input: {}
+            - id: admission-doc-correction
+              kind: openclaw
+              title: Correct stale admission instructions in agent guidance
+              definition_of_done: >-
+                AGENTS.md and TOOLS.md describe the blueprint registration and
+                task instantiation path, no longer instruct agents to use the
+                retired `task add --project ... --dod ...` syntax, and state
+                which host holds task authority. Changes are committed and
+                pushed through the configured publication authority with local
+                and remote refs compared.
+              depends_on: [admission-blueprint-bootstrap]
+              input: {}
+            - id: coop-substrate-dependency-audit
+              kind: openclaw
+              title: Audit coop_substrate dependencies and static-analysis coverage
+              definition_of_done: >-
+                The Elixir and Rust suites are executed and pass, including the
+                committed canonical-encoding vector lock. Dependency advisories
+                are recorded with explicit reachability analysis rather than
+                scanner output alone, and the absence of static analysis is
+                documented as a finding. No dependency bump or source change is
+                made without separate approval.
+              depends_on: []
+              input: {}
+            - id: papa-offhost-backup-verification
+              kind: openclaw
+              title: Verify off-host backup custody for irreplaceable papa state
+              definition_of_done: >-
+                An off-host archive of papa's irreplaceable state exists on the
+                authority host with identical source and destination SHA-256
+                digests, and is proven restorable by decompressing and listing
+                it at the destination rather than by transfer exit status.
+                Live databases are captured with a version-matched dump against
+                the running server, never by copying a live data directory, and
+                each dump is checked for non-empty output. Excluded rebuildable
+                and credential-bearing paths are proven absent from the archive
+                listing.
+              depends_on: []
+              input: {}
+            - id: handoff-credential-rotation
+              kind: openclaw
+              title: Rotate credentials transferred in an approved custody handoff
+              definition_of_done: >-
+                Every credential transferred in an approved handoff is rotated
+                at its issuing authority, dependent services are restarted and
+                verified healthy, and each superseded value is confirmed
+                non-functional. Rotation order places token-signing and
+                database credentials first. No secret value is printed to a
+                transcript, process list, or log.
+              depends_on: []
+              input: {}

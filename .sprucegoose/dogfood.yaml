@@ -1,0 +1,42 @@
+schema_version: 1
+# Blueprint for the sprucegoose-dogfood project.
+#
+# Separate from project.yaml because that file declares project.key
+# openclaw-system; one file describes one project.
+#
+# WHY THIS EXISTS: `task instantiate` requires --blueprint, and
+# sprucegoose-dogfood had zero blueprint revisions, so nothing could be
+# instantiated into it at all. This registers one so captured inbox items can
+# be promoted into governed tasks there.
+#
+# REGISTER ONLY — DO NOT `blueprint apply` THIS AS WRITTEN.
+# The live hierarchy-dag-v1 roadmap also carries the workflow
+# shepherd-rehome-proof-v1, which is deliberately NOT described here (its
+# definition was never in a blueprint). `register` records a revision without
+# materializing it, which is what the promotion path needs. Applying this file
+# would reconcile the roadmap against an incomplete description. If you ever
+# need to apply it, add shepherd-rehome-proof-v1 first.
+project:
+  key: sprucegoose-dogfood
+  name: SpruceGoose Dogfood
+roadmaps:
+  - key: hierarchy-dag-v1
+    name: Hierarchy and DAG v1
+    workflows:
+      - id: dogfood-dev
+        name: Dogfood development workflow
+        definition:
+          schema_version: 1
+          tasks:
+            - id: inbox-followup
+              kind: openclaw
+              title: Operational follow-up captured from the handoff inbox
+              definition_of_done: >
+                The captured item is resolved on the host it concerns, or
+                explicitly declined with a reason. Any host artifact that the
+                work creates or changes is committed to its repository rather
+                than left only on the box, and any document the change
+                invalidates is corrected in the same change. The originating
+                inbox capture is marked resolved and its handoff file deleted.
+              depends_on: []
+              input: {}

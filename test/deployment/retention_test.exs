@@ -84,6 +84,42 @@ defmodule SpruceGoose.Deployment.RetentionTest do
     assert retained_reason(cohort(ambiguous), "prev-1") == :referenced_by_active_deployment
   end
 
+  test "unknown pin and reference status never permits reclamation" do
+    for pinned <- [nil, "false", 0] do
+      subject = preview(%{pinned: pinned})
+      assert retained_reason(cohort(subject), "prev-1") == :pin_status_unknown
+    end
+
+    for count <- [nil, -1, "0"] do
+      subject = preview(%{active_references: count})
+      assert retained_reason(cohort(subject), "prev-1") == :referenced_by_active_deployment
+    end
+  end
+
+  test "duplicate IDs and mismatched subject observations fail closed" do
+    subject = preview()
+
+    assert {:error, :ambiguous_cohort} =
+             Preview.select_reclaimable([subject | cohort(subject)], @recovery, @now)
+
+    assert {:error, :ambiguous_cohort} =
+             Preview.select_reclaimable([%{id: subject.id} | cohort(subject)], @recovery, @now)
+
+    assert {:error, :cohort_mismatch} =
+             Preview.assert_reclaimable(
+               %{subject | pinned: true},
+               cohort(subject),
+               @recovery,
+               @now
+             )
+  end
+
+  test "other environments cannot occupy preview minimum-retention slots" do
+    subject = preview()
+    others = Enum.map(tl(cohort(subject)), &%{&1 | environment: :production})
+    assert retained_reason([subject | others], "prev-1") == :within_minimum_retained
+  end
+
   test "non-terminal previews are retained even when old" do
     for state <- [:queued, :building, :staged, :deploying, :verifying, :rolling_back] do
       subject = preview(%{state: state})

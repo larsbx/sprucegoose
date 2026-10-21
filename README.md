@@ -287,6 +287,24 @@ and administrative commands use the same running release. The Unix socket is
 a stronger local security boundary than application port binding and is an
 intentional host-level extension beyond the application factors.
 
+## Operations work outside delivery projects
+
+Every task belongs to exactly one project, so day-to-day work that belongs to
+no delivery project lives in the standing `ops` project, defined by
+[`.sprucegoose/ops.yaml`](.sprucegoose/ops.yaml). Its roadmaps (`admin`,
+`maintenance`, `support`) each carry one `*-routine` workflow of independent,
+reusable TaskDefinitions; a definition may be instantiated any number of times.
+Each workflow has a generic `adhoc` definition: its title is fixed, so link the
+originating request (for example the inbox capture) as evidence before starting.
+
+```sh
+./sprucegoose blueprint apply ops root/sprucegoose \
+  <40-hex-commit> .sprucegoose/ops.yaml --as release-approver
+./sprucegoose task instantiate --project ops --roadmap support \
+  --workflow support-routine --blueprint bpr-... --definition inbox-triage \
+  --priority 2 --as operator
+```
+
 ## Automation
 
 See [CI, artifact delivery, and hooks](docs/ci-cd.md) for GitHub checks, daily

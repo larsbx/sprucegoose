@@ -47,7 +47,8 @@ defmodule SpruceGoose.Deployment.Retention do
   def select_reclaimable(previews, policy \\ %{}, now \\ DateTime.utc_now())
 
   def select_reclaimable(previews, %{} = policy, %DateTime{} = now) when is_list(previews) do
-    with :ok <- check_recovery(policy) do
+    with :ok <- check_recovery(policy),
+         :ok <- unique_cohort(previews) do
       ttl = positive_integer(policy, :ttl_seconds, @default_ttl_seconds)
       grace = positive_integer(policy, :grace_seconds, @default_grace_seconds)
       keep = positive_integer(policy, :min_retained_per_project, @min_retained_per_project)
@@ -93,6 +94,9 @@ defmodule SpruceGoose.Deployment.Retention do
       not Enum.any?(cohort, &(is_map(&1) and Map.get(&1, :id) == id)) ->
         {:error, :not_in_cohort}
 
+      not Enum.any?(cohort, &(&1 == preview)) ->
+        {:error, :cohort_mismatch}
+
       true ->
         with {:ok, %{eligible: eligible, retained: retained}} <-
                select_reclaimable(cohort, policy, now) do
@@ -109,6 +113,17 @@ defmodule SpruceGoose.Deployment.Retention do
   end
 
   def assert_reclaimable(_, _, _, _), do: {:error, :invalid_retention_request}
+
+  defp unique_cohort(previews) do
+    ids =
+      previews
+      |> Enum.filter(&(is_map(&1) and is_binary(Map.get(&1, :id))))
+      |> Enum.map(&Map.fetch!(&1, :id))
+
+    if length(ids) == length(Enum.uniq(ids)),
+      do: :ok,
+      else: {:error, :ambiguous_cohort}
+  end
 
   defp check_recovery(policy) do
     case Map.get(policy, :recovery) do
@@ -134,6 +149,9 @@ defmodule SpruceGoose.Deployment.Retention do
 
       Map.get(preview, :pinned) == true ->
         {:retained, preview, :pinned}
+
+      Map.get(preview, :pinned) != false ->
+        {:retained, preview, :pin_status_unknown}
 
       date_issue != nil ->
         {:retained, preview, date_issue}
@@ -191,8 +209,7 @@ defmodule SpruceGoose.Deployment.Retention do
 
   defp referenced?(preview) do
     case Map.get(preview, :active_references) do
-      count when is_integer(count) -> count > 0
-      nil -> false
+      0 -> false
       _ -> true
     end
   end
@@ -202,6 +219,7 @@ defmodule SpruceGoose.Deployment.Retention do
   defp protected_newest_ids(previews, keep) do
     previews
     |> Enum.filter(&valid_identity?/1)
+    |> Enum.filter(&(Map.get(&1, :environment) == @environment))
     |> Enum.group_by(&Map.get(&1, :project))
     |> Enum.flat_map(fn {_project, group} ->
       group

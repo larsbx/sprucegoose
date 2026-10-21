@@ -20,6 +20,28 @@ defmodule SpruceGoose.Deployment.Routing do
   def min_certificate_days, do: @min_certificate_days
 
   @doc """
+  Check the routing requirement declared by deployment policy.
+
+  Only an explicit `:unrouted` policy with no observation skips routing checks.
+  An omitted requirement or required observation fails closed.
+  """
+  def check_requirement(requirement, observation, now \\ DateTime.utc_now())
+
+  def check_requirement(:unrouted, nil, %DateTime{}), do: :ok
+
+  def check_requirement({:required, %{} = expected}, %{} = observation, %DateTime{} = now) do
+    case evaluate(observation, expected, now) do
+      {:ok, :routing_ready} -> :ok
+      {:error, reasons} -> {:error, {:routing_unsafe, reasons}}
+    end
+  end
+
+  def check_requirement({:required, %{}}, nil, %DateTime{}),
+    do: {:error, :routing_observation_required}
+
+  def check_requirement(_, _, _), do: {:error, :invalid_routing_requirement}
+
+  @doc """
   Evaluate whether the routing boundary is ready for a deployment.
 
   Requires the hostname to be covered by the certificate, the certificate to be
@@ -51,11 +73,11 @@ defmodule SpruceGoose.Deployment.Routing do
   defp check_freshness(failures, observation, now) do
     case Map.get(observation, :observed_at) do
       %DateTime{} = observed_at ->
-        age = DateTime.diff(now, observed_at, :second)
+        age = DateTime.diff(now, observed_at, :microsecond)
 
         cond do
           age < 0 -> [:observation_in_future | failures]
-          age > @max_observation_age_seconds -> [:observation_stale | failures]
+          age > @max_observation_age_seconds * 1_000_000 -> [:observation_stale | failures]
           true -> failures
         end
 

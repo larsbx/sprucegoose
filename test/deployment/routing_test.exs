@@ -35,6 +35,43 @@ defmodule SpruceGoose.Deployment.RoutingTest do
     assert {:ok, :routing_ready} = Routing.evaluate(observation(), expected(), @now)
   end
 
+  test "routing policy and required observations cannot be omitted" do
+    assert :ok = Routing.check_requirement({:required, expected()}, observation(), @now)
+
+    assert {:error, :routing_observation_required} =
+             Routing.check_requirement({:required, expected()}, nil, @now)
+
+    for requirement <- [nil, false, %{}, :optional] do
+      assert {:error, :invalid_routing_requirement} =
+               Routing.check_requirement(requirement, nil, @now)
+    end
+
+    assert :ok = Routing.check_requirement(:unrouted, nil, @now)
+
+    assert {:error, :invalid_routing_requirement} =
+             Routing.check_requirement(:unrouted, observation(), @now)
+  end
+
+  test "freshness boundaries retain subsecond precision" do
+    assert {:ok, :routing_ready} =
+             Routing.evaluate(
+               observation(%{observed_at: DateTime.add(@now, -900)}),
+               expected(),
+               @now
+             )
+
+    for {delta, reason} <- [{1, :observation_in_future}, {-900_000_001, :observation_stale}] do
+      assert {:error, failures} =
+               Routing.evaluate(
+                 observation(%{observed_at: DateTime.add(@now, delta, :microsecond)}),
+                 expected(),
+                 @now
+               )
+
+      assert reason in failures
+    end
+  end
+
   test "stale, undated, and future observations are refused" do
     stale = observation(%{observed_at: DateTime.add(@now, -901, :second)})
     assert {:error, failures} = Routing.evaluate(stale, expected(), @now)

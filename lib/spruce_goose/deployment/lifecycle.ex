@@ -7,24 +7,28 @@ defmodule SpruceGoose.Deployment.Lifecycle do
   that contract keeps its meaning here.
   """
 
-  @version 1
-  @transitions %{
-    queued: [:building, :cancelled],
-    building: [:staged, :failed, :cancelled],
-    staged: [:deploying, :cancelled],
-    deploying: [:verifying, :failed, :rolling_back, :cancelled],
-    verifying: [:ready, :failed, :rolling_back],
-    ready: [:rolling_back],
-    failed: [:rolling_back],
-    rolling_back: [:rolled_back, :failed],
-    rolled_back: [],
-    cancelled: []
-  }
-  @states Map.keys(@transitions)
-  # A terminal state is one in which the rollout has *finished*. `ready` and
-  # `failed` are terminal even though rollback may still leave them: rollback
-  # is a new operation on a finished deployment, not a continuation of it.
-  @terminal_states [:ready, :failed, :rolled_back, :cancelled]
+  use SpruceGoose.Lifecycle,
+    version: 1,
+    initial: :queued,
+    transitions: [
+      queued: [:building, :cancelled],
+      building: [:staged, :failed, :cancelled],
+      staged: [:deploying, :cancelled],
+      # `deploying → cancelled` exists only to withdraw a deploy operation that
+      # the executor has not started; the facade and replay both require that.
+      deploying: [:verifying, :failed, :rolling_back, :cancelled],
+      verifying: [:ready, :failed, :rolling_back],
+      ready: [:rolling_back],
+      failed: [:rolling_back],
+      rolling_back: [:rolled_back, :failed],
+      rolled_back: [],
+      cancelled: []
+    ],
+    # A terminal state is one in which the rollout has *finished*. `ready` and
+    # `failed` are terminal even though rollback may still leave them: rollback
+    # is a new operation on a finished deployment, not a continuation of it.
+    terminal: [:ready, :failed, :rolled_back, :cancelled]
+
   # States a rollback may be requested from. `deploying` is deliberately absent:
   # a deployment is deploying exactly while its deploy operation is open, and
   # one open operation per deployment is an invariant, not a race to win.
@@ -33,33 +37,7 @@ defmodule SpruceGoose.Deployment.Lifecycle do
   @transient_states [:building]
   @environments [:preview, :staging, :production]
 
-  def version, do: @version
-  def states, do: @states
-  def transitions, do: @transitions
-  def terminal_states, do: @terminal_states
   def environments, do: @environments
-
-  def terminal?(state), do: state in @terminal_states
-
-  @doc "The legal successor, or a refusal. Unknown states have no successors."
-  def transition(from, to) do
-    if to in Map.get(@transitions, from, []), do: {:ok, to}, else: {:error, :invalid_transition}
-  end
-
-  @doc "Parse a persisted state name back into the closed set."
-  def parse(name) when is_binary(name) do
-    Enum.find_value(
-      @states,
-      {:error, :unknown_state},
-      &if(Atom.to_string(&1) == name, do: {:ok, &1})
-    )
-  end
-
-  def parse(state) when state in @states, do: {:ok, state}
-  def parse(_), do: {:error, :unknown_state}
-
-  # `deploying → cancelled` exists only to withdraw a deploy operation that the
-  # executor has not started; the facade and replay both require that.
   def rollback_sources, do: @rollback_sources
   def transient?(state), do: state in @transient_states
 
@@ -71,7 +49,7 @@ defmodule SpruceGoose.Deployment.Lifecycle do
   """
   def admits?(state, _environment, :health), do: state == :verifying
   def admits?(state, _environment, :activate), do: state == :ready
-  def admits?(state, _environment, :cancel), do: match?({:ok, _}, transition(state, :cancelled))
+  def admits?(state, _environment, :cancel), do: allowed?(state, :cancelled)
   def admits?(state, _environment, :rollback), do: state in @rollback_sources
   def admits?(state, _environment, {:operation, :execute_deploy}), do: state == :staged
 
