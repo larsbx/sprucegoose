@@ -1,0 +1,170 @@
+# Canonical source: change this workflow in larsbx/agent-icm first, then copy
+# these exact bytes to every opted-in repository.
+
+name: Publish to Forgejo
+
+# The estate's canonical forge is Forgejo, reachable only on the tailnet, and
+# CI for this repository is Woodpecker there. This workflow is not a second
+# pipeline and runs no gates -- it publishes commits that land on GitHub into
+# Forgejo, so automation that pushes here still reaches the forge that matters.
+#
+# It pushes to a sync branch rather than main: Forgejo's branch protection on
+# main stays as it is, and the change arrives as a Forgejo pull request.
+# Protection is not something CI should be able to route around.
+#
+# Nothing here names a repository. Every value that varies comes from a GitHub
+# variable, and the repository name comes from the event, so this file is
+# byte-identical in every repository that opts in. Only credentials are
+# secrets; an endpoint, an owner and a branch name are configuration, and
+# putting them in secrets would hide them from the people who need to read
+# them.
+#
+#   vars:    FORGEJO_URL, FORGEJO_OWNER, FORGEJO_USERNAME,
+#            FORGEJO_REPOSITORY (default: this repository's name),
+#            FORGEJO_TARGET_BRANCH (default: github-sync),
+#            FORGEJO_BASE_BRANCH (default: main),
+#            TAILSCALE_TAGS (default: tag:ci)
+#   secrets: FORGEJO_TOKEN, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+#
+# Set the common ones as organization variables; a repository then needs only
+# the opt-in and any genuine override.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A single publisher at a time. Two rapid pushes racing on one sync branch
+# would otherwise land in an order nobody chose; the second waits rather than
+# cancelling, because cancelling would drop a commit from the forge.
+concurrency:
+  group: forgejo-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history: the receiving side needs the commits, not a shallow tip.
+          fetch-depth: 0
+          # The GITHUB_TOKEN has no business outliving the checkout, and this
+          # job pushes somewhere else entirely.
+          persist-credentials: false
+
+      # The forge is tailnet-only, so a GitHub-hosted runner has to join the
+      # tailnet before it can resolve or reach it. The OAuth client should be
+      # scoped to minting this tag and nothing else.
+      - name: Join the tailnet
+        uses: tailscale/github-action@306e68a486fd2350f2bfc3b19fcd143891a4a2d8 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: ${{ vars.TAILSCALE_TAGS || 'tag:ci' }}
+
+      - name: Publish commit to Forgejo
+        shell: bash
+        # Scoped to this step: the token has no business being visible to the
+        # checkout or to the Tailscale action.
+        env:
+          FORGEJO_URL: ${{ vars.FORGEJO_URL }}
+          FORGEJO_OWNER: ${{ vars.FORGEJO_OWNER }}
+          FORGEJO_REPOSITORY: ${{ vars.FORGEJO_REPOSITORY || github.event.repository.name }}
+          FORGEJO_USERNAME: ${{ vars.FORGEJO_USERNAME }}
+          FORGEJO_TARGET_BRANCH: ${{ vars.FORGEJO_TARGET_BRANCH || 'github-sync' }}
+          FORGEJO_BASE_BRANCH: ${{ vars.FORGEJO_BASE_BRANCH || 'main' }}
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Each of these fails with the name of the thing to go and set, rather
+          # than with an authentication error that reads like a bad credential.
+          # Repository secrets are not exposed to fork pull requests, which is
+          # the intended behaviour; on a trusted branch an empty one means it
+          # was never set.
+          : "${FORGEJO_URL:?set the FORGEJO_URL repository or organization variable}"
+          : "${FORGEJO_OWNER:?set the FORGEJO_OWNER variable}"
+          : "${FORGEJO_REPOSITORY:?set the FORGEJO_REPOSITORY variable}"
+          : "${FORGEJO_USERNAME:?set the FORGEJO_USERNAME variable}"
+          : "${FORGEJO_BASE_BRANCH:?set FORGEJO_BASE_BRANCH or use its main default}"
+          : "${FORGEJO_TARGET_BRANCH:?set FORGEJO_TARGET_BRANCH or use its github-sync default}"
+          : "${FORGEJO_TOKEN:?set the FORGEJO_TOKEN secret}"
+
+          if [[ "${FORGEJO_TARGET_BRANCH}" == "${FORGEJO_BASE_BRANCH}" ]]; then
+            echo "refusing to publish directly to Forgejo's protected base branch" >&2
+            exit 1
+          fi
+
+          remote="${FORGEJO_URL%/}/${FORGEJO_OWNER}/${FORGEJO_REPOSITORY}.git"
+          git remote add forgejo "$remote"
+
+          # The remote is named without credentials and the token is handed to
+          # this one command through a helper that reads the environment, so it
+          # is written into neither .git/config nor a process argument list.
+          # Single quotes keep the outer shell from expanding the names: the
+          # helper's own shell does that, inside the subprocess.
+          #
+          # printf, not echo: git runs the helper under /bin/sh, which on a
+          # runner is dash, and dash's echo expands backslash escapes. A token
+          # containing a literal \n would be split across two lines, so git
+          # would read a truncated password and then try to parse the remainder
+          # as another key. printf "%s\n" emits each argument verbatim.
+          git -c 'credential.helper=!f() { printf "%s\n" "username=${FORGEJO_USERNAME}" "password=${FORGEJO_TOKEN}"; }; f' \
+              push forgejo "HEAD:refs/heads/${FORGEJO_TARGET_BRANCH}"
+
+          # A branch push does not create a Forgejo pull request. Reuse an open
+          # PR, reopen the latest closed-unmerged PR, or create a new one. A
+          # merged PR is never reopened. This keeps retries idempotent while
+          # leaving review, merge authorization, and Woodpecker CI in Forgejo.
+          api="${FORGEJO_URL%/}/api/v1/repos/${FORGEJO_OWNER}/${FORGEJO_REPOSITORY}"
+          curl_config="$(mktemp)"
+          trap 'rm -f "$curl_config"' EXIT
+          chmod 600 "$curl_config"
+          printf '%s\n' \
+            'silent' \
+            'show-error' \
+            'fail-with-body' \
+            "header = \"Authorization: token ${FORGEJO_TOKEN}\"" \
+            'header = "Content-Type: application/json"' > "$curl_config"
+
+          open_pr="$(
+            curl --config "$curl_config" "${api}/pulls?state=open&limit=50" |
+              jq -r --arg head "$FORGEJO_TARGET_BRANCH" --arg base "$FORGEJO_BASE_BRANCH" \
+                '[.[] | select(.head.ref == $head and .base.ref == $base)] | first | .number // empty'
+          )"
+
+          if [[ -n "$open_pr" ]]; then
+            pr_number="$open_pr"
+            action="reused"
+          else
+            closed_pr="$(
+              curl --config "$curl_config" "${api}/pulls?state=closed&limit=50" |
+                jq -r --arg head "$FORGEJO_TARGET_BRANCH" --arg base "$FORGEJO_BASE_BRANCH" \
+                  '[.[] | select(.head.ref == $head and .base.ref == $base and ((.merged // false) == false))] | first | .number // empty'
+            )"
+
+            if [[ -n "$closed_pr" ]]; then
+              pr_number="$closed_pr"
+              jq -n '{state: "open"}' |
+                curl --config "$curl_config" --request PATCH \
+                  --data-binary @- "${api}/pulls/${pr_number}" >/dev/null
+              action="reopened"
+            else
+              pr_number="$(
+                jq -n \
+                  --arg title "Sync GitHub main" \
+                  --arg head "$FORGEJO_TARGET_BRANCH" \
+                  --arg base "$FORGEJO_BASE_BRANCH" \
+                  --arg body "Published from GitHub for canonical Forgejo review and Woodpecker CI." \
+                  '{title: $title, head: $head, base: $base, body: $body}' |
+                  curl --config "$curl_config" --request POST --data-binary @- "${api}/pulls" |
+                  jq -r '.number'
+              )"
+              action="created"
+            fi
+          fi
+
+          echo "published $(git rev-parse --short HEAD) to ${FORGEJO_TARGET_BRANCH}; ${action} Forgejo PR #${pr_number} targeting ${FORGEJO_BASE_BRANCH}"
