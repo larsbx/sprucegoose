@@ -1,5 +1,9 @@
 # SpruceGoose
 
+> Storage decision (2026-10-30): [SpruceGoose retirement and platform storage succession](docs/decisions/2026-10-30-biz-kit-retirement-storage.md).
+> Selected integration target; implementation and cutover remain gated.
+> Current services, permissions and durable owners remain in force.
+
 SpruceGoose is the authoritative Postgres/Ash task and orchestration control
 plane. Ash resources and actions model:
 
